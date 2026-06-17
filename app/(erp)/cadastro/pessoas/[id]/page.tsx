@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation'
 import { requireSession } from '@/lib/auth/server-session'
 import { getDb } from '@/lib/db'
 import type { Pessoa } from '@/types/cadastros.types'
