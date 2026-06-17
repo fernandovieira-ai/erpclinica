@@ -1,5 +1,6 @@
 'use client'
 
+import { Suspense } from 'react'
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
@@ -35,7 +36,7 @@ function PapelBadges({ p }: { p: PessoaListItem }) {
   )
 }
 
-export default function PessoasPage() {
+function PessoasPageInner() {
   const router       = useRouter()
   const searchParams = useSearchParams()
   const [dados,   setDados]   = useState<PessoaListItem[]>([])
@@ -271,5 +272,13 @@ export default function PessoasPage() {
       </div>
 
     </>
+  )
+}
+
+export default function PessoasPage() {
+  return (
+    <Suspense>
+      <PessoasPageInner />
+    </Suspense>
   )
 }

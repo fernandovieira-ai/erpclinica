@@ -4,6 +4,8 @@ import { verifyToken, isAdminSession } from '@/lib/auth/jwt'
 import type { AdminSession } from '@/types/session'
 import AdminSidebar from '@/components/layout/AdminSidebar'
 
+export const dynamic = 'force-dynamic'
+
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const token   = cookies().get('admin_session')?.value
   if (!token) redirect('/admin/login')
