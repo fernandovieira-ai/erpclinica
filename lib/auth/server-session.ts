@@ -16,7 +16,7 @@ const DEV_SESSION: Session = {
 
 // Uso em Server Components — redireciona para /login se não autenticado
 export async function requireSession(): Promise<Session> {
-  if (process.env.NODE_ENV === 'development') return DEV_SESSION
+  if (process.env.DEV_NO_AUTH === 'true') return DEV_SESSION
   const token = cookies().get('session')?.value
   if (!token) redirect('/login')
   const payload = await verifyToken(token)

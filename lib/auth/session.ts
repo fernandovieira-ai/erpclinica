@@ -20,7 +20,7 @@ const DEV_SESSION: Session = {
 }
 
 export async function getSession(req: NextRequest): Promise<Session | null> {
-  if (process.env.NODE_ENV === 'development') return DEV_SESSION
+  if (process.env.DEV_NO_AUTH === 'true') return DEV_SESSION
   const token = req.cookies.get('session')?.value
   if (!token) return null
   const payload = await verifyToken(token)
