@@ -553,7 +553,7 @@ export default function AgendamentoPage() {
 
   // ── Visão Semana ─────────────────────────────────────────────
   function renderSemana() {
-    const dias = eachDayOfInterval(periodo)
+    const dias = eachDayOfInterval({ start: periodo.ini, end: periodo.fim })
     return (
       <div style={{ overflow: 'auto', flex: 1 }}>
         <div style={{ display: 'grid', gridTemplateColumns: '58px repeat(7, 1fr)', minWidth: 700 }}>

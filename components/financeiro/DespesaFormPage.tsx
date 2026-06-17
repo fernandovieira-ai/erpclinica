@@ -120,7 +120,7 @@ type TipoCobrancaItem  = { id: number; des_tipo_cobranca: string }
 type CentroCustoItem   = { id: number; codigo: string; descricao: string }
 type ContaBancoItem    = { id: number; mnemonico: string; banco_nome: string | null }
 
-type PickerKey = 'pessoa' | 'tipo_despesa' | 'tipo_cobranca' | 'centro_custo' | 'conta_banco'
+type PickerKey = 'pessoa' | 'tipo_despesa' | 'tipo_cobranca' | 'centro_custo' | 'conta_banco' | 'centro_custo_rateio'
 
 type ParcelaRow = { num: number; vencimento: string; valor: number; juros: number; sacador: string }
 type RateioRow  = { centro_custo_id: number; codigo: string; descricao: string; percentual: number; valor: number }

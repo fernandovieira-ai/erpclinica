@@ -203,7 +203,7 @@ export default function EmpresaFormPage({ empresa }: Props) {
       if (d.nome_fantasia) setValue('nome_fantasia',  d.nome_fantasia)
       if (d.cep)         setValue('cep',         d.cep)
       if (d.logradouro)  setValue('logradouro',  d.logradouro)
-      if (d.numero)      setValue('numero_end',  d.numero)
+      if (d.numero)      setValue('numero',  d.numero)
       if (d.complemento) setValue('complemento', d.complemento)
       if (d.bairro)      setValue('bairro',      d.bairro)
       if (d.cidade)      setValue('cidade',      d.cidade)
