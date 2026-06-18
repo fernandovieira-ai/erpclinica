@@ -228,14 +228,8 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
     })
   }, [pessoa, reset])
 
-  // Reformata máscara quando muda de PF ↔ PJ
   const tipoPessoaWatched = watch('tipo_pessoa')
   const bancoTipoWatched = watch('banco_tipo')
-  useEffect(() => {
-    const raw = (watch('cpf_cnpj') ?? '').replace(/\D/g, '')
-    setValue('cpf_cnpj', mascaraCpfCnpj(raw, tipoPessoaWatched === 'J'))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tipoPessoaWatched])
 
   async function buscarCep() {
     const cep = watch('cep')?.replace(/\D/g, '')
@@ -460,7 +454,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                     {[{ v: 'F', l: 'Física' }, { v: 'J', l: 'Jurídica' }].map(({ v, l }) => (
                       <label key={v} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }}>
-                        <input type="radio" value={v} {...register('tipo_pessoa')} /> {l}
+                        <input type="radio" value={v} {...register('tipo_pessoa', { onChange: () => setValue('cpf_cnpj', '') })} /> {l}
                       </label>
                     ))}
                   </div>

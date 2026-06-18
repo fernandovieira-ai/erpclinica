@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ChevronLeft, ChevronRight, Plus, CalendarDays, LayoutGrid, List,
-  Stethoscope, RefreshCw,
+  Stethoscope, RefreshCw, UserCheck,
 } from 'lucide-react'
 import {
   format, startOfWeek, endOfWeek, addWeeks, subWeeks,
@@ -145,23 +145,53 @@ export default function AgendamentoPage() {
     setModalOpen(true)
   }
 
+  async function marcarChegada(ag: AgendamentoListItem, e: React.MouseEvent) {
+    e.stopPropagation()
+    const novoStatus = ag.status === 'AGUARDANDO' ? 'CONFIRMADO' : 'AGUARDANDO'
+    const res = await fetch(`/api/clinica/agendamentos/${ag.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: novoStatus }),
+    })
+    if (res.ok) {
+      carregar()
+    } else {
+      toast.error('Erro ao atualizar status do paciente')
+    }
+  }
+
   async function abrirNovoProximoDisponivel() {
     setBuscandoSlot(true)
     try {
       const agora = new Date()
 
-      // próximo limite de 30 min a partir de agora
       const m = agora.getMinutes()
       let nextH = agora.getHours()
       let nextM: number
       if (m < 30) { nextM = 30 } else { nextM = 0; nextH += 1 }
 
-      // busca agendamentos dos próximos 14 dias
+      // sem profissional no filtro: abre modal no próximo slot sem checar conflito
+      if (!profFiltro) {
+        const dia = startOfDay(agora)
+        for (const slot of HORAS) {
+          if (slot.h < nextH || (slot.h === nextH && slot.m < nextM)) continue
+          setEditAg(null)
+          setSlotInicio(setMinutes(setHours(dia, slot.h), slot.m))
+          setModalOpen(true)
+          return
+        }
+        setEditAg(null)
+        setSlotInicio(setHours(addDays(agora, 1), 8))
+        setModalOpen(true)
+        return
+      }
+
+      // com profissional: busca o primeiro slot livre dele nos próximos 14 dias
       const sp = new URLSearchParams({
-        inicio: format(agora, 'yyyy-MM-dd'),
-        fim:    format(addDays(agora, 14), 'yyyy-MM-dd'),
+        inicio:          format(agora, 'yyyy-MM-dd'),
+        fim:             format(addDays(agora, 14), 'yyyy-MM-dd'),
+        profissional_id: String(profFiltro),
       })
-      if (profFiltro) sp.set('profissional_id', String(profFiltro))
 
       let ags: AgendamentoListItem[] = []
       const res = await fetch(`/api/clinica/agendamentos?${sp}`)
@@ -170,7 +200,6 @@ export default function AgendamentoPage() {
         ags = data.dados ?? []
       }
 
-      // percorre slots dia a dia até achar o primeiro livre
       for (let d = 0; d <= 14; d++) {
         const dia = startOfDay(addDays(agora, d))
         for (const slot of HORAS) {
@@ -178,6 +207,7 @@ export default function AgendamentoPage() {
 
           const slotDt = setMinutes(setHours(dia, slot.h), slot.m)
           const ocupado = ags.some(ag => {
+            if (ag.profissional_id !== profFiltro) return false
             const ini = parseISO(ag.data_hora_inicio)
             const fim = parseISO(ag.data_hora_fim)
             return slotDt >= ini && slotDt < fim
@@ -192,7 +222,7 @@ export default function AgendamentoPage() {
         }
       }
 
-      // fallback: próximo dia útil às 8h
+      // fallback: próximo dia às 8h
       setEditAg(null)
       setSlotInicio(setHours(addDays(agora, 1), 8))
       setModalOpen(true)
@@ -516,15 +546,40 @@ export default function AgendamentoPage() {
                         </div>
                       )}
 
+                      {/* Chegada do paciente */}
+                      {isToday(parseISO(ag.data_hora_inicio)) && (ag.status === 'AGENDADO' || ag.status === 'CONFIRMADO' || ag.status === 'AGUARDANDO') && (
+                        <button
+                          onClick={e => marcarChegada(ag, e)}
+                          title={ag.status === 'AGUARDANDO' ? 'Paciente aguardando — clique para desfazer' : 'Marcar chegada do paciente'}
+                          style={{
+                            flexShrink: 0,
+                            display: 'flex', alignItems: 'center', gap: 4,
+                            padding: '3px 9px', borderRadius: 20,
+                            border: ag.status === 'AGUARDANDO'
+                              ? '1px solid #EF9F27'
+                              : '1px solid var(--borda-media)',
+                            background: ag.status === 'AGUARDANDO' ? '#EF9F2720' : 'transparent',
+                            color: ag.status === 'AGUARDANDO' ? '#EF9F27' : 'var(--texto-terciario)',
+                            fontSize: 11, fontWeight: 600,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <UserCheck size={12} />
+                          {ag.status === 'AGUARDANDO' ? 'Aguardando' : 'Chegou?'}
+                        </button>
+                      )}
+
                       {/* Status badge */}
-                      <div style={{
-                        fontSize: 11, fontWeight: 600, color: statusColor,
-                        background: statusColor + '18',
-                        padding: '2px 9px', borderRadius: 20,
-                        flexShrink: 0,
-                      }}>
-                        {STATUS_LABEL[ag.status]}
-                      </div>
+                      {ag.status !== 'AGUARDANDO' && (
+                        <div style={{
+                          fontSize: 11, fontWeight: 600, color: statusColor,
+                          background: statusColor + '18',
+                          padding: '2px 9px', borderRadius: 20,
+                          flexShrink: 0,
+                        }}>
+                          {STATUS_LABEL[ag.status]}
+                        </div>
+                      )}
                     </div>
                   )
                 })}
