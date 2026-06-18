@@ -3,11 +3,15 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
-  LayoutDashboard, TrendingUp, DollarSign, FileText,
+  LayoutDashboard, TrendingUp, TrendingDown, DollarSign, FileText,
   Users, Settings, LogOut, ChevronDown, ChevronRight,
   Receipt, Landmark, CreditCard, ArrowLeftRight,
   Building2, UserCircle, Banknote, FolderTree,
-  BookOpen, Tag, ArrowDownUp, Stethoscope,
+  BookOpen, Tag, Stethoscope,
+  CalendarDays, UserCog, HeartPulse, ClipboardList,
+  BarChart3, Activity,
+  FileOutput, FileInput, FileUp, FileDown,
+  ListTree, MinusCircle, PlusCircle, CalendarClock,
 } from 'lucide-react'
 import { useState } from 'react'
 import type { Session } from '@/types/session'
@@ -18,7 +22,7 @@ interface NavItem {
   label:    string
   icon?:    React.ReactNode
   href?:    string
-  children?: { label: string; href: string }[]
+  children?: { label: string; href: string; icon?: React.ReactNode }[]
 }
 
 const NAV: NavItem[] = [
@@ -26,57 +30,57 @@ const NAV: NavItem[] = [
   {
     label: 'Clínica', icon: <Stethoscope size={16} />,
     children: [
-      { label: 'Agendamento',         href: '/clinica/agendamento' },
-      { label: 'Profissionais',        href: '/cadastro/pessoas?papel=profissional' },
-      { label: 'Pacientes',            href: '/cadastro/pessoas?papel=paciente' },
-      { label: 'Tipos de Atendimento', href: '/clinica/tipos-atendimento' },
-      { label: 'Categorias',           href: '/clinica/categorias' },
+      { label: 'Agendamento',          href: '/clinica/agendamento',                   icon: <CalendarDays size={14} /> },
+      { label: 'Profissionais',         href: '/cadastro/pessoas?papel=profissional',   icon: <UserCog size={14} /> },
+      { label: 'Pacientes',             href: '/cadastro/pessoas?papel=paciente',       icon: <HeartPulse size={14} /> },
+      { label: 'Tipos de Atendimento',  href: '/clinica/tipos-atendimento',             icon: <ClipboardList size={14} /> },
+      { label: 'Categorias',            href: '/clinica/categorias',                    icon: <Tag size={14} /> },
     ],
   },
   {
     label: 'Gerencial', icon: <TrendingUp size={16} />,
     children: [
-      { label: 'DRE',            href: '/gerencial/dre' },
-      { label: 'Fluxo de Caixa', href: '/gerencial/fluxo-caixa' },
+      { label: 'DRE',            href: '/gerencial/dre',         icon: <BarChart3 size={14} /> },
+      { label: 'Fluxo de Caixa', href: '/gerencial/fluxo-caixa', icon: <Activity size={14} /> },
     ],
   },
   {
     label: 'Financeiro', icon: <DollarSign size={16} />,
     children: [
-      { label: 'Títulos a Pagar',  href: '/financeiro/titulos-pagar' },
-      { label: 'Contas a Receber', href: '/financeiro/contas-receber' },
-      { label: 'Despesas',         href: '/financeiro/despesas' },
-      { label: 'Receitas',         href: '/financeiro/receitas' },
-      { label: 'Movimento Caixa',  href: '/financeiro/movimento-caixa' },
-      { label: 'Movimento Banco',  href: '/financeiro/movimento-banco' },
-      { label: 'Conciliação',      href: '/financeiro/conciliacao' },
+      { label: 'Títulos a Pagar',  href: '/financeiro/titulos-pagar',    icon: <FileOutput size={14} /> },
+      { label: 'Contas a Receber', href: '/financeiro/contas-receber',   icon: <FileInput size={14} /> },
+      { label: 'Despesas',         href: '/financeiro/despesas',         icon: <TrendingDown size={14} /> },
+      { label: 'Receitas',         href: '/financeiro/receitas',         icon: <TrendingUp size={14} /> },
+      { label: 'Movimento Caixa',  href: '/financeiro/movimento-caixa',  icon: <Banknote size={14} /> },
+      { label: 'Movimento Banco',  href: '/financeiro/movimento-banco',  icon: <Building2 size={14} /> },
+      { label: 'Conciliação',      href: '/financeiro/conciliacao',      icon: <ArrowLeftRight size={14} /> },
     ],
   },
   {
     label: 'Fiscal', icon: <Receipt size={16} />,
     children: [
-      { label: 'NF-e Saída',   href: '/fiscal/nfe' },
-      { label: 'NF-e Entrada', href: '/fiscal/nfe-entrada' },
-      { label: 'Livro Fiscal', href: '/fiscal/livro' },
+      { label: 'NF-e Saída',   href: '/fiscal/nfe',        icon: <FileUp size={14} /> },
+      { label: 'NF-e Entrada', href: '/fiscal/nfe-entrada', icon: <FileDown size={14} /> },
+      { label: 'Livro Fiscal', href: '/fiscal/livro',       icon: <BookOpen size={14} /> },
     ],
   },
   {
     label: 'Cadastros', icon: <FileText size={16} />,
     children: [
-      { label: 'Pessoas',             href: '/cadastro/pessoas' },
-      { label: 'Contas Bancárias',    href: '/cadastro/contas-banco' },
-      { label: 'Centros de Custo',    href: '/cadastro/centros-custo' },
-      { label: 'Plano de Contas',     href: '/cadastro/plano-contas' },
-      { label: 'Tipos de Despesa',    href: '/cadastro/tipos-despesa' },
-      { label: 'Tipos de Receita',    href: '/cadastro/tipos-receita' },
-      { label: 'Cond. Pagamento',     href: '/cadastro/condicoes-pagamento' },
-      { label: 'Tipos de Cobrança', href: '/cadastro/formas-pagamento' },
+      { label: 'Pessoas',           href: '/cadastro/pessoas',               icon: <UserCircle size={14} /> },
+      { label: 'Contas Bancárias',  href: '/cadastro/contas-banco',          icon: <Landmark size={14} /> },
+      { label: 'Centros de Custo',  href: '/cadastro/centros-custo',         icon: <FolderTree size={14} /> },
+      { label: 'Plano de Contas',   href: '/cadastro/plano-contas',          icon: <ListTree size={14} /> },
+      { label: 'Tipos de Despesa',  href: '/cadastro/tipos-despesa',         icon: <MinusCircle size={14} /> },
+      { label: 'Tipos de Receita',  href: '/cadastro/tipos-receita',         icon: <PlusCircle size={14} /> },
+      { label: 'Cond. Pagamento',   href: '/cadastro/condicoes-pagamento',   icon: <CalendarClock size={14} /> },
+      { label: 'Tipos de Cobrança', href: '/cadastro/formas-pagamento',      icon: <CreditCard size={14} /> },
     ],
   },
   {
     label: 'Configurações', icon: <Settings size={16} />,
     children: [
-      { label: 'Empresas', href: '/configuracoes/empresas' },
+      { label: 'Empresas', href: '/configuracoes/empresas', icon: <Building2 size={14} /> },
     ],
   },
   { label: 'Usuários',      icon: <Users size={16} />,   href: '/usuarios' },
@@ -145,6 +149,11 @@ export default function Sidebar({ session }: Props) {
                   href={child.href}
                   className={`sidebar-sub ${isActive(child.href) ? 'active' : ''}`}
                 >
+                  {child.icon && (
+                    <span style={{ opacity: 0.7, display: 'flex', alignItems: 'center' }}>
+                      {child.icon}
+                    </span>
+                  )}
                   {child.label}
                 </Link>
               ))}
