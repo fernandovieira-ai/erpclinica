@@ -309,7 +309,7 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
               <div style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>
                 Duração: <strong>{watch('duracao_min') || 30} min</strong>
               </div>
-              {watch('valor') != null && watch('valor') !== '' && (
+              {watch('valor') != null && (
                 <div style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>
                   Valor: <strong>R$ {parseFloat(String(watch('valor'))).toFixed(2).replace('.', ',')}</strong>
                 </div>
