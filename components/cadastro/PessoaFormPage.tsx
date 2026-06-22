@@ -1,11 +1,11 @@
 'use client'
 
-import { forwardRef, useEffect, useState } from 'react'
+import { forwardRef, useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Save, Trash2, ArrowLeft, Search, Plus, X } from 'lucide-react'
+import { Save, Trash2, ArrowLeft, Search, Plus, X, Camera, User, RefreshCw } from 'lucide-react'
 import { pessoaSchema, type PessoaInput } from '@/lib/validators/pessoa.schema'
 import type { Pessoa } from '@/types/cadastros.types'
 import MoneyInput from '@/components/ui/MoneyInput'
@@ -148,6 +148,274 @@ function Secao({ titulo, children, style }: { titulo: string; children: React.Re
   )
 }
 
+function FotoCaptura({ foto, onChange }: { foto?: string | null; onChange: (v: string | null) => void }) {
+  const [modo,      setModo]      = useState<'idle' | 'camera' | 'preview'>('idle')
+  const [capturada, setCapturada] = useState<string | null>(null)
+  const videoRef  = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+
+  function pararStream() {
+    streamRef.current?.getTracks().forEach(t => t.stop())
+    streamRef.current = null
+  }
+
+  useEffect(() => () => pararStream(), [])
+
+  async function abrirCamera() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 400, height: 400, facingMode: 'user' } })
+      streamRef.current = stream
+      setModo('camera')  // monta o <video> — stream é anexado no useEffect abaixo
+    } catch {
+      import('sonner').then(({ toast }) => toast.error('Câmera não disponível ou sem permissão'))
+    }
+  }
+
+  // Anexa o stream ao <video> depois que o elemento monta no DOM
+  useEffect(() => {
+    if (modo === 'camera' && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current
+      videoRef.current.play().catch(() => {})
+    }
+  }, [modo])
+
+  function capturar() {
+    const video  = videoRef.current
+    const canvas = canvasRef.current
+    if (!video || !canvas) return
+    const side = Math.min(video.videoWidth, video.videoHeight)
+    const ox   = (video.videoWidth  - side) / 2
+    const oy   = (video.videoHeight - side) / 2
+    canvas.width = 220; canvas.height = 220
+    canvas.getContext('2d')!.drawImage(video, ox, oy, side, side, 0, 0, 220, 220)
+    setCapturada(canvas.toDataURL('image/jpeg', 0.82))
+    pararStream()
+    setModo('preview')
+  }
+
+  function confirmar() { onChange(capturada); setCapturada(null); setModo('idle') }
+  function cancelar()  { pararStream(); setCapturada(null); setModo('idle') }
+
+  const AVATAR = 110
+
+  return (
+    <>
+      {/* Modal câmera / preview */}
+      {modo !== 'idle' && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 200,
+          backgroundColor: 'rgba(0,0,0,0.72)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{
+            backgroundColor: 'var(--bg-card)', borderRadius: 12,
+            padding: 28, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
+            boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+          }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--texto-principal)', letterSpacing: '0.02em' }}>
+              {modo === 'camera' ? 'Posicione o rosto no centro' : 'Confirmar foto'}
+            </div>
+
+            {modo === 'camera' && (
+              <video ref={videoRef} autoPlay playsInline muted style={{
+                width: 280, height: 280, objectFit: 'cover', borderRadius: '50%',
+                border: '4px solid var(--cor-primaria)',
+                backgroundColor: '#000',
+              }} />
+            )}
+            {modo === 'preview' && capturada && (
+              <img src={capturada} alt="preview" style={{
+                width: 280, height: 280, objectFit: 'cover', borderRadius: '50%',
+                border: '4px solid var(--cor-primaria)',
+              }} />
+            )}
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              {modo === 'camera' && (
+                <button type="button" onClick={capturar} style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '8px 20px',
+                  backgroundColor: 'var(--cor-primaria)', color: '#fff',
+                  border: 'none', borderRadius: 6, fontSize: 13, cursor: 'pointer', fontWeight: 600,
+                }}>
+                  <Camera size={14} /> Capturar
+                </button>
+              )}
+              {modo === 'preview' && (<>
+                <button type="button" onClick={confirmar} style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '8px 20px',
+                  backgroundColor: 'var(--cor-primaria)', color: '#fff',
+                  border: 'none', borderRadius: 6, fontSize: 13, cursor: 'pointer', fontWeight: 600,
+                }}>
+                  Usar esta foto
+                </button>
+                <button type="button" onClick={abrirCamera} style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px',
+                  background: 'none', border: '1px solid var(--borda-media)',
+                  borderRadius: 6, fontSize: 13, cursor: 'pointer', color: 'var(--texto-secundario)',
+                }}>
+                  <RefreshCw size={13} /> Tirar novamente
+                </button>
+              </>)}
+              <button type="button" onClick={cancelar} style={{
+                padding: '8px 16px', background: 'none',
+                border: '1px solid var(--borda-media)', borderRadius: 6,
+                fontSize: 13, cursor: 'pointer', color: 'var(--texto-secundario)',
+              }}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <canvas ref={canvasRef} style={{ display: 'none' }} />
+
+      {/* Avatar + botões */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+        <div style={{
+          width: AVATAR, height: AVATAR, borderRadius: '50%',
+          overflow: 'hidden',
+          border: foto ? '3px solid var(--cor-primaria)' : '2px dashed var(--borda-media)',
+          backgroundColor: 'var(--bg-input)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer', flexShrink: 0,
+        }} onClick={abrirCamera} title="Clique para tirar uma foto">
+          {foto
+            ? <img src={foto} alt="Foto" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            : <User size={44} color="var(--texto-terciario)" strokeWidth={1.2} />
+          }
+        </div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button type="button" onClick={abrirCamera} style={{
+            display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px',
+            background: 'none', border: '1px solid var(--borda-media)', borderRadius: 4,
+            fontSize: 11, cursor: 'pointer', color: 'var(--texto-secundario)',
+            whiteSpace: 'nowrap',
+          }}>
+            <Camera size={11} /> {foto ? 'Nova foto' : 'Tirar foto'}
+          </button>
+          {foto && (
+            <button type="button" onClick={() => onChange(null)} title="Remover foto" style={{
+              padding: '3px 6px', background: 'none',
+              border: '1px solid var(--borda-media)', borderRadius: 4,
+              fontSize: 11, cursor: 'pointer', color: 'var(--cor-erro)', lineHeight: 1,
+            }}>
+              <X size={11} />
+            </button>
+          )}
+        </div>
+      </div>
+    </>
+  )
+}
+
+function BuscarPessoa({
+  pessoaId, nome, onSelect, onNomeChange, onLimpar, placeholder,
+}: {
+  pessoaId?: number | null
+  nome?: string | null
+  onSelect: (id: number, nome: string) => void
+  onNomeChange: (nome: string) => void
+  onLimpar: () => void
+  placeholder?: string
+}) {
+  const [query,   setQuery]   = useState('')
+  const [results, setResults] = useState<{ id: number; nome: string; cpf_cnpj: string | null }[]>([])
+  const [loading, setLoading] = useState(false)
+  const [open,    setOpen]    = useState(false)
+
+  async function buscar() {
+    const q = query.trim()
+    if (!q) return
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/cadastro/pessoas?busca=${encodeURIComponent(q)}&limit=10`)
+      const d   = await res.json()
+      setResults(d.dados ?? [])
+      setOpen(true)
+    } catch { /* ignore */ }
+    finally { setLoading(false) }
+  }
+
+  if (pessoaId) {
+    return (
+      <div style={{ display: 'flex', gap: 4, alignItems: 'center', flex: 1 }}>
+        <span style={{
+          flex: 1, padding: '3px 6px', fontSize: 12,
+          backgroundColor: 'var(--bg-input)', border: '1px solid var(--cor-primaria)',
+          borderRadius: 3, color: 'var(--texto-principal)', textTransform: 'uppercase',
+        }}>
+          {nome}
+          <span style={{ fontSize: 10, color: 'var(--cor-primaria)', marginLeft: 6 }}>#{pessoaId}</span>
+        </span>
+        <button type="button" onClick={onLimpar} title="Desvincular"
+          style={{ padding: '3px 6px', background: 'none', border: '1px solid var(--borda-media)',
+            borderRadius: 3, cursor: 'pointer', color: 'var(--cor-erro)', lineHeight: 1 }}>
+          <X size={11} />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ position: 'relative', flex: 1, display: 'flex', gap: 4 }}>
+      {open && <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 49 }} />}
+      <input
+        type="text"
+        value={nome || query}
+        placeholder={placeholder ?? 'Nome ou CPF...'}
+        onChange={e => { setQuery(e.target.value); onNomeChange(e.target.value.toUpperCase()) }}
+        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); buscar() } }}
+        style={{
+          flex: 1, padding: '3px 6px', fontSize: 12, fontFamily: 'var(--fonte-sans)',
+          backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)',
+          border: '1px solid var(--borda-media)', borderRadius: 3, outline: 'none',
+          textTransform: 'uppercase',
+        }}
+        onFocus={e => { e.target.style.borderColor = 'var(--cor-primaria)' }}
+        onBlur={e  => { e.target.style.borderColor = 'var(--borda-media)' }}
+      />
+      <button type="button" onClick={buscar} disabled={loading} title="Buscar pessoa cadastrada"
+        style={{
+          display: 'flex', alignItems: 'center', gap: 3, padding: '3px 8px',
+          background: 'none', border: '1px solid var(--borda-media)', borderRadius: 3,
+          fontSize: 11, cursor: loading ? 'not-allowed' : 'pointer',
+          color: loading ? 'var(--texto-terciario)' : 'var(--cor-primaria)',
+          whiteSpace: 'nowrap', opacity: loading ? 0.6 : 1,
+        }}>
+        <Search size={11} /> {loading ? '...' : 'Vincular'}
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+          backgroundColor: 'var(--bg-card)', border: '1px solid var(--borda-media)',
+          borderRadius: 3, boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
+          maxHeight: 200, overflowY: 'auto',
+        }}>
+          {results.length === 0 ? (
+            <div style={{ padding: '8px', fontSize: 12, color: 'var(--texto-secundario)' }}>
+              Nenhum cadastro encontrado — nome será salvo como texto.
+            </div>
+          ) : results.map(p => (
+            <button key={p.id} type="button" onClick={() => { onSelect(p.id, p.nome); setQuery(''); setOpen(false) }}
+              style={{
+                display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px',
+                fontSize: 12, background: 'none', border: 'none', cursor: 'pointer',
+                color: 'var(--texto-principal)', borderBottom: '1px solid var(--borda-suave)',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--bg-hover, rgba(0,0,0,0.05))' }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}>
+              {p.nome}
+              {p.cpf_cnpj && <span style={{ fontSize: 10, color: 'var(--texto-terciario)', marginLeft: 6 }}>{p.cpf_cnpj}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function mascaraCpfCnpj(valor: string, pj: boolean): string {
   const d = valor.replace(/\D/g, '').slice(0, pj ? 14 : 11)
   if (pj) {
@@ -178,6 +446,11 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
     resolver: zodResolver(pessoaSchema),
     defaultValues: {
       tipo_pessoa: 'F', cpf_cnpj: '', data_nascimento: '', cep: '',
+      sexo: undefined, cor_raca: '', estado_civil: '', naturalidade: '', foto: null,
+      pai_pessoa_id: null, pai_nome: '', pai_profissao: '', pai_paciente: false,
+      mae_pessoa_id: null, mae_nome: '', mae_profissao: '', mae_paciente: false,
+      conjuge_pessoa_id: null, conjuge_nome: '', conjuge_profissao: '', conjuge_paciente: false,
+      indicacao_pessoa_id: null, indicacao_nome: '', indicacao_fone: '', indicacao_ligacao: '',
       ind_cliente: false, ind_fornecedor: false,
       ind_banco: false, ind_transportador: false,
       ind_paciente: papelInicial === 'paciente', ind_profissional: papelInicial === 'profissional',
@@ -196,6 +469,27 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
       data_nascimento:   pessoa.data_nascimento
                            ? String(pessoa.data_nascimento).slice(0, 10)
                            : '',
+      sexo:              pessoa.sexo ?? undefined,
+      cor_raca:          pessoa.cor_raca ?? '',
+      estado_civil:      pessoa.estado_civil ?? '',
+      naturalidade:      pessoa.naturalidade ?? '',
+      foto:              pessoa.foto ?? null,
+      pai_pessoa_id:     pessoa.pai_pessoa_id ?? null,
+      pai_nome:          pessoa.pai_nome ?? '',
+      pai_profissao:     pessoa.pai_profissao ?? '',
+      pai_paciente:      pessoa.pai_paciente ?? false,
+      mae_pessoa_id:     pessoa.mae_pessoa_id ?? null,
+      mae_nome:          pessoa.mae_nome ?? '',
+      mae_profissao:     pessoa.mae_profissao ?? '',
+      mae_paciente:      pessoa.mae_paciente ?? false,
+      conjuge_pessoa_id: pessoa.conjuge_pessoa_id ?? null,
+      conjuge_nome:      pessoa.conjuge_nome ?? '',
+      conjuge_profissao: pessoa.conjuge_profissao ?? '',
+      conjuge_paciente:  pessoa.conjuge_paciente ?? false,
+      indicacao_pessoa_id: pessoa.indicacao_pessoa_id ?? null,
+      indicacao_nome:    pessoa.indicacao_nome ?? '',
+      indicacao_fone:    pessoa.indicacao_fone ?? '',
+      indicacao_ligacao: pessoa.indicacao_ligacao ?? '',
       rg_ie:             pessoa.rg_ie ?? '',
       im:                pessoa.im ?? '',
       ind_cliente:       pessoa.ind_cliente,
@@ -433,10 +727,25 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
         {/* ══ SEÇÃO PRINCIPAL ════════════════════════════════════ */}
         <Secao titulo="Principal">
 
-          {/* Capa */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px' }}>
+          {/* Layout 3 colunas: Foto | Identificação | Dados pessoais */}
+          <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr 1fr', gap: '0 16px', alignItems: 'start' }}>
 
-            {/* Coluna esquerda — Nome + Natureza */}
+            {/* Col 1 — Foto */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 4 }}>
+              {!pj ? (
+                <FotoCaptura foto={watch('foto') as string | null} onChange={v => setValue('foto', v)} />
+              ) : (
+                <div style={{
+                  width: 110, height: 110, borderRadius: 8,
+                  backgroundColor: 'var(--bg-input)', border: '2px dashed var(--borda-media)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <span style={{ fontSize: 10, color: 'var(--texto-terciario)', textAlign: 'center', padding: 8 }}>Pessoa<br/>Jurídica</span>
+                </div>
+              )}
+            </div>
+
+            {/* Col 2 — Nome + Natureza + CPF/CNPJ */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <FormRow label="Nome:">
                 <Input {...register('nome')}
@@ -451,7 +760,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
               <div style={{ display: 'flex', gap: 16, paddingLeft: 116, marginTop: 2 }}>
                 <fieldset style={{ border: '1px solid var(--borda-suave)', borderRadius: 3, padding: '4px 8px' }}>
                   <legend style={{ fontSize: 10, color: 'var(--texto-terciario)', padding: '0 4px' }}>Natureza</legend>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <div style={{ display: 'flex', gap: 12 }}>
                     {[{ v: 'F', l: 'Física' }, { v: 'J', l: 'Jurídica' }].map(({ v, l }) => (
                       <label key={v} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }}>
                         <input type="radio" value={v} {...register('tipo_pessoa', { onChange: () => setValue('cpf_cnpj', '') })} /> {l}
@@ -460,10 +769,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
                   </div>
                 </fieldset>
               </div>
-            </div>
 
-            {/* Coluna direita — Identificação */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <FormRow label={pj ? 'CNPJ:' : 'CPF:'}>
                 <Input
                   {...register('cpf_cnpj')}
@@ -475,10 +781,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
                   }}
                 />
                 {pj && (
-                  <button
-                    type="button"
-                    onClick={buscarCnpj}
-                    disabled={buscandoCnpj}
+                  <button type="button" onClick={buscarCnpj} disabled={buscandoCnpj}
                     title="Buscar dados na Receita Federal"
                     style={{
                       display: 'flex', alignItems: 'center', gap: 3,
@@ -487,19 +790,13 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
                       borderRadius: 3, fontSize: 11, cursor: buscandoCnpj ? 'not-allowed' : 'pointer',
                       color: buscandoCnpj ? 'var(--texto-terciario)' : 'var(--cor-primaria)',
                       opacity: buscandoCnpj ? 0.6 : 1,
-                    }}
-                  >
+                    }}>
                     <Search size={11} />
                     {buscandoCnpj ? 'Buscando...' : 'Receita Federal'}
                   </button>
                 )}
               </FormRow>
-              {!pj && (
-                <FormRow label="Dt. Nasc.:">
-                  <Input type="date" {...register('data_nascimento')}
-                    style={{ width: 140, fontFamily: 'var(--fonte-mono)' }} />
-                </FormRow>
-              )}
+
               <FormRow label={pj ? 'IE-ST:' : 'RG:'}>
                 <Input {...register('rg_ie')} />
               </FormRow>
@@ -508,6 +805,64 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
                   <Input {...register('im')} />
                 </FormRow>
               )}
+            </div>
+
+            {/* Col 3 — Dados pessoais (apenas PF) */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {!pj && (<>
+                <FormRow label="Dt. Nasc.:">
+                  <Input type="date" {...register('data_nascimento')}
+                    style={{ width: 140, fontFamily: 'var(--fonte-mono)' }} />
+                  {(() => {
+                    const dn = watch('data_nascimento')
+                    if (!dn) return null
+                    const hoje = new Date()
+                    const nasc = new Date(dn + 'T00:00:00')
+                    let idade = hoje.getFullYear() - nasc.getFullYear()
+                    const m = hoje.getMonth() - nasc.getMonth()
+                    if (m < 0 || (m === 0 && hoje.getDate() < nasc.getDate())) idade--
+                    if (idade < 0 || idade > 150) return null
+                    return (
+                      <span style={{
+                        marginLeft: 6, fontSize: 12, fontWeight: 600,
+                        color: 'var(--cor-primaria)', whiteSpace: 'nowrap', alignSelf: 'center',
+                      }}>
+                        {idade} {idade === 1 ? 'ano' : 'anos'}
+                      </span>
+                    )
+                  })()}
+                </FormRow>
+                <FormRow label="Sexo:">
+                  <Select {...register('sexo')} style={{ width: 130 }}>
+                    <option value="">—</option>
+                    <option value="F">Feminino</option>
+                    <option value="M">Masculino</option>
+                  </Select>
+                </FormRow>
+                <FormRow label="Cor/Raça:">
+                  <Select {...register('cor_raca')} style={{ width: 160 }}>
+                    <option value="">—</option>
+                    <option value="BRANCA">Branca</option>
+                    <option value="PRETA">Preta</option>
+                    <option value="PARDA">Parda</option>
+                    <option value="AMARELA">Amarela</option>
+                    <option value="INDIGENA">Indígena</option>
+                  </Select>
+                </FormRow>
+                <FormRow label="Estado Civil:">
+                  <Select {...register('estado_civil')} style={{ width: 160 }}>
+                    <option value="">—</option>
+                    <option value="SOLTEIRO">Solteiro(a)</option>
+                    <option value="CASADO">Casado(a)</option>
+                    <option value="DIVORCIADO">Divorciado(a)</option>
+                    <option value="VIUVO">Viúvo(a)</option>
+                    <option value="UNIAO_ESTAVEL">União Estável</option>
+                  </Select>
+                </FormRow>
+                <FormRow label="Naturalidade:">
+                  <Input {...register('naturalidade')} placeholder="Cidade de nascimento" />
+                </FormRow>
+              </>)}
             </div>
           </div>
 
@@ -581,6 +936,100 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
             </div>
           </div>
         </Secao>
+
+        {/* ══ FILIAÇÃO ════════════════════════════════════════════ */}
+        {!pj && (
+        <Secao titulo="Filiação">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px' }}>
+
+            {/* PAI */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--texto-secundario)', paddingLeft: 2, letterSpacing: '0.03em' }}>PAI</div>
+              <FormRow label="Nome:">
+                <BuscarPessoa
+                  pessoaId={watch('pai_pessoa_id') as number | null}
+                  nome={watch('pai_nome') as string}
+                  onSelect={(id, nome) => { setValue('pai_pessoa_id', id); setValue('pai_nome', nome) }}
+                  onNomeChange={v => { setValue('pai_nome', v); setValue('pai_pessoa_id', null) }}
+                  onLimpar={() => { setValue('pai_pessoa_id', null); setValue('pai_nome', '') }}
+                  placeholder="Nome do pai..."
+                />
+              </FormRow>
+              <FormRow label="Profissão:">
+                <Input {...register('pai_profissao')} />
+              </FormRow>
+              <FormRow label="">
+                <Check label="É paciente" checked={!!watch('pai_paciente')} onChange={e => setValue('pai_paciente', e.target.checked)} />
+              </FormRow>
+            </div>
+
+            {/* MÃE */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--texto-secundario)', paddingLeft: 2, letterSpacing: '0.03em' }}>MÃE</div>
+              <FormRow label="Nome:">
+                <BuscarPessoa
+                  pessoaId={watch('mae_pessoa_id') as number | null}
+                  nome={watch('mae_nome') as string}
+                  onSelect={(id, nome) => { setValue('mae_pessoa_id', id); setValue('mae_nome', nome) }}
+                  onNomeChange={v => { setValue('mae_nome', v); setValue('mae_pessoa_id', null) }}
+                  onLimpar={() => { setValue('mae_pessoa_id', null); setValue('mae_nome', '') }}
+                  placeholder="Nome da mãe..."
+                />
+              </FormRow>
+              <FormRow label="Profissão:">
+                <Input {...register('mae_profissao')} />
+              </FormRow>
+              <FormRow label="">
+                <Check label="É paciente" checked={!!watch('mae_paciente')} onChange={e => setValue('mae_paciente', e.target.checked)} />
+              </FormRow>
+            </div>
+
+            {/* CÔNJUGE */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--texto-secundario)', paddingLeft: 2, letterSpacing: '0.03em' }}>CÔNJUGE</div>
+              <FormRow label="Nome:">
+                <BuscarPessoa
+                  pessoaId={watch('conjuge_pessoa_id') as number | null}
+                  nome={watch('conjuge_nome') as string}
+                  onSelect={(id, nome) => { setValue('conjuge_pessoa_id', id); setValue('conjuge_nome', nome) }}
+                  onNomeChange={v => { setValue('conjuge_nome', v); setValue('conjuge_pessoa_id', null) }}
+                  onLimpar={() => { setValue('conjuge_pessoa_id', null); setValue('conjuge_nome', '') }}
+                  placeholder="Nome do cônjuge..."
+                />
+              </FormRow>
+              <FormRow label="Profissão:">
+                <Input {...register('conjuge_profissao')} />
+              </FormRow>
+              <FormRow label="">
+                <Check label="É paciente" checked={!!watch('conjuge_paciente')} onChange={e => setValue('conjuge_paciente', e.target.checked)} />
+              </FormRow>
+            </div>
+
+            {/* INDICAÇÃO */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--texto-secundario)', paddingLeft: 2, letterSpacing: '0.03em' }}>INDICAÇÃO</div>
+              <FormRow label="Nome:">
+                <BuscarPessoa
+                  pessoaId={watch('indicacao_pessoa_id') as number | null}
+                  nome={watch('indicacao_nome') as string}
+                  onSelect={(id, nome) => { setValue('indicacao_pessoa_id', id); setValue('indicacao_nome', nome) }}
+                  onNomeChange={v => { setValue('indicacao_nome', v); setValue('indicacao_pessoa_id', null) }}
+                  onLimpar={() => { setValue('indicacao_pessoa_id', null); setValue('indicacao_nome', '') }}
+                  placeholder="Quem indicou..."
+                />
+              </FormRow>
+              <FormRow label="Fone:">
+                <Input {...register('indicacao_fone')} type="search" placeholder="(  )      -    "
+                  style={{ width: 150, fontFamily: 'var(--fonte-mono)' }} />
+              </FormRow>
+              <FormRow label="Tipo ligação:">
+                <Input {...register('indicacao_ligacao')} placeholder="Ex: amigo, vizinho..." />
+              </FormRow>
+            </div>
+
+          </div>
+        </Secao>
+        )}
 
         {/* ══ CLASSIFICAÇÃO ══════════════════════════════════════ */}
         <Secao titulo="Classificação">

@@ -78,10 +78,17 @@ export async function POST(req: NextRequest) {
        cep, logradouro, numero, complemento, bairro, cidade, uf,
        telefone, celular, whatsapp, email, email_nfe,
        limite_credito, banco_nome, banco_agencia, banco_conta, banco_tipo, chave_pix,
-       contribuinte_icms, optante_simples, obs
+       contribuinte_icms, optante_simples, obs,
+       sexo, cor_raca, estado_civil, naturalidade, foto,
+       pai_pessoa_id, pai_nome, pai_profissao, pai_paciente,
+       mae_pessoa_id, mae_nome, mae_profissao, mae_paciente,
+       conjuge_pessoa_id, conjuge_nome, conjuge_profissao, conjuge_paciente,
+       indicacao_pessoa_id, indicacao_nome, indicacao_fone, indicacao_ligacao
      ) VALUES (
        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
-       $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35
+       $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,
+       $36,$37,$38,$39,$40,
+       $41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56
      ) RETURNING id`,
     [
       session.empresa_id_ativa, d.tipo_pessoa, up(d.nome), up(d.nome_fantasia),
@@ -95,6 +102,11 @@ export async function POST(req: NextRequest) {
       d.limite_credito, up(d.banco_nome), d.banco_agencia ?? null,
       d.banco_conta ?? null, up(d.banco_tipo), d.chave_pix ?? null,
       d.contribuinte_icms, d.optante_simples, up(d.obs),
+      d.sexo ?? null, up(d.cor_raca), up(d.estado_civil), up(d.naturalidade), d.foto ?? null,
+      d.pai_pessoa_id ?? null, up(d.pai_nome), up(d.pai_profissao), d.pai_paciente ?? false,
+      d.mae_pessoa_id ?? null, up(d.mae_nome), up(d.mae_profissao), d.mae_paciente ?? false,
+      d.conjuge_pessoa_id ?? null, up(d.conjuge_nome), up(d.conjuge_profissao), d.conjuge_paciente ?? false,
+      d.indicacao_pessoa_id ?? null, up(d.indicacao_nome), d.indicacao_fone ?? null, up(d.indicacao_ligacao),
     ],
   )
 

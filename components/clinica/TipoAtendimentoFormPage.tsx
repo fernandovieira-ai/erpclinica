@@ -7,7 +7,9 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Save, Trash2, ArrowLeft, Plus, X } from 'lucide-react'
 import { agendamentoTipoSchema, type AgendamentoTipoInput } from '@/lib/validators/agendamento.schema'
-import type { TipoAtendimentoListItem } from '@/types/clinica.types'
+import type { TipoAtendimentoListItem, TipoCategoriaValorItem } from '@/types/clinica.types'
+
+type Aba = 'principal' | 'categorias'
 
 interface Props { tipo?: TipoAtendimentoListItem }
 
@@ -45,6 +47,10 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
   const [saving,    setSaving]    = useState(false)
   const [deleting,  setDeleting]  = useState(false)
   const [excluding, setExcluding] = useState(false)
+  const [aba,       setAba]       = useState<Aba>('principal')
+  const [categorias,   setCategorias]   = useState<TipoCategoriaValorItem[]>([])
+  const [valoresEdit,  setValoresEdit]  = useState<Record<number, string>>({})
+  const [savingCat,    setSavingCat]    = useState(false)
 
   const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<AgendamentoTipoInput>({
     resolver: zodResolver(agendamentoTipoSchema),
@@ -59,9 +65,41 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
       descricao:   tipo.descricao,
       duracao_min: tipo.duracao_min,
       cor:         tipo.cor,
+      valor:       tipo.valor != null ? parseFloat(String(tipo.valor)) : undefined,
       ativo:       tipo.ativo,
     })
   }, [tipo, reset])
+
+  // Carrega categorias ao entrar na aba
+  useEffect(() => {
+    if (!tipo || aba !== 'categorias') return
+    fetch(`/api/clinica/tipos-agendamento/${tipo.id}/categorias`)
+      .then(r => r.json())
+      .then((data: TipoCategoriaValorItem[]) => {
+        setCategorias(data)
+        const vals: Record<number, string> = {}
+        data.forEach(c => { vals[c.categoria_id] = c.valor != null ? String(c.valor) : '' })
+        setValoresEdit(vals)
+      })
+  }, [tipo, aba])
+
+  async function salvarCategorias() {
+    if (!tipo) return
+    setSavingCat(true)
+    try {
+      const valores = categorias.map(c => ({
+        categoria_id: c.categoria_id,
+        valor: parseFloat(valoresEdit[c.categoria_id] || '0') || 0,
+      }))
+      const res = await fetch(`/api/clinica/tipos-agendamento/${tipo.id}/categorias`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ valores }),
+      })
+      if (!res.ok) { toast.error('Erro ao salvar valores'); return }
+      toast.success('Valores por categoria salvos!')
+    } finally { setSavingCat(false) }
+  }
 
   async function onSubmit(data: AgendamentoTipoInput) {
     setSaving(true)
@@ -115,10 +153,17 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
           style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', background: 'none', border: '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, cursor: 'pointer', color: 'var(--texto-secundario)' }}>
           <Plus size={13} /> Novo
         </button>
-        <button type="submit" disabled={saving}
-          style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 14px', background: 'var(--cor-primaria)', color: '#fff', border: 'none', borderRadius: 3, fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
-          <Save size={13} /> {saving ? 'Salvando...' : 'Salvar'}
-        </button>
+        {aba === 'principal' ? (
+          <button type="submit" disabled={saving}
+            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 14px', background: 'var(--cor-primaria)', color: '#fff', border: 'none', borderRadius: 3, fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
+            <Save size={13} /> {saving ? 'Salvando...' : 'Salvar'}
+          </button>
+        ) : (
+          <button type="button" onClick={salvarCategorias} disabled={savingCat}
+            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 14px', background: 'var(--cor-primaria)', color: '#fff', border: 'none', borderRadius: 3, fontSize: 12, cursor: savingCat ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: savingCat ? 0.7 : 1 }}>
+            <Save size={13} /> {savingCat ? 'Salvando...' : 'Salvar Valores'}
+          </button>
+        )}
         {tipo && (
           <button type="button" onClick={desativar} disabled={deleting}
             style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', background: 'none', border: '1px solid var(--cor-erro)', borderRadius: 3, fontSize: 12, cursor: 'pointer', color: 'var(--cor-erro)' }}>
@@ -134,17 +179,28 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
         {tipo && <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--texto-terciario)' }}>#{tipo.id} — {tipo.ativo ? 'Ativo' : 'Inativo'}</span>}
       </div>
 
-      {/* ── Aba ── */}
+      {/* ── Abas ── */}
       <div style={{ display: 'flex', backgroundColor: 'var(--bg-page)', borderBottom: '1px solid var(--borda-media)', paddingLeft: 12 }}>
-        <button type="button" style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, color: 'var(--cor-primaria)', background: 'var(--bg-card)', border: 'none', borderBottom: '2px solid var(--cor-primaria)', borderRight: '1px solid var(--borda-suave)', cursor: 'default' }}>
-          Principal
-        </button>
+        {(['principal', ...(tipo ? ['categorias'] : [])] as Aba[]).map(a => {
+          const ativa = aba === a
+          const label = a === 'principal' ? 'Principal' : 'Valores p/ Categoria'
+          return (
+            <button key={a} type="button" onClick={() => setAba(a)}
+              style={{ padding: '7px 14px', fontSize: 12, fontWeight: ativa ? 600 : 400, color: ativa ? 'var(--cor-primaria)' : 'var(--texto-secundario)', background: ativa ? 'var(--bg-card)' : 'transparent', border: 'none', borderBottom: ativa ? '2px solid var(--cor-primaria)' : '2px solid transparent', borderRight: '1px solid var(--borda-suave)', cursor: ativa ? 'default' : 'pointer' }}>
+              {label}
+            </button>
+          )
+        })}
       </div>
 
       {/* ── Corpo ── */}
-      <div style={{ padding: '20px 24px', display: 'flex', gap: 24, overflowY: 'auto', flex: 1 }}>
+      <div style={{ overflowY: 'auto', flex: 1 }}>
 
-        {/* Coluna principal */}
+        {/* ── Aba Principal ── */}
+        {aba === 'principal' && (
+          <div style={{ padding: '20px 24px', display: 'flex', gap: 24 }}>
+
+            {/* Coluna principal */}
         <div style={{ flex: 1, maxWidth: 560, display: 'flex', flexDirection: 'column', gap: 8 }}>
 
           {/* Descrição */}
@@ -167,6 +223,20 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
             />
             <span style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>min</span>
             {errors.duracao_min && <span style={{ fontSize: 11, color: 'var(--cor-erro)' }}>{errors.duracao_min.message}</span>}
+          </Row>
+
+          {/* Valor */}
+          <Row label="Valor (R$):">
+            <span style={{ fontSize: 12, color: 'var(--texto-secundario)' }}>R$</span>
+            <input
+              type="number"
+              min={0}
+              step={0.01}
+              {...register('valor', { setValueAs: v => (v === '' || v === null || v === undefined || isNaN(Number(v))) ? null : Number(v) })}
+              placeholder="0,00"
+              style={{ width: 110, padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: errors.valor ? '1px solid var(--cor-erro)' : '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, textAlign: 'right' }}
+            />
+            {errors.valor && <span style={{ fontSize: 11, color: 'var(--cor-erro)' }}>{errors.valor.message}</span>}
           </Row>
 
           <div style={{ height: 1, backgroundColor: 'var(--borda-suave)', margin: '4px 0' }} />
@@ -239,9 +309,58 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
               <div style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>
                 Duração: <strong>{watch('duracao_min') || 30} min</strong>
               </div>
+              {watch('valor') != null && watch('valor') !== '' && (
+                <div style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>
+                  Valor: <strong>R$ {parseFloat(String(watch('valor'))).toFixed(2).replace('.', ',')}</strong>
+                </div>
+              )}
             </div>
           </fieldset>
         </div>
+
+          </div>
+        )}
+
+        {/* ── Aba Categorias ── */}
+        {aba === 'categorias' && (
+          <div style={{ padding: '20px 24px', maxWidth: 600 }}>
+            {categorias.length === 0 ? (
+              <p style={{ fontSize: 12, color: 'var(--texto-terciario)' }}>
+                Nenhuma categoria cadastrada. Cadastre categorias em <strong>Clínica → Categorias</strong> primeiro.
+              </p>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--borda-media)' }}>
+                    <th style={{ textAlign: 'left', padding: '4px 8px', color: 'var(--texto-secundario)', fontWeight: 600 }}>Categoria</th>
+                    <th style={{ textAlign: 'right', padding: '4px 8px', color: 'var(--texto-secundario)', fontWeight: 600, width: 140 }}>Valor (R$)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {categorias.map(cat => (
+                    <tr key={cat.categoria_id} style={{ borderBottom: '1px solid var(--borda-suave)' }}>
+                      <td style={{ padding: '5px 8px', color: 'var(--texto-principal)' }}>{cat.descricao}</td>
+                      <td style={{ padding: '4px 8px', textAlign: 'right' }}>
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          value={valoresEdit[cat.categoria_id] ?? ''}
+                          onChange={e => setValoresEdit(prev => ({ ...prev, [cat.categoria_id]: e.target.value }))}
+                          placeholder="0,00"
+                          style={{ width: 110, padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, textAlign: 'right' }}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <p style={{ marginTop: 12, fontSize: 11, color: 'var(--texto-terciario)' }}>
+              Deixe em branco ou zero para usar o valor padrão do tipo de atendimento.
+            </p>
+          </div>
+        )}
 
       </div>
     </form>

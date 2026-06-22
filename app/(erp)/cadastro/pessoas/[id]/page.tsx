@@ -11,6 +11,11 @@ export default async function EditarPessoaPage({ params }: { params: { id: strin
   const { rows } = await db.query<Pessoa>(
     `SELECT id, tipo_pessoa, nome, nome_fantasia, cpf_cnpj,
             TO_CHAR(data_nascimento, 'YYYY-MM-DD') AS data_nascimento,
+            sexo, cor_raca, estado_civil, naturalidade, foto,
+            pai_pessoa_id, pai_nome, pai_profissao, pai_paciente,
+            mae_pessoa_id, mae_nome, mae_profissao, mae_paciente,
+            conjuge_pessoa_id, conjuge_nome, conjuge_profissao, conjuge_paciente,
+            indicacao_pessoa_id, indicacao_nome, indicacao_fone, indicacao_ligacao,
             rg_ie, im,
             ind_cliente, ind_fornecedor, ind_banco, ind_transportador, ind_paciente, ind_profissional,
             cep, logradouro, numero, complemento, bairro, cidade, uf, cod_ibge,

@@ -9,7 +9,7 @@ export default async function EditarTipoAtendimentoPage({ params }: { params: { 
   const db       = getDb(session.database_name)
 
   const { rows } = await db.query(
-    `SELECT id, descricao, duracao_min, cor, ativo
+    `SELECT id, descricao, duracao_min, cor, valor, ativo
      FROM tab_agendamento_tipo
      WHERE id = $1 AND empresa_id = $2`,
     [params.id, session.empresa_id_ativa],

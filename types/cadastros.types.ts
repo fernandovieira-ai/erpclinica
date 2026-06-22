@@ -6,6 +6,27 @@ export interface Pessoa {
   nome_fantasia:     string | null
   cpf_cnpj:          string | null
   data_nascimento:   string | null   // YYYY-MM-DD
+  sexo:              'F' | 'M' | null
+  cor_raca:          string | null
+  estado_civil:      string | null
+  naturalidade:      string | null
+  pai_pessoa_id:       number | null
+  pai_nome:            string | null
+  pai_profissao:       string | null
+  pai_paciente:        boolean
+  mae_pessoa_id:       number | null
+  mae_nome:            string | null
+  mae_profissao:       string | null
+  mae_paciente:        boolean
+  conjuge_pessoa_id:   number | null
+  conjuge_nome:        string | null
+  conjuge_profissao:   string | null
+  conjuge_paciente:    boolean
+  indicacao_pessoa_id: number | null
+  indicacao_nome:      string | null
+  indicacao_fone:      string | null
+  indicacao_ligacao:   string | null
+  foto:              string | null
   rg_ie:             string | null
   im:                string | null
   ind_cliente:       boolean

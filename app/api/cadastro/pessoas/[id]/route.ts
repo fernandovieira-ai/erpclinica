@@ -12,6 +12,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const { rows } = await db.query(
     `SELECT id, tipo_pessoa, nome, nome_fantasia, cpf_cnpj,
             TO_CHAR(data_nascimento, 'YYYY-MM-DD') AS data_nascimento,
+            sexo, cor_raca, estado_civil, naturalidade, foto,
+            pai_pessoa_id, pai_nome, pai_profissao, pai_paciente,
+            mae_pessoa_id, mae_nome, mae_profissao, mae_paciente,
+            conjuge_pessoa_id, conjuge_nome, conjuge_profissao, conjuge_paciente,
+            indicacao_pessoa_id, indicacao_nome, indicacao_fone, indicacao_ligacao,
             rg_ie, im,
             ind_cliente, ind_fornecedor, ind_banco, ind_transportador, ind_paciente, ind_profissional,
             cep, logradouro, numero, complemento, bairro, cidade, uf, cod_ibge,
@@ -60,8 +65,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
        cep=$14, logradouro=$15, numero=$16, complemento=$17, bairro=$18, cidade=$19, uf=$20,
        telefone=$21, celular=$22, whatsapp=$23, email=$24, email_nfe=$25,
        limite_credito=$26, banco_nome=$27, banco_agencia=$28, banco_conta=$29, banco_tipo=$30, chave_pix=$31,
-       contribuinte_icms=$32, optante_simples=$33, obs=$34, updated_at=NOW()
-     WHERE id = $35`,
+       contribuinte_icms=$32, optante_simples=$33, obs=$34,
+       sexo=$35, cor_raca=$36, estado_civil=$37, naturalidade=$38, foto=$39,
+       pai_pessoa_id=$40, pai_nome=$41, pai_profissao=$42, pai_paciente=$43,
+       mae_pessoa_id=$44, mae_nome=$45, mae_profissao=$46, mae_paciente=$47,
+       conjuge_pessoa_id=$48, conjuge_nome=$49, conjuge_profissao=$50, conjuge_paciente=$51,
+       indicacao_pessoa_id=$52, indicacao_nome=$53, indicacao_fone=$54, indicacao_ligacao=$55,
+       updated_at=NOW()
+     WHERE id = $56`,
     [
       d.tipo_pessoa, up(d.nome), up(d.nome_fantasia),
       d.cpf_cnpj ?? null, d.data_nascimento || null, up(d.rg_ie), up(d.im),
@@ -74,6 +85,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       d.limite_credito, up(d.banco_nome), d.banco_agencia ?? null,
       d.banco_conta ?? null, up(d.banco_tipo), d.chave_pix ?? null,
       d.contribuinte_icms, d.optante_simples, up(d.obs),
+      d.sexo ?? null, up(d.cor_raca), up(d.estado_civil), up(d.naturalidade), d.foto ?? null,
+      d.pai_pessoa_id ?? null, up(d.pai_nome), up(d.pai_profissao), d.pai_paciente ?? false,
+      d.mae_pessoa_id ?? null, up(d.mae_nome), up(d.mae_profissao), d.mae_paciente ?? false,
+      d.conjuge_pessoa_id ?? null, up(d.conjuge_nome), up(d.conjuge_profissao), d.conjuge_paciente ?? false,
+      d.indicacao_pessoa_id ?? null, up(d.indicacao_nome), d.indicacao_fone ?? null, up(d.indicacao_ligacao),
       params.id,
     ],
   )

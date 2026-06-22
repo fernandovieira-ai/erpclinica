@@ -9,7 +9,7 @@ export default async function ErpLayout({ children }: { children: React.ReactNod
   return (
     <div style={{ display: 'flex' }}>
       <Sidebar session={session} />
-      <div className="content-area" style={{ flex: 1 }}>
+      <div className="content-area" tabIndex={-1} style={{ flex: 1, outline: 'none' }}>
         {children}
       </div>
     </div>

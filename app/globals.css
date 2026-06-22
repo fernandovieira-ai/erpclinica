@@ -269,16 +269,16 @@
 
   /* --- Layout ERP --- */
 
-  .content-area { margin-left: 240px; min-height: 100vh; background-color: var(--bg-page); }
+  .content-area { margin-left: 240px; height: 100vh; overflow: hidden; display: flex; flex-direction: column; background-color: var(--bg-page); }
   .page-header {
     padding: 16px 24px;
     border-bottom: 0.5px solid var(--borda-suave);
     background-color: var(--bg-card);
     display: flex; align-items: center; justify-content: space-between; gap: 16px;
-    position: sticky; top: 0; z-index: 10;
+    flex-shrink: 0;
   }
   .page-title { font-size: 18px; font-weight: 700; color: var(--texto-principal); }
-  .page-body  { padding: 24px; }
+  .page-body  { padding: 24px; flex: 1; overflow-y: auto; }
 
   /* --- Stat cards --- */
 

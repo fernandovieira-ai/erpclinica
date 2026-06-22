@@ -19,6 +19,10 @@ export const agendamentoTipoSchema = z.object({
   descricao:   z.string().min(1).max(80),
   duracao_min: z.number().int().positive().default(30),
   cor:         z.string().regex(/^#[0-9A-Fa-f]{6}$/).default('#0EA5E9'),
+  valor:       z.preprocess(
+    v => (v === null || v === undefined || v === '' || (typeof v === 'number' && isNaN(v))) ? null : Number(v),
+    z.number().nonnegative().nullable(),
+  ).optional(),
   ativo:       z.boolean().default(true),
 })
 

@@ -13,6 +13,7 @@ export interface AgendamentoTipo {
   descricao:   string
   duracao_min: number
   cor:         string
+  valor:       number | null
   ativo:       boolean
   created_at:  string
 }
@@ -96,6 +97,7 @@ export interface TipoAtendimentoListItem {
   descricao:   string
   duracao_min: number
   cor:         string
+  valor:       number | null
   ativo:       boolean
 }
 
@@ -103,6 +105,12 @@ export interface TipoAtendimentoListResponse {
   dados:  TipoAtendimentoListItem[]
   total:  number
   pages:  number
+}
+
+export interface TipoCategoriaValorItem {
+  categoria_id: number
+  descricao:    string
+  valor:        number | null
 }
 
 export interface ProfissionalListItem {

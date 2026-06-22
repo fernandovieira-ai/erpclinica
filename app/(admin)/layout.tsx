@@ -16,7 +16,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   return (
     <div style={{ display: 'flex', backgroundColor: '#0F1117', minHeight: '100vh' }}>
       <AdminSidebar admin={payload as AdminSession} />
-      <div className="content-area" style={{ flex: 1, backgroundColor: '#0F1117' }}>
+      <div className="content-area" tabIndex={-1} style={{ flex: 1, backgroundColor: '#0F1117', outline: 'none' }}>
         {children}
       </div>
     </div>
