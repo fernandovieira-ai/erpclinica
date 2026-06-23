@@ -104,8 +104,16 @@ export default function RecebimentosPage() {
     : agendamentos
 
   const totalValor = agFiltrados.reduce((sum, ag) => {
-    const valor = ag.status_recebimento === 'PAGO' ? (ag.total_recebimento || 0) : (ag.tipo_valor || 0)
-    return sum + (typeof valor === 'number' ? valor : 0)
+    let valor = 0
+
+    if (ag.status_recebimento === 'PAGO' && ag.total_recebimento) {
+      valor = Number(ag.total_recebimento) || 0
+    } else if (ag.tipo_valor) {
+      valor = Number(ag.tipo_valor) || 0
+    }
+
+    console.log(`[DEBUG] AG ${ag.id}: status=${ag.status_recebimento}, total=${ag.total_recebimento}, tipo=${ag.tipo_valor}, valor=${valor}`)
+    return sum + valor
   }, 0)
 
   return (
