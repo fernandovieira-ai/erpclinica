@@ -18,6 +18,27 @@ import AgendamentoModal from '@/components/clinica/AgendamentoModal'
 
 type ViewMode = 'dia' | 'semana' | 'mes' | 'lista'
 
+// Computa os dias bloqueados para qualquer intervalo usando os dados já carregados
+function computarIndisponíveis(
+  inicio: Date,
+  fim: Date,
+  semana: Map<number, boolean>,
+  excecoes: Map<string, boolean>,
+): Set<string> {
+  const result = new Set<string>()
+  const dias = eachDayOfInterval({ start: inicio, end: fim }).slice(0, 42)
+  for (const dia of dias) {
+    const dataStr = format(dia, 'yyyy-MM-dd')
+    if (excecoes.has(dataStr)) {
+      if (excecoes.get(dataStr)) result.add(dataStr)
+      continue
+    }
+    const ativo = semana.get(dia.getDay())
+    if (ativo == null || !ativo) result.add(dataStr)
+  }
+  return result
+}
+
 const HORAS = Array.from({ length: 28 }, (_, i) => {
   const h = Math.floor(i / 2) + 7
   const m = i % 2 === 0 ? 0 : 30
@@ -63,6 +84,12 @@ export default function AgendamentoPage() {
   const [editAg, setEditAg]             = useState<AgendamentoListItem | null>(null)
   const [slotInicio, setSlotInicio]     = useState<Date | null>(null)
   const [buscandoSlot, setBuscandoSlot] = useState(false)
+  const [diasIndisponíveis, setDiasIndisponíveis] = useState<Set<string>>(new Set())
+  const [agendaSemanaRaw, setAgendaSemanaRaw]     = useState<Map<number, boolean>>(new Map())
+  const [excecoesRaw, setExcecoesRaw]             = useState<Map<string, boolean>>(new Map())
+  const [configAgendaAberta, setConfigAgendaAberta] = useState(false)
+  const [agendaProf, setAgendaProf] = useState<Record<number, { hora_inicio: string; hora_fim: string; ativo: boolean; id?: number }>>({})
+  const [salvandoAgenda, setSalvandoAgenda] = useState(false)
 
   const periodo = useMemo(() => {
     if (view === 'dia') return { ini: selectedDay, fim: selectedDay }
@@ -72,6 +99,47 @@ export default function AgendamentoPage() {
     }
     return { ini: startOfMonth(refDate), fim: endOfMonth(refDate) }
   }, [view, refDate, selectedDay])
+
+  const carregarDiasIndisponíveis = useCallback(async () => {
+    if (!profFiltro) {
+      setDiasIndisponíveis(new Set())
+      setAgendaSemanaRaw(new Map())
+      setExcecoesRaw(new Map())
+      return
+    }
+    try {
+      // Busca configuração semanal e exceções em paralelo (2 chamadas ao invés de N)
+      const [resAgenda, resExcecoes] = await Promise.all([
+        fetch(`/api/clinica/agenda-profissional?profissional_id=${profFiltro}`),
+        fetch(`/api/clinica/agenda-profissional-excecao?profissional_id=${profFiltro}`),
+      ])
+
+      const agendaData   = resAgenda.ok   ? await resAgenda.json()   : { dados: [] }
+      const excecoesData = resExcecoes.ok ? await resExcecoes.json() : { dados: [] }
+
+      // Mapa: dia_semana (0-6) → ativo
+      const semana = new Map<number, boolean>()
+      for (const row of (agendaData.dados ?? [])) {
+        semana.set(Number(row.dia_semana), Boolean(row.ativo))
+      }
+
+      // Mapa: 'YYYY-MM-DD' → nao_atende
+      const excecoes = new Map<string, boolean>()
+      for (const exc of (excecoesData.dados ?? [])) {
+        const dataStr = typeof exc.data === 'string'
+          ? exc.data.slice(0, 10)
+          : format(new Date(exc.data), 'yyyy-MM-dd')
+        excecoes.set(dataStr, Boolean(exc.nao_atende))
+      }
+
+      setAgendaSemanaRaw(semana)
+      setExcecoesRaw(excecoes)
+      setDiasIndisponíveis(computarIndisponíveis(periodo.ini, periodo.fim, semana, excecoes))
+    } catch {
+      // Silenciosamente falha — não bloqueia nenhum dia
+      setDiasIndisponíveis(new Set())
+    }
+  }, [profFiltro, periodo])
 
   const carregar = useCallback(async () => {
     setLoading(true)
@@ -86,7 +154,10 @@ export default function AgendamentoPage() {
       const data = await res.json()
       setAgendamentos(data.dados ?? [])
     } finally { setLoading(false) }
-  }, [periodo, profFiltro])
+
+    // Carrega dias indisponíveis sem bloquear
+    carregarDiasIndisponíveis().catch(() => {})
+  }, [periodo, profFiltro, carregarDiasIndisponíveis])
 
   const carregarMes = useCallback(async () => {
     const ini = startOfMonth(calMes)
@@ -115,6 +186,14 @@ export default function AgendamentoPage() {
 
   useEffect(() => { carregar() }, [carregar])
   useEffect(() => { carregarMes() }, [carregarMes])
+
+  // Dias indisponíveis para o mini calendário lateral (cobre a grade completa do mês)
+  const diasIndisponíveisCal = useMemo(() => {
+    if (!profFiltro) return new Set<string>()
+    const ini = startOfWeek(startOfMonth(calMes), { weekStartsOn: 0 })
+    const fim = endOfWeek(endOfMonth(calMes), { weekStartsOn: 0 })
+    return computarIndisponíveis(ini, fim, agendaSemanaRaw, excecoesRaw)
+  }, [profFiltro, calMes, agendaSemanaRaw, excecoesRaw])
 
   useEffect(() => {
     if (!isSameMonth(selectedDay, calMes)) setCalMes(selectedDay)
@@ -296,22 +375,26 @@ export default function AgendamentoPage() {
           {/* Dias */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', rowGap: 1 }}>
             {diasGrade.map(dia => {
-              const key        = format(dia, 'yyyy-MM-dd')
-              const isSelected = isSameDay(dia, selectedDay)
-              const mesAtual   = isSameMonth(dia, calMes)
-              const temAg      = agsMes.has(key)
-              const hoje       = isToday(dia)
+              const key          = format(dia, 'yyyy-MM-dd')
+              const isSelected   = isSameDay(dia, selectedDay)
+              const mesAtual     = isSameMonth(dia, calMes)
+              const temAg        = agsMes.has(key)
+              const hoje         = isToday(dia)
+              const indisponível = profFiltro > 0 && mesAtual && diasIndisponíveisCal.has(key)
 
               return (
                 <div
                   key={key}
                   onClick={() => {
-                    setSelectedDay(dia)
-                    if (view !== 'dia') setView('dia')
+                    if (!indisponível) {
+                      setSelectedDay(dia)
+                      if (view !== 'dia') setView('dia')
+                    }
                   }}
+                  title={indisponível ? 'Profissional não atende neste dia' : undefined}
                   style={{
                     display: 'flex', flexDirection: 'column', alignItems: 'center',
-                    cursor: 'pointer', paddingBottom: 2,
+                    cursor: indisponível ? 'not-allowed' : 'pointer', paddingBottom: 2,
                   }}
                 >
                   <div style={{
@@ -324,16 +407,16 @@ export default function AgendamentoPage() {
                       ? '#fff'
                       : hoje
                       ? 'var(--cor-primaria)'
-                      : mesAtual
-                      ? 'var(--texto-principal)'
-                      : 'var(--texto-terciario)',
+                      : 'var(--texto-principal)',
                     background: isSelected
                       ? 'var(--cor-primaria)'
                       : hoje && !isSelected
                       ? 'var(--cor-primaria-light)'
+                      : indisponível
+                      ? 'rgba(0,0,0,0.07)'
                       : 'transparent',
                     transition: 'background 0.1s',
-                    opacity: mesAtual ? 1 : 0.4,
+                    opacity: !mesAtual ? 0.4 : indisponível ? 0.45 : 1,
                   }}>
                     {format(dia, 'd')}
                   </div>
@@ -342,7 +425,7 @@ export default function AgendamentoPage() {
                     background: isSelected
                       ? 'rgba(255,255,255,0.6)'
                       : 'var(--cor-primaria)',
-                    opacity: temAg && mesAtual ? 1 : 0,
+                    opacity: temAg && mesAtual && !indisponível ? 1 : 0,
                     marginTop: 1,
                   }} />
                 </div>
@@ -614,32 +697,51 @@ export default function AgendamentoPage() {
         <div style={{ display: 'grid', gridTemplateColumns: '58px repeat(7, 1fr)', minWidth: 700 }}>
 
           <div style={{ height: 48, borderBottom: '0.5px solid var(--borda-suave)' }} />
-          {dias.map(dia => (
+          {dias.map(dia => {
+            const dataStr = format(dia, 'yyyy-MM-dd')
+            const indisponível = diasIndisponíveis.has(dataStr)
+            return (
             <div
               key={dia.toISOString()}
               style={{
                 height: 48, borderBottom: '0.5px solid var(--borda-suave)',
                 borderLeft: '0.5px solid var(--borda-suave)',
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer',
-                background: isToday(dia) ? 'rgba(15,110,86,0.04)' : undefined,
+                cursor: indisponível ? 'not-allowed' : 'pointer',
+                background: isToday(dia)
+                  ? 'rgba(15,110,86,0.04)'
+                  : indisponível
+                  ? 'rgba(0,0,0,0.03)'
+                  : undefined,
               }}
-              onClick={() => { setSelectedDay(dia); setView('dia') }}
+              onClick={() => { if (!indisponível) { setSelectedDay(dia); setView('dia') } }}
+              title={indisponível ? 'Profissional não atende neste dia' : undefined}
             >
-              <div style={{ fontSize: 10, color: 'var(--texto-terciario)', textTransform: 'uppercase', fontWeight: 600 }}>
+              <div style={{
+                fontSize: 10, color: indisponível ? 'var(--texto-terciario)' : 'var(--texto-terciario)', textTransform: 'uppercase', fontWeight: 600, opacity: indisponível ? 0.45 : 1 }}>
                 {format(dia, 'EEE', { locale: ptBR })}
               </div>
               <div style={{
                 fontSize: 18, fontWeight: isToday(dia) ? 700 : 400,
-                color: isToday(dia) ? 'var(--cor-primaria)' : 'var(--texto-principal)',
+                color: isToday(dia)
+                  ? 'var(--cor-primaria)'
+                  : indisponível
+                  ? 'var(--texto-terciario)'
+                  : 'var(--texto-principal)',
                 width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center',
                 borderRadius: '50%',
-                background: isToday(dia) ? 'var(--cor-primaria-light)' : undefined,
+                background: isToday(dia)
+                  ? 'var(--cor-primaria-light)'
+                  : indisponível
+                  ? 'rgba(0,0,0,0.08)'
+                  : undefined,
+                opacity: indisponível ? 0.5 : 1,
               }}>
                 {format(dia, 'd')}
               </div>
             </div>
-          ))}
+            )
+          })}
 
           {HORAS.map(slot => (
             <>
@@ -657,6 +759,8 @@ export default function AgendamentoPage() {
               </div>
 
               {dias.map(dia => {
+                const dataStr = format(dia, 'yyyy-MM-dd')
+                const indisponível = diasIndisponíveis.has(dataStr)
                 const ags = agendamentos.filter(ag => {
                   const ini = parseISO(ag.data_hora_inicio)
                   return isSameDay(ini, dia) && ini.getHours() === slot.h && ini.getMinutes() === slot.m
@@ -669,10 +773,16 @@ export default function AgendamentoPage() {
                       borderLeft: '0.5px solid var(--borda-suave)',
                       borderBottom: slot.m === 30 ? '0.5px solid var(--borda-suave)' : '0.5px solid rgba(0,0,0,0.03)',
                       position: 'relative',
-                      cursor: 'pointer',
-                      background: isToday(dia) ? 'rgba(15,110,86,0.02)' : undefined,
+                      cursor: indisponível ? 'not-allowed' : 'pointer',
+                      background: isToday(dia)
+                        ? 'rgba(15,110,86,0.02)'
+                        : indisponível
+                        ? 'rgba(239, 68, 68, 0.03)'
+                        : undefined,
+                      opacity: indisponível ? 0.6 : 1,
                     }}
-                    onClick={() => abrirNovo(dia, slot)}
+                    onClick={() => !indisponível && abrirNovo(dia, slot)}
+                    title={indisponível ? 'Profissional não atende neste dia' : undefined}
                   >
                     {ags.map(ag => {
                       const dur         = durMinutes(ag)
@@ -741,6 +851,8 @@ export default function AgendamentoPage() {
             {sem.map(dia => {
               const ags      = agendamentos.filter(ag => isSameDay(parseISO(ag.data_hora_inicio), dia))
               const mesAtual = dia.getMonth() === refDate.getMonth()
+              const dataStr  = format(dia, 'yyyy-MM-dd')
+              const indisponível = diasIndisponíveis.has(dataStr)
               return (
                 <div
                   key={dia.toISOString()}
@@ -749,17 +861,31 @@ export default function AgendamentoPage() {
                     border: '0.5px solid var(--borda-suave)',
                     padding: '4px 6px',
                     opacity: mesAtual ? 1 : 0.35,
-                    cursor: 'pointer',
-                    background: isToday(dia) ? 'rgba(15,110,86,0.03)' : undefined,
+                    cursor: indisponível ? 'not-allowed' : 'pointer',
+                    background: isToday(dia)
+                      ? 'rgba(15,110,86,0.03)'
+                      : indisponível && mesAtual
+                      ? 'rgba(0,0,0,0.03)'
+                      : undefined,
                   }}
-                  onClick={() => { setSelectedDay(dia); setView('dia') }}
+                  onClick={() => { if (!indisponível) { setSelectedDay(dia); setView('dia') } }}
+                  title={indisponível && mesAtual ? 'Profissional não atende neste dia' : undefined}
                 >
                   <div style={{
                     fontSize: 12, fontWeight: isToday(dia) ? 700 : 400,
-                    color: isToday(dia) ? 'var(--cor-primaria)' : 'var(--texto-secundario)',
+                    color: isToday(dia)
+                      ? 'var(--cor-primaria)'
+                      : indisponível && mesAtual
+                      ? 'var(--texto-terciario)'
+                      : 'var(--texto-secundario)',
                     width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
                     borderRadius: '50%',
-                    background: isToday(dia) ? 'var(--cor-primaria-light)' : undefined,
+                    background: isToday(dia)
+                      ? 'var(--cor-primaria-light)'
+                      : indisponível && mesAtual
+                      ? 'rgba(0,0,0,0.08)'
+                      : undefined,
+                    opacity: indisponível && mesAtual ? 0.5 : 1,
                     marginBottom: 4,
                   }}>
                     {format(dia, 'd')}

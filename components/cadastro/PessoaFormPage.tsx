@@ -1,14 +1,43 @@
 'use client'
 
-import { forwardRef, useEffect, useRef, useState } from 'react'
+import { forwardRef, useEffect, useRef, useState, useCallback } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Save, Trash2, ArrowLeft, Search, Plus, X, Camera, User, RefreshCw } from 'lucide-react'
+import { Save, Trash2, ArrowLeft, Search, Plus, X, Camera, User, RefreshCw, Trash } from 'lucide-react'
 import { pessoaSchema, type PessoaInput } from '@/lib/validators/pessoa.schema'
 import type { Pessoa } from '@/types/cadastros.types'
 import MoneyInput from '@/components/ui/MoneyInput'
+
+interface AgendaDia {
+  id?:           number
+  dia_semana:    number
+  hora_inicio:   string
+  hora_fim:      string
+  intervalo_min: number
+  ativo:         boolean
+}
+
+interface AgendaPausa {
+  id?:         number
+  dia_semana:  number
+  hora_inicio: string
+  hora_fim:    string
+  descricao?:  string
+}
+
+interface AgendaExcecao {
+  id?:         number
+  data:        string
+  descricao?:  string
+  nao_atende:  boolean
+  hora_inicio?: string
+  hora_fim?:   string
+  intervalo_min?: number
+}
+
+const DIAS_SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
 
 interface Props { pessoa?: Pessoa; papelInicial?: string }
 
@@ -431,16 +460,174 @@ function mascaraCpfCnpj(valor: string, pj: boolean): string {
     .replace(/\.(\d{3})(\d{1,2})$/, '.$1-$2')
 }
 
-const ABAS_PESSOA = ['Principal', 'Financeiro', 'Fiscal / Obs'] as const
+const ABAS_PESSOA = ['Principal', 'Financeiro', 'Fiscal / Obs', 'Agenda'] as const
 
 export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
   const router  = useRouter()
   const [saving,       setSaving]      = useState(false)
   const [deleting,     setDeleting]    = useState(false)
   const [excluding,    setExcluding]   = useState(false)
-  const [aba,          setAba]         = useState<'Principal' | 'Financeiro' | 'Fiscal / Obs'>('Principal')
+  const [aba,          setAba]         = useState<'Principal' | 'Financeiro' | 'Fiscal / Obs' | 'Agenda'>('Principal')
   const [buscandoCep,  setBuscandoCep]  = useState(false)
   const [buscandoCnpj, setBuscandoCnpj] = useState(false)
+
+  // ── Agenda do profissional ───────────────────────────────
+  const [agenda,            setAgenda]            = useState<AgendaDia[]>([])
+  const [pausas,            setPausas]            = useState<AgendaPausa[]>([])
+  const [excecoes,          setExcecoes]          = useState<AgendaExcecao[]>([])
+  const [loadingAgenda,     setLoadingAgenda]     = useState(false)
+  const [salvandoDia,       setSalvandoDia]       = useState<number | null>(null)
+  const [salvarPausaAbrirEm, setSalvarPausaAbrirEm] = useState<number | null>(null)
+  const [mostrarNovaExcecao, setMostrarNovaExcecao] = useState(false)
+
+  const carregarAgenda = useCallback(async () => {
+    if (!pessoa?.id) return
+    setLoadingAgenda(true)
+    try {
+      const [resDias, resPausas, resExcecoes] = await Promise.all([
+        fetch(`/api/clinica/agenda-profissional?profissional_id=${pessoa.id}`),
+        fetch(`/api/clinica/agenda-profissional-pausa?profissional_id=${pessoa.id}`),
+        fetch(`/api/clinica/agenda-profissional-excecao?profissional_id=${pessoa.id}`),
+      ])
+      const dias = await resDias.json()
+      const pausasData = await resPausas.json()
+      const excecoesDatas = await resExcecoes.json()
+      setAgenda(dias.dados ?? [])
+      setPausas(pausasData.dados ?? [])
+      setExcecoes(excecoesDatas.dados ?? [])
+    } finally { setLoadingAgenda(false) }
+  }, [pessoa?.id])
+
+  useEffect(() => {
+    if (aba === 'Agenda' && pessoa?.id) carregarAgenda()
+  }, [aba, carregarAgenda, pessoa?.id])
+
+  // Estado local da grade (7 dias)
+  const [grade, setGrade] = useState<Record<number, { hora_inicio: string; hora_fim: string; intervalo_min: number; ativo: boolean; id?: number }>>(() => ({}))
+
+  useEffect(() => {
+    const mapa: typeof grade = {}
+    for (const d of agenda) {
+      mapa[d.dia_semana] = { hora_inicio: d.hora_inicio, hora_fim: d.hora_fim, intervalo_min: d.intervalo_min, ativo: d.ativo, id: d.id }
+    }
+    setGrade(mapa)
+  }, [agenda])
+
+  async function salvarDia(dia: number) {
+    if (!pessoa?.id) return
+    const slot = grade[dia]
+    if (!slot?.hora_inicio || !slot?.hora_fim) { toast.error('Informe hora início e fim'); return }
+    setSalvandoDia(dia)
+    try {
+      const res = await fetch('/api/clinica/agenda-profissional', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profissional_id: pessoa.id,
+          dia_semana:      dia,
+          hora_inicio:     slot.hora_inicio,
+          hora_fim:        slot.hora_fim,
+          intervalo_min:   slot.intervalo_min ?? 30,
+          ativo:           slot.ativo ?? true,
+        }),
+      })
+      if (!res.ok) { toast.error('Erro ao salvar horário'); return }
+      const salvo = await res.json()
+      setGrade(g => ({ ...g, [dia]: { ...g[dia], id: salvo.id } }))
+      toast.success(`${DIAS_SEMANA[dia]} salvo!`)
+    } finally { setSalvandoDia(null) }
+  }
+
+  async function removerDia(dia: number) {
+    const slot = grade[dia]
+    if (!slot?.id) { setGrade(g => { const c = { ...g }; delete c[dia]; return c }); return }
+    if (!confirm(`Remover ${DIAS_SEMANA[dia]} da agenda?`)) return
+    try {
+      await fetch(`/api/clinica/agenda-profissional/${slot.id}`, { method: 'DELETE' })
+      setGrade(g => { const c = { ...g }; delete c[dia]; return c })
+      toast.success(`${DIAS_SEMANA[dia]} removido`)
+    } catch { toast.error('Erro ao remover') }
+  }
+
+  function adicionarDia(dia: number) {
+    setGrade(g => ({ ...g, [dia]: { hora_inicio: '08:00', hora_fim: '18:00', intervalo_min: 30, ativo: true } }))
+  }
+
+  // ── Funções de pausa intraday ───────────────────────────────
+  async function salvarPausa(dia: number, pausa: AgendaPausa) {
+    if (!pessoa?.id || !pausa.hora_inicio || !pausa.hora_fim) {
+      toast.error('Informe horários da pausa')
+      return
+    }
+    try {
+      const res = await fetch('/api/clinica/agenda-profissional-pausa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profissional_id: pessoa.id,
+          dia_semana: dia,
+          hora_inicio: pausa.hora_inicio,
+          hora_fim: pausa.hora_fim,
+          descricao: pausa.descricao || null,
+        }),
+      })
+      if (!res.ok) { toast.error('Erro ao salvar pausa'); return }
+      const salva = await res.json()
+      setPausas(ps => [...ps.filter(p => !(p.dia_semana === dia && !p.id)), { ...pausa, id: salva.id, dia_semana: dia }])
+      toast.success('Pausa salva!')
+      setSalvarPausaAbrirEm(null)
+    } catch { toast.error('Erro ao salvar pausa') }
+  }
+
+  async function removerPausa(pausaId: number) {
+    if (!confirm('Remover esta pausa?')) return
+    try {
+      await fetch(`/api/clinica/agenda-profissional-pausa/${pausaId}`, { method: 'DELETE' })
+      setPausas(ps => ps.filter(p => p.id !== pausaId))
+      toast.success('Pausa removida')
+    } catch { toast.error('Erro ao remover pausa') }
+  }
+
+  // ── Funções de exceção (data específica) ───────────────────────────────
+  async function salvarExcecao(exc: AgendaExcecao) {
+    if (!pessoa?.id || !exc.data) {
+      toast.error('Informe a data da exceção')
+      return
+    }
+    if (!exc.nao_atende && (!exc.hora_inicio || !exc.hora_fim)) {
+      toast.error('Se atende neste dia, informe os horários')
+      return
+    }
+    try {
+      const res = await fetch('/api/clinica/agenda-profissional-excecao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profissional_id: pessoa.id,
+          data: exc.data,
+          descricao: exc.descricao || null,
+          nao_atende: exc.nao_atende,
+          hora_inicio: exc.nao_atende ? null : exc.hora_inicio,
+          hora_fim: exc.nao_atende ? null : exc.hora_fim,
+          intervalo_min: exc.intervalo_min ?? 30,
+        }),
+      })
+      if (!res.ok) { toast.error('Erro ao salvar exceção'); return }
+      const salva = await res.json()
+      setExcecoes(es => [...es.filter(e => e.data !== exc.data), { ...exc, id: salva.id }])
+      toast.success('Exceção salva!')
+      setMostrarNovaExcecao(false)
+    } catch { toast.error('Erro ao salvar exceção') }
+  }
+
+  async function removerExcecao(excecaoId: number) {
+    if (!confirm('Remover esta exceção?')) return
+    try {
+      await fetch(`/api/clinica/agenda-profissional-excecao/${excecaoId}`, { method: 'DELETE' })
+      setExcecoes(es => es.filter(e => e.id !== excecaoId))
+      toast.success('Exceção removida')
+    } catch { toast.error('Erro ao remover exceção') }
+  }
 
   const { register, handleSubmit, reset, watch, setValue, getValues, formState: { errors } } = useForm<PessoaInput>({
     resolver: zodResolver(pessoaSchema),
@@ -1089,6 +1276,432 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
               />
             </div>
           </Secao>
+        )}
+
+        {aba === 'Agenda' && (
+          <>
+            <Secao titulo="Horários por Dia da Semana">
+              {!pessoa?.id ? (
+                <div style={{ padding: '12px 4px', fontSize: 12, color: 'var(--texto-secundario)' }}>
+                  Salve o cadastro primeiro para configurar a agenda do profissional.
+                </div>
+              ) : !watch('ind_profissional') ? (
+                <div style={{ padding: '12px 4px', fontSize: 12, color: 'var(--texto-secundario)' }}>
+                  Marque "Profissional" na aba Principal para liberar a agenda.
+                </div>
+              ) : (
+                <>
+                  {loadingAgenda && (
+                    <div style={{ fontSize: 12, color: 'var(--texto-terciario)', padding: 4 }}>Carregando...</div>
+                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {DIAS_SEMANA.map((nomeDia, dia) => {
+                      const slot = grade[dia]
+                      const temSlot = !!slot
+                      const pausasDoDia = pausas.filter(p => p.dia_semana === dia)
+                      return (
+                        <div key={dia} style={{
+                          border: '1px solid var(--borda-media)',
+                          borderRadius: 4,
+                          padding: '8px 10px',
+                          backgroundColor: temSlot ? 'transparent' : 'var(--bg-input)',
+                        }}>
+                          {/* Header dia */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: temSlot ? 8 : 0 }}>
+                            {temSlot ? (
+                              <input
+                                type="checkbox"
+                                checked={slot.ativo}
+                                onChange={e => setGrade(g => ({ ...g, [dia]: { ...g[dia], ativo: e.target.checked } }))}
+                                title="Atende neste dia"
+                                style={{ cursor: 'pointer', width: 16, height: 16 }}
+                              />
+                            ) : (
+                              <input
+                                type="checkbox"
+                                checked={false}
+                                onChange={() => adicionarDia(dia)}
+                                title="Clique para habilitar este dia"
+                                style={{ cursor: 'pointer', width: 16, height: 16 }}
+                              />
+                            )}
+                            <span style={{
+                              fontSize: 13, fontWeight: 600,
+                              color: temSlot ? 'var(--texto-principal)' : 'var(--texto-secundario)',
+                              flex: 1,
+                            }}>
+                              {nomeDia}
+                            </span>
+                            {temSlot && (
+                              <button
+                                type="button"
+                                onClick={() => removerDia(dia)}
+                                title="Remover dia da agenda"
+                                style={{
+                                  padding: '2px 6px', background: 'none',
+                                  border: '1px solid var(--borda-media)', borderRadius: 3,
+                                  cursor: 'pointer', color: 'var(--cor-erro)', fontSize: 11, lineHeight: 1,
+                                }}
+                              >
+                                <Trash size={11} />
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Campos de horário */}
+                          {temSlot && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                <label style={{ fontSize: 11, color: 'var(--texto-secundario)', width: 50 }}>Início:</label>
+                                <input
+                                  type="time"
+                                  value={slot.hora_inicio}
+                                  onChange={e => setGrade(g => ({ ...g, [dia]: { ...g[dia], hora_inicio: e.target.value } }))}
+                                  style={{
+                                    padding: '2px 4px', fontSize: 12, fontFamily: 'var(--fonte-mono)', width: 80,
+                                    backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)',
+                                    border: '1px solid var(--borda-media)', borderRadius: 3,
+                                  }}
+                                />
+                                <label style={{ fontSize: 11, color: 'var(--texto-secundario)', marginLeft: 8, width: 30 }}>Fim:</label>
+                                <input
+                                  type="time"
+                                  value={slot.hora_fim}
+                                  onChange={e => setGrade(g => ({ ...g, [dia]: { ...g[dia], hora_fim: e.target.value } }))}
+                                  style={{
+                                    padding: '2px 4px', fontSize: 12, fontFamily: 'var(--fonte-mono)', width: 80,
+                                    backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)',
+                                    border: '1px solid var(--borda-media)', borderRadius: 3,
+                                  }}
+                                />
+                                <label style={{ fontSize: 11, color: 'var(--texto-secundario)', marginLeft: 8 }}>Int.:</label>
+                                <select
+                                  value={slot.intervalo_min}
+                                  onChange={e => setGrade(g => ({ ...g, [dia]: { ...g[dia], intervalo_min: Number(e.target.value) } }))}
+                                  style={{
+                                    padding: '2px 4px', fontSize: 11, width: 70,
+                                    backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)',
+                                    border: '1px solid var(--borda-media)', borderRadius: 3,
+                                  }}
+                                >
+                                  <option value={15}>15 min</option>
+                                  <option value={20}>20 min</option>
+                                  <option value={30}>30 min</option>
+                                  <option value={45}>45 min</option>
+                                  <option value={60}>60 min</option>
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() => salvarDia(dia)}
+                                  disabled={salvandoDia === dia}
+                                  style={{
+                                    display: 'flex', alignItems: 'center', gap: 3, marginLeft: 'auto',
+                                    padding: '2px 8px', fontSize: 11,
+                                    backgroundColor: 'var(--cor-primaria)', color: '#fff',
+                                    border: 'none', borderRadius: 3, cursor: 'pointer',
+                                    opacity: salvandoDia === dia ? 0.6 : 1,
+                                  }}
+                                >
+                                  <Save size={11} /> {salvandoDia === dia ? '...' : 'Salvar'}
+                                </button>
+                              </div>
+
+                              {/* Pausas do dia */}
+                              {pausasDoDia.length > 0 && (
+                                <div style={{ paddingLeft: 8, borderLeft: '2px solid var(--borda-suave)' }}>
+                                  <div style={{ fontSize: 11, color: 'var(--texto-secundario)', marginBottom: 4 }}>Períodos de pausa:</div>
+                                  {pausasDoDia.map(pausa => (
+                                    <div key={pausa.id} style={{
+                                      display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, marginBottom: 3,
+                                    }}>
+                                      <span style={{ color: 'var(--texto-principal)' }}>
+                                        {pausa.hora_inicio} - {pausa.hora_fim}
+                                        {pausa.descricao && <span style={{ color: 'var(--texto-secundario)', marginLeft: 4 }}>({pausa.descricao})</span>}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => removerPausa(pausa.id!)}
+                                        style={{
+                                          marginLeft: 'auto', padding: '1px 4px', background: 'none',
+                                          border: '1px solid var(--borda-media)', borderRadius: 2,
+                                          cursor: 'pointer', color: 'var(--cor-erro)', lineHeight: 1, fontSize: 10,
+                                        }}
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Adicionar pausa */}
+                              {salvarPausaAbrirEm === dia ? (
+                                <div style={{ paddingLeft: 8, borderLeft: '2px solid var(--cor-primaria)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <input type="time" id={`pausa_ini_${dia}`} placeholder="Início" style={{
+                                    padding: '2px 4px', fontSize: 11, fontFamily: 'var(--fonte-mono)', width: 70,
+                                    backgroundColor: 'var(--bg-input)', border: '1px solid var(--cor-primaria)', borderRadius: 3,
+                                  }} />
+                                  <input type="time" id={`pausa_fim_${dia}`} placeholder="Fim" style={{
+                                    padding: '2px 4px', fontSize: 11, fontFamily: 'var(--fonte-mono)', width: 70,
+                                    backgroundColor: 'var(--bg-input)', border: '1px solid var(--cor-primaria)', borderRadius: 3,
+                                  }} />
+                                  <input type="text" id={`pausa_desc_${dia}`} placeholder="Ex: Almoço" maxLength={30} style={{
+                                    padding: '2px 4px', fontSize: 11, flex: 1,
+                                    backgroundColor: 'var(--bg-input)', border: '1px solid var(--cor-primaria)', borderRadius: 3,
+                                  }} />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const ini = (document.getElementById(`pausa_ini_${dia}`) as HTMLInputElement).value
+                                      const fim = (document.getElementById(`pausa_fim_${dia}`) as HTMLInputElement).value
+                                      const desc = (document.getElementById(`pausa_desc_${dia}`) as HTMLInputElement).value
+                                      if (!ini || !fim) { toast.error('Informe horários'); return }
+                                      salvarPausa(dia, { dia_semana: dia, hora_inicio: ini, hora_fim: fim, descricao: desc || undefined })
+                                    }}
+                                    style={{
+                                      padding: '2px 6px', fontSize: 10,
+                                      backgroundColor: 'var(--cor-primaria)', color: '#fff',
+                                      border: 'none', borderRadius: 3, cursor: 'pointer', whiteSpace: 'nowrap',
+                                    }}
+                                  >
+                                    ✓
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSalvarPausaAbrirEm(null)}
+                                    style={{
+                                      padding: '2px 6px', fontSize: 10, background: 'none',
+                                      border: '1px solid var(--borda-media)', borderRadius: 3,
+                                      cursor: 'pointer', color: 'var(--texto-terciario)',
+                                    }}
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setSalvarPausaAbrirEm(dia)}
+                                  style={{
+                                    display: 'flex', alignItems: 'center', gap: 3, padding: '2px 8px', fontSize: 11,
+                                    background: 'none', border: '1px dashed var(--borda-media)', borderRadius: 3,
+                                    cursor: 'pointer', color: 'var(--texto-terciario)', width: 'fit-content',
+                                  }}
+                                >
+                                  <Plus size={11} /> Adicionar pausa
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+            </Secao>
+
+            {/* Seção de exceções */}
+            {pessoa?.id && watch('ind_profissional') && (
+              <Secao titulo="Exceções (Datas Específicas)" style={{ marginTop: 12 }}>
+                {excecoes.length > 0 && (
+                  <div style={{ marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {excecoes.map(exc => {
+                      const dataObj = new Date(exc.data + 'T00:00:00')
+                      const dataFormatada = dataObj.toLocaleDateString('pt-BR')
+                      return (
+                        <div key={exc.id} style={{
+                          border: '1px solid var(--borda-media)',
+                          borderRadius: 4,
+                          padding: '6px 8px',
+                          backgroundColor: exc.nao_atende ? '#fee' : '#efe',
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--texto-principal)' }}>
+                                {dataFormatada}
+                              </div>
+                              <div style={{ fontSize: 11, color: 'var(--texto-secundario)' }}>
+                                {exc.nao_atende ? (
+                                  <>Não atende</>
+                                ) : (
+                                  <>{exc.hora_inicio} - {exc.hora_fim} (intervalo: {exc.intervalo_min} min)</>
+                                )}
+                              </div>
+                              {exc.descricao && (
+                                <div style={{ fontSize: 10, color: 'var(--texto-terciario)', marginTop: 2 }}>
+                                  {exc.descricao}
+                                </div>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => removerExcecao(exc.id!)}
+                              style={{
+                                padding: '2px 6px', background: 'none',
+                                border: '1px solid var(--borda-media)', borderRadius: 3,
+                                cursor: 'pointer', color: 'var(--cor-erro)', lineHeight: 1,
+                              }}
+                            >
+                              <Trash size={11} />
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* Form nova exceção */}
+                {mostrarNovaExcecao ? (
+                  <div style={{
+                    border: '1px solid var(--cor-primaria)',
+                    borderRadius: 4,
+                    padding: '8px 10px',
+                    backgroundColor: 'var(--bg-input)',
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <label style={{ fontSize: 11, color: 'var(--texto-secundario)', width: 50 }}>Data:</label>
+                        <input
+                          type="date"
+                          id="exc_data"
+                          style={{
+                            padding: '2px 4px', fontSize: 11, fontFamily: 'var(--fonte-mono)',
+                            backgroundColor: '#fff', color: 'var(--texto-principal)',
+                            border: '1px solid var(--borda-media)', borderRadius: 3, flex: 1, maxWidth: 140,
+                          }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <label style={{ fontSize: 11, color: 'var(--texto-secundario)', width: 50 }}>Descrição:</label>
+                        <input
+                          type="text"
+                          id="exc_desc"
+                          placeholder="Ex: Férias, Feriado, etc"
+                          maxLength={100}
+                          style={{
+                            padding: '2px 4px', fontSize: 11,
+                            backgroundColor: '#fff', color: 'var(--texto-principal)',
+                            border: '1px solid var(--borda-media)', borderRadius: 3, flex: 1,
+                          }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <label style={{ fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <input
+                            type="checkbox"
+                            id="exc_nao_atende"
+                            defaultChecked={true}
+                            style={{ cursor: 'pointer' }}
+                            onChange={e => {
+                              const inputs = document.querySelectorAll('#exc_hora_ini, #exc_hora_fim, #exc_intervalo') as NodeListOf<HTMLInputElement>
+                              inputs.forEach(i => i.disabled = e.target.checked)
+                            }}
+                          />
+                          <span style={{ color: 'var(--texto-principal)' }}>Não atende o dia todo</span>
+                        </label>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 20 }}>
+                        <label style={{ fontSize: 11, color: 'var(--texto-secundario)', width: 50 }}>Ou início:</label>
+                        <input
+                          type="time"
+                          id="exc_hora_ini"
+                          disabled
+                          style={{
+                            padding: '2px 4px', fontSize: 11, fontFamily: 'var(--fonte-mono)',
+                            backgroundColor: '#f0f0f0', color: 'var(--texto-principal)',
+                            border: '1px solid var(--borda-media)', borderRadius: 3, width: 80,
+                          }}
+                        />
+                        <label style={{ fontSize: 11, color: 'var(--texto-secundario)' }}>Fim:</label>
+                        <input
+                          type="time"
+                          id="exc_hora_fim"
+                          disabled
+                          style={{
+                            padding: '2px 4px', fontSize: 11, fontFamily: 'var(--fonte-mono)',
+                            backgroundColor: '#f0f0f0', color: 'var(--texto-principal)',
+                            border: '1px solid var(--borda-media)', borderRadius: 3, width: 80,
+                          }}
+                        />
+                        <label style={{ fontSize: 11, color: 'var(--texto-secundario)', marginLeft: 8 }}>Int.:</label>
+                        <select
+                          id="exc_intervalo"
+                          disabled
+                          defaultValue={30}
+                          style={{
+                            padding: '2px 4px', fontSize: 11,
+                            backgroundColor: '#f0f0f0', color: 'var(--texto-principal)',
+                            border: '1px solid var(--borda-media)', borderRadius: 3, width: 70,
+                          }}
+                        >
+                          <option value={15}>15 min</option>
+                          <option value={20}>20 min</option>
+                          <option value={30}>30 min</option>
+                          <option value={45}>45 min</option>
+                          <option value={60}>60 min</option>
+                        </select>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const data = (document.getElementById('exc_data') as HTMLInputElement).value
+                            const desc = (document.getElementById('exc_desc') as HTMLInputElement).value
+                            const nao_atende = (document.getElementById('exc_nao_atende') as HTMLInputElement).checked
+                            const hora_ini = (document.getElementById('exc_hora_ini') as HTMLInputElement).value
+                            const hora_fim = (document.getElementById('exc_hora_fim') as HTMLInputElement).value
+                            const intervalo = (document.getElementById('exc_intervalo') as HTMLSelectElement).value
+                            salvarExcecao({
+                              data,
+                              descricao: desc || undefined,
+                              nao_atende,
+                              hora_inicio: nao_atende ? undefined : hora_ini,
+                              hora_fim: nao_atende ? undefined : hora_fim,
+                              intervalo_min: nao_atende ? undefined : Number(intervalo),
+                            })
+                          }}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 3,
+                            padding: '2px 8px', fontSize: 11,
+                            backgroundColor: 'var(--cor-primaria)', color: '#fff',
+                            border: 'none', borderRadius: 3, cursor: 'pointer',
+                          }}
+                        >
+                          <Save size={11} /> Salvar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setMostrarNovaExcecao(false)}
+                          style={{
+                            padding: '2px 8px', fontSize: 11, background: 'none',
+                            border: '1px solid var(--borda-media)', borderRadius: 3,
+                            cursor: 'pointer', color: 'var(--texto-terciario)',
+                          }}
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setMostrarNovaExcecao(true)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 3, width: 'fit-content',
+                      padding: '2px 8px', fontSize: 11,
+                      background: 'none', border: '1px dashed var(--borda-media)',
+                      borderRadius: 3, cursor: 'pointer', color: 'var(--texto-terciario)',
+                    }}
+                  >
+                    <Plus size={11} /> Adicionar exceção
+                  </button>
+                )}
+              </Secao>
+            )}
+          </>
         )}
 
       </div>

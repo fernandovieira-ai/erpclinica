@@ -240,6 +240,21 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
       }
     }
 
+    // Validação de disponibilidade do profissional
+    if (!isEdit) {
+      try {
+        const resDisp = await fetch(`/api/clinica/profissionais/${form.profissional_id}/disponibilidade?data=${form.data}&hora_inicio=${form.hora_inicio}&hora_fim=${form.hora_fim}`)
+        const dataDisp = await resDisp.json()
+        if (!dataDisp.disponivel) {
+          toast.error(dataDisp.razao || 'Profissional não está disponível neste horário')
+          return
+        }
+      } catch (e) {
+        toast.error('Erro ao validar disponibilidade do profissional')
+        return
+      }
+    }
+
     setSaving(true)
     try {
       const url    = isEdit ? `/api/clinica/agendamentos/${agendamento!.id}` : '/api/clinica/agendamentos'
