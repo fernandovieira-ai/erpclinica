@@ -119,13 +119,15 @@ export async function POST(req: NextRequest) {
         const { rows: movCaixaRows } = await client.query(
           `INSERT INTO tab_movimento_caixa (
             empresa_id, pessoa_id, tipo, valor,
-            data_movimento, documento, observacao, conciliado, created_by
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            data_movimento, documento, observacao, conciliado, created_by,
+            origem_modulo, origem_id
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
           RETURNING id`,
           [
             session.empresa_id_ativa, payload.paciente_id, 'E',
             payload.total_recebimento, payload.data_recebimento, `AG-${payload.agendamento_id}`,
             `Recebimento de consulta`, false, session.nome ?? 'sistema',
+            'CLI', payload.agendamento_id,
           ],
         )
         movimento_id = movCaixaRows[0]?.id
@@ -154,46 +156,38 @@ export async function POST(req: NextRequest) {
         const { rows: movCaixaRows } = await client.query(
           `INSERT INTO tab_movimento_caixa (
             empresa_id, pessoa_id, titulo_receber_id, tipo, valor,
-            data_movimento, documento, observacao, conciliado, created_by
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            data_movimento, documento, observacao, conciliado, created_by,
+            origem_modulo, origem_id
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
           RETURNING id`,
           [
             session.empresa_id_ativa, payload.paciente_id, titulo_id, 'E',
             payload.total_recebimento, payload.data_recebimento, `AG-${payload.agendamento_id}`,
             `Recebimento de consulta`, false, session.nome ?? 'sistema',
+            'CLI', payload.agendamento_id,
           ],
         )
         movimento_id = movCaixaRows[0]?.id
       }
     }
 
-    // Registrar recebimento
-    const { rows: recRows } = await client.query(
-      `INSERT INTO tab_recebimento_consulta (
-        empresa_id, agendamento_id, paciente_id, condicao_pagamento_id,
-        valor_original, valor_desconto, valor_acrescimo, valor_recebido, total_recebimento,
-        titulo_receber_id, movimento_caixa_id, movimento_banco_id, data_recebimento, observacao, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-      RETURNING id`,
-      [
-        session.empresa_id_ativa, payload.agendamento_id, payload.paciente_id, payload.condicao_pagamento_id,
-        payload.valor_original, payload.valor_desconto, payload.valor_acrescimo, payload.valor_recebido, payload.total_recebimento,
-        titulo_id, movimento_id, movimento_banco_id, payload.data_recebimento, payload.observacao || null, session.nome ?? 'sistema',
-      ],
+    // Atualizar status do agendamento para ATENDIDO
+    await client.query(
+      'UPDATE tab_agendamento SET status = $1, updated_at = NOW() WHERE id = $2',
+      ['ATENDIDO', payload.agendamento_id],
     )
-
-    const recebimento_id = recRows[0]?.id
 
     await client.query('COMMIT')
 
+    // Nota: O recebimento será criado automaticamente pela trigger
+    // quando o movimento for inserido com origem_modulo='CLI'
     return NextResponse.json({
       sucesso: true,
-      recebimento_id,
       titulo_receber_id: titulo_id,
       movimento_caixa_id: movimento_id,
       movimento_banco_id,
       tipo_pagamento: tipoPagamento,
-      mensagem: 'Recebimento processado com sucesso',
+      mensagem: 'Movimento registrado com sucesso. Recebimento será processado automaticamente.',
     })
   } catch (error) {
     try {
