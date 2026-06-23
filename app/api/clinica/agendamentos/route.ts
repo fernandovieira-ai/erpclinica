@@ -39,6 +39,24 @@ export async function GET(req: NextRequest) {
 
   const where = conds.join(' AND ')
 
+  // Verificar se a tabela recebimento existe
+  const { rows: tableCheck } = await db.query(
+    `SELECT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_name = 'tab_recebimento_consulta'
+    ) as existe`
+  )
+
+  const temTabelaRecebimento = tableCheck[0]?.existe
+
+  const selectRecebimento = temTabelaRecebimento
+    ? `, rc.id AS recebimento_id, rc.status_recebimento, rc.total_recebimento`
+    : `, NULL::INT AS recebimento_id, NULL::VARCHAR AS status_recebimento, NULL::NUMERIC AS total_recebimento`
+
+  const joinRecebimento = temTabelaRecebimento
+    ? `LEFT JOIN tab_recebimento_consulta rc ON rc.agendamento_id = a.id`
+    : ''
+
   const { rows } = await db.query(
     `SELECT
        a.id, a.data_hora_inicio, a.data_hora_fim, a.status, a.motivo, a.observacao,
@@ -50,15 +68,15 @@ export async function GET(req: NextRequest) {
        tp.valor AS tipo_valor,
        esp.id   AS especialidade_id, esp.descricao AS especialidade_descricao,
        esp.cor  AS especialidade_cor,
-       cat.id   AS categoria_id,    cat.descricao AS categoria_descricao,
-       rc.id AS recebimento_id, rc.status_recebimento, rc.total_recebimento
+       cat.id   AS categoria_id,    cat.descricao AS categoria_descricao
+       ${selectRecebimento}
      FROM tab_agendamento a
        JOIN tab_pessoa pac  ON pac.id = a.paciente_id
        JOIN tab_pessoa pro  ON pro.id = a.profissional_id
        LEFT JOIN tab_agendamento_tipo tp  ON tp.id = a.tipo_id
        LEFT JOIN tab_especialidade    esp ON esp.id = a.especialidade_id
        LEFT JOIN tab_categoria        cat ON cat.id = a.categoria_id
-       LEFT JOIN tab_recebimento_consulta rc ON rc.agendamento_id = a.id
+       ${joinRecebimento}
      WHERE ${where}
      ORDER BY a.data_hora_inicio`,
     params,
