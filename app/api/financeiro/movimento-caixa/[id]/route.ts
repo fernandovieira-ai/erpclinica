@@ -26,7 +26,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
             TO_CHAR(mc.data_conciliacao, 'YYYY-MM-DD') AS data_conciliacao,
             mc.created_by,
             mc.created_at,
+            mc.origem_modulo,
             CASE
+              WHEN mc.origem_modulo = 'REC' THEN 'Recebimento'
               WHEN mc.titulo_pagar_id   IS NOT NULL THEN 'Tít. Pagar'
               WHEN mc.titulo_receber_id IS NOT NULL THEN 'Tít. Receber'
               WHEN mc.despesa_id        IS NOT NULL THEN 'Despesa'
@@ -34,6 +36,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
               ELSE 'Manual'
             END AS origem_tipo,
             CASE
+              WHEN mc.origem_modulo = 'REC' THEN 'RECEBIMENTO (Clínica)'
               WHEN mc.titulo_pagar_id IS NOT NULL THEN
                 COALESCE(td_tp.descricao, tp.num_documento, tp.numero_titulo)
               WHEN mc.titulo_receber_id IS NOT NULL THEN
