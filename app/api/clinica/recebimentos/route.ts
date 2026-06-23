@@ -41,9 +41,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ erro: 'Agendamento não encontrado' }, { status: 404 })
     }
 
-    // Obter tipo de pagamento e conta PIX da condição
+    // Obter tipo, tipo_pagamento e conta PIX da condição
     const { rows: condRows } = await client.query(
-      'SELECT tipo_pagamento, conta_banco_pix_id FROM tab_condicao_pagamento WHERE id = $1',
+      'SELECT tipo, tipo_pagamento, conta_banco_pix_id FROM tab_condicao_pagamento WHERE id = $1',
       [payload.condicao_pagamento_id],
     )
 
@@ -52,7 +52,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ erro: 'Condição de pagamento não encontrada' }, { status: 404 })
     }
 
-    const tipoPagamento = condRows[0].tipo_pagamento
+    const tipoCondicao = condRows[0].tipo  // 'V' = À Vista, 'P' = Parcelado
+    const tipoPagamento = condRows[0].tipo_pagamento  // 'dinheiro', 'pix', 'debito', 'credito'
     const contaBancoPixId = condRows[0].conta_banco_pix_id
 
     // Validar PIX
@@ -61,41 +62,76 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ erro: 'PIX sem conta bancária configurada' }, { status: 400 })
     }
 
+    // Determinar se deve criar título a receber (apenas para parcelado ou crédito)
+    const deveCriarTitulo = tipoCondicao === 'P' || tipoPagamento === 'credito'
+
     // Atualizar status do agendamento para ATENDIDO
     await client.query(
       'UPDATE tab_agendamento SET status = $1, updated_at = NOW() WHERE id = $2',
       ['ATENDIDO', payload.agendamento_id],
     )
 
-    // Obter tipo de receita
-    const tipo_receita_id = await obterTipoReceitaPadrao(client)
-
-    // Gerar número único do título
-    const numeroTitulo = `AG-${payload.agendamento_id}-${Date.now().toString().slice(-6)}`
-
-    // Criar título a receber
-    const { rows: tituloRows } = await client.query(
-      `INSERT INTO tab_titulo_receber (
-        empresa_id, pessoa_id, tipo_receita_id, numero_titulo,
-        data_emissao, data_vencimento, data_liquidacao,
-        valor_original, valor_juros, valor_multa, valor_desconto, valor_retencao, valor_liquidado,
-        status, origem_modulo, origem_id, observacao, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-      RETURNING id`,
-      [
-        session.empresa_id_ativa, payload.paciente_id, tipo_receita_id, numeroTitulo,
-        payload.data_recebimento, payload.data_recebimento, payload.data_recebimento,
-        payload.valor_original, payload.valor_acrescimo > 0 ? payload.valor_acrescimo : 0, 0, payload.valor_desconto, 0, payload.total_recebimento,
-        'L', 'CLI', payload.agendamento_id, `Recebimento de consulta. ${payload.observacao || ''}`, session.nome ?? 'sistema',
-      ],
-    )
-
-    const titulo_id = tituloRows[0]?.id
+    let titulo_id: number | null = null
     let movimento_id: number | null = null
     let movimento_banco_id: number | null = null
 
+    if (deveCriarTitulo) {
+      // Criar título apenas para parcelado ou crédito
+      const tipo_receita_id = await obterTipoReceitaPadrao(client)
+      const numeroTitulo = `AG-${payload.agendamento_id}-${Date.now().toString().slice(-6)}`
+
+      const { rows: tituloRows } = await client.query(
+        `INSERT INTO tab_titulo_receber (
+          empresa_id, pessoa_id, tipo_receita_id, numero_titulo,
+          data_emissao, data_vencimento, data_liquidacao,
+          valor_original, valor_juros, valor_multa, valor_desconto, valor_retencao, valor_liquidado,
+          status, origem_modulo, origem_id, observacao, created_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        RETURNING id`,
+        [
+          session.empresa_id_ativa, payload.paciente_id, tipo_receita_id, numeroTitulo,
+          payload.data_recebimento, payload.data_recebimento, payload.data_recebimento,
+          payload.valor_original, payload.valor_acrescimo > 0 ? payload.valor_acrescimo : 0, 0, payload.valor_desconto, 0, payload.total_recebimento,
+          'L', 'CLI', payload.agendamento_id, `Recebimento de consulta. ${payload.observacao || ''}`, session.nome ?? 'sistema',
+        ],
+      )
+      titulo_id = tituloRows[0]?.id
+    } else {
+      // À vista: criar movimento direto sem título a receber
+      if (tipoPagamento === 'pix') {
+        const { rows: movBancoRows } = await client.query(
+          `INSERT INTO tab_movimento_banco (
+            empresa_id, conta_banco_id, pessoa_id, tipo, valor,
+            data_movimento, documento, observacao, conciliado, created_by
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          RETURNING id`,
+          [
+            session.empresa_id_ativa, contaBancoPixId, payload.paciente_id, 'E',
+            payload.total_recebimento, payload.data_recebimento, `AG-${payload.agendamento_id}-PIX`,
+            `PIX recebido da consulta`, false, session.nome ?? 'sistema',
+          ],
+        )
+        movimento_banco_id = movBancoRows[0]?.id
+      } else {
+        // Dinheiro, débito, etc: criar movimento em caixa
+        const { rows: movCaixaRows } = await client.query(
+          `INSERT INTO tab_movimento_caixa (
+            empresa_id, pessoa_id, tipo, valor,
+            data_movimento, documento, observacao, conciliado, created_by
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          RETURNING id`,
+          [
+            session.empresa_id_ativa, payload.paciente_id, 'E',
+            payload.total_recebimento, payload.data_recebimento, `AG-${payload.agendamento_id}`,
+            `Recebimento de consulta`, false, session.nome ?? 'sistema',
+          ],
+        )
+        movimento_id = movCaixaRows[0]?.id
+      }
+    }
+
+    // Se foi criado título, criar movimentos asociados
     if (titulo_id) {
-      // Se PIX: criar movimento em banco
       if (tipoPagamento === 'pix') {
         const { rows: movBancoRows } = await client.query(
           `INSERT INTO tab_movimento_banco (
@@ -111,7 +147,6 @@ export async function POST(req: NextRequest) {
         )
         movimento_banco_id = movBancoRows[0]?.id
       } else {
-        // Outras formas: criar movimento em caixa
         const { rows: movCaixaRows } = await client.query(
           `INSERT INTO tab_movimento_caixa (
             empresa_id, pessoa_id, titulo_receber_id, tipo, valor,
