@@ -102,13 +102,15 @@ export async function POST(req: NextRequest) {
         const { rows: movBancoRows } = await client.query(
           `INSERT INTO tab_movimento_banco (
             empresa_id, conta_banco_id, pessoa_id, tipo, valor,
-            data_movimento, documento, observacao, conciliado, created_by
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            data_movimento, documento, observacao, conciliado, created_by,
+            origem_modulo, origem_id
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
           RETURNING id`,
           [
             session.empresa_id_ativa, contaBancoPixId, payload.paciente_id, 'E',
             payload.total_recebimento, payload.data_recebimento, `AG-${payload.agendamento_id}-PIX`,
             `PIX recebido da consulta`, false, session.nome ?? 'sistema',
+            'CLI', payload.agendamento_id,
           ],
         )
         movimento_banco_id = movBancoRows[0]?.id
@@ -136,13 +138,15 @@ export async function POST(req: NextRequest) {
         const { rows: movBancoRows } = await client.query(
           `INSERT INTO tab_movimento_banco (
             empresa_id, conta_banco_id, pessoa_id, titulo_receber_id, tipo, valor,
-            data_movimento, documento, observacao, conciliado, created_by
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            data_movimento, documento, observacao, conciliado, created_by,
+            origem_modulo, origem_id
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
           RETURNING id`,
           [
             session.empresa_id_ativa, contaBancoPixId, payload.paciente_id, titulo_id, 'E',
             payload.total_recebimento, payload.data_recebimento, `AG-${payload.agendamento_id}-PIX`,
             `PIX recebido da consulta`, false, session.nome ?? 'sistema',
+            'CLI', payload.agendamento_id,
           ],
         )
         movimento_banco_id = movBancoRows[0]?.id
