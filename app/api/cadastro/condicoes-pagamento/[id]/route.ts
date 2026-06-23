@@ -10,7 +10,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const db = getDb(session.database_name)
   const { rows } = await db.query(
-    `SELECT id, empresa_id, descricao, tipo, num_parcelas, intervalo_dias, entrada_pct, ativo, created_at
+    `SELECT id, empresa_id, descricao, tipo, num_parcelas, intervalo_dias, entrada_pct, tipo_pagamento, conta_banco_pix_id, ativo, created_at
      FROM tab_condicao_pagamento
      WHERE id = $1 AND empresa_id = $2`,
     [params.id, session.empresa_id_ativa],
@@ -47,9 +47,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const result = await db.query(
     `UPDATE tab_condicao_pagamento
-     SET descricao=$1, tipo=$2, num_parcelas=$3, intervalo_dias=$4, entrada_pct=$5, ativo=$6
-     WHERE id=$7 AND empresa_id=$8`,
-    [d.descricao.toUpperCase(), d.tipo, numParcelas, intervaloDias, entradaPct, d.ativo, params.id, session.empresa_id_ativa],
+     SET descricao=$1, tipo=$2, num_parcelas=$3, intervalo_dias=$4, entrada_pct=$5, tipo_pagamento=$6, conta_banco_pix_id=$7, ativo=$8
+     WHERE id=$9 AND empresa_id=$10`,
+    [d.descricao.toUpperCase(), d.tipo, numParcelas, intervaloDias, entradaPct, d.tipo_pagamento, d.conta_banco_pix_id || null, d.ativo, params.id, session.empresa_id_ativa],
   )
 
   if (result.rowCount === 0) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })

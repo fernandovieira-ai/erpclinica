@@ -73,7 +73,12 @@ export type AgendamentoListItem = Pick<
   | 'especialidade_id' | 'especialidade_descricao'
   | 'data_hora_inicio' | 'data_hora_fim' | 'status' | 'motivo' | 'observacao'
   | 'categoria_id' | 'categoria_descricao'
->
+> & {
+  tipo_valor?: number | null
+  recebimento_id?: number | null
+  status_recebimento?: string | null
+  total_recebimento?: number | null
+}
 
 export interface AgendamentoListResponse {
   dados: AgendamentoListItem[]

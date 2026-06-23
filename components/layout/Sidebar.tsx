@@ -31,6 +31,7 @@ const NAV: NavItem[] = [
     label: 'Clínica', icon: <Stethoscope size={16} />,
     children: [
       { label: 'Agendamento',          href: '/clinica/agendamento',                   icon: <CalendarDays size={14} /> },
+      { label: 'Recebimentos',         href: '/clinica/recebimentos',                   icon: <CreditCard size={14} /> },
       { label: 'Profissionais',         href: '/cadastro/pessoas?papel=profissional',   icon: <UserCog size={14} /> },
       { label: 'Pacientes',             href: '/cadastro/pessoas?papel=paciente',       icon: <HeartPulse size={14} /> },
       { label: 'Tipos de Atendimento',  href: '/clinica/tipos-atendimento',             icon: <ClipboardList size={14} /> },

@@ -47,15 +47,18 @@ export async function GET(req: NextRequest) {
        pro.id   AS profissional_id, pro.nome AS profissional_nome,
        tp.id    AS tipo_id,         tp.descricao AS tipo_descricao,
        tp.cor   AS tipo_cor,        tp.duracao_min AS tipo_duracao_min,
+       tp.valor AS tipo_valor,
        esp.id   AS especialidade_id, esp.descricao AS especialidade_descricao,
        esp.cor  AS especialidade_cor,
-       cat.id   AS categoria_id,    cat.descricao AS categoria_descricao
+       cat.id   AS categoria_id,    cat.descricao AS categoria_descricao,
+       rc.id AS recebimento_id, rc.status_recebimento, rc.total_recebimento
      FROM tab_agendamento a
        JOIN tab_pessoa pac  ON pac.id = a.paciente_id
        JOIN tab_pessoa pro  ON pro.id = a.profissional_id
        LEFT JOIN tab_agendamento_tipo tp  ON tp.id = a.tipo_id
        LEFT JOIN tab_especialidade    esp ON esp.id = a.especialidade_id
        LEFT JOIN tab_categoria        cat ON cat.id = a.categoria_id
+       LEFT JOIN tab_recebimento_consulta rc ON rc.agendamento_id = a.id
      WHERE ${where}
      ORDER BY a.data_hora_inicio`,
     params,

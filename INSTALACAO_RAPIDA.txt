@@ -1,0 +1,184 @@
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                                                                                ║
+║                  SISTEMA DE RECEBIMENTOS DE CONSULTAS                          ║
+║                          Guia de Instalação Rápida                             ║
+║                                                                                ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+📦 ARQUIVOS CRIADOS/MODIFICADOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ NOVOS COMPONENTES
+  • components/clinica/RecebimentoModal.tsx
+    → Modal profissional para registrar recebimentos
+
+✅ NOVAS PÁGINAS
+  • app/(erp)/clinica/recebimentos/page.tsx
+    → Página de listagem e processamento de recebimentos
+
+✅ NOVOS ENDPOINTS
+  • app/api/clinica/recebimentos/route.ts
+    → API POST para processar recebimentos
+
+✅ NOVA MIGRATION SQL
+  • novos/12_add_categoria_recebimentos.sql
+    → Cria 4 tabelas e 1 coluna nova
+
+✅ MODIFICAÇÕES
+  • components/layout/Sidebar.tsx (+1 link)
+  • types/clinica.types.ts (+ 1 propriedade)
+  • app/api/clinica/agendamentos/route.ts (+1 coluna)
+
+✅ DOCUMENTAÇÃO
+  • SETUP_RECEBIMENTOS.md (guia detalhado)
+  • DEPLOY_RECEBIMENTOS.md (passo a passo)
+  • RESUMO_RECEBIMENTOS.md (visão geral)
+  • RECEBIMENTOS.md (documentação técnica)
+  • INSTALACAO_RAPIDA.txt (este arquivo)
+
+
+🚀 INSTALAÇÃO EM 3 PASSOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PASSO 1: APLICAR MIGRATION SQL
+─────────────────────────────────────────────────────────────────────────────────
+
+  $ psql -U postgres -d fin_{seu_slug} -f novos/12_add_categoria_recebimentos.sql
+
+  Resultado esperado:
+    CREATE TABLE
+    CREATE INDEX (várias)
+    ✅ Sucesso
+
+
+PASSO 2: CONFIGURAR VALORES
+─────────────────────────────────────────────────────────────────────────────────
+
+  Execute no PostgreSQL:
+
+    UPDATE tab_agendamento_tipo
+    SET valor = 150.00
+    WHERE descricao = 'Consulta';
+
+  (Ajuste descricao e valor conforme seus tipos)
+
+  Verifique:
+
+    SELECT id, descricao, valor FROM tab_agendamento_tipo;
+
+  ✅ Todos os tipos devem ter um valor
+
+
+PASSO 3: RESTART DA APP
+─────────────────────────────────────────────────────────────────────────────────
+
+  $ npm run dev
+
+  ✅ Aplicação reiniciada
+
+
+💻 COMO USAR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Abra a aplicação
+2. Navegue até: Clínica > Recebimentos
+3. Selecione uma data
+4. Clique em "Receber" no agendamento
+5. Preencha os dados:
+   • Forma de pagamento (dinheiro/débito/crédito)
+   • Valor recebido
+   • Desconto (opcional)
+   • Acréscimo (opcional)
+   • Observação (opcional)
+6. Clique "Confirmar Recebimento"
+
+✅ PRONTO! O sistema vai:
+   → Marcar consulta como ATENDIDA
+   → Criar título a receber (liquidado)
+   → Criar movimento de caixa (se dinheiro)
+   → Registrar tudo na auditoria
+
+
+📊 INTEGRAÇÃO COM FINANCEIRO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Após um recebimento, você verá:
+
+  ✅ Títulos a Receber
+     Rota: /financeiro/contas-receber
+     Status: L (Liquidado)
+     Referência: AG-{numero-agendamento}
+
+  ✅ Movimento de Caixa
+     Rota: /financeiro/movimento-caixa
+     Tipo: E (Entrada)
+     (apenas para pagamentos em dinheiro)
+
+  ✅ Fluxo de Caixa
+     Rota: /gerencial/fluxo-caixa
+     Inclui as receitas do dia
+
+
+✅ CHECKLIST PRÉ-LAUNCH
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ☐ Migration SQL aplicada sem erros
+  ☐ Tipos de atendimento têm valores configurados
+  ☐ App reiniciada
+  ☐ Menu mostra "Recebimentos" em Clínica
+  ☐ Página /clinica/recebimentos carrega
+  ☐ Teste: registrar um recebimento
+  ☐ Verificar: título criado em Contas a Receber
+  ☐ Verificar: movimento criado em Movimento Caixa
+  ☐ Verificar: status da consulta = ATENDIDO
+
+
+🆘 TROUBLESHOOTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+❌ "Página não mostra agendamentos"
+   ✅ Verifique se há agendamentos para a data
+   ✅ Verifique status (ATENDIDO não aparece em recebimentos)
+
+❌ "Valor não carrega no modal"
+   ✅ Verifique se tipo tem valor:
+      SELECT id, descricao, valor FROM tab_agendamento_tipo;
+   ✅ Se vazio, execute UPDATE conforme PASSO 2
+
+❌ "Recebimento não aparece em Contas a Receber"
+   ✅ Verifique se migration foi aplicada
+   ✅ Verifique se app foi reiniciada
+   ✅ Tente novamente em navegador privado
+
+❌ "Movimento de caixa não foi criado"
+   ✅ Normal! Apenas dinheiro cria movimento
+   ✅ Débito/Crédito só gera título a receber
+
+❌ "Erro SQL na migration"
+   ✅ Verifique slug correto: psql -U postgres -l | grep fin
+   ✅ Tente com sudo: sudo -u postgres psql -d fin_{slug} ...
+
+
+📚 DOCUMENTAÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Leia:
+    • DEPLOY_RECEBIMENTOS.md      (step-by-step técnico)
+    • SETUP_RECEBIMENTOS.md       (guia completo com exemplos)
+    • RESUMO_RECEBIMENTOS.md      (visão geral do sistema)
+    • RECEBIMENTOS.md             (detalhes de implementação)
+
+
+📞 CONTATO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Suporte: fernando.vieira@digitalrf.com.br
+  Versão: 1.0
+  Data: 23/06/2026
+
+
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                                                                                ║
+║                         ✅ PRONTO PARA PRODUÇÃO                               ║
+║                                                                                ║
+╚════════════════════════════════════════════════════════════════════════════════╝

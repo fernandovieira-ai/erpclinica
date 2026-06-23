@@ -54,24 +54,36 @@ export default function CondicaoPagamentoFormPage({ condicao }: Props) {
   const [deleting,  setDeleting]  = useState(false)
   const [excluding, setExcluding] = useState(false)
 
+  const [contas, setContas] = useState<Array<{ id: number; mnemonico: string; banco_nome?: string }>>([])
+
   const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<CondicaoPagamentoInput>({
     resolver: zodResolver(condicaoPagamentoSchema),
-    defaultValues: { tipo: 'V', num_parcelas: 1, intervalo_dias: 30, entrada_pct: 0, ativo: true },
+    defaultValues: { tipo: 'V', num_parcelas: 1, intervalo_dias: 30, entrada_pct: 0, tipo_pagamento: 'dinheiro', conta_banco_pix_id: null, ativo: true },
   })
 
   const tipo = watch('tipo')
+  const tipoPagamento = watch('tipo_pagamento')
+
+  useEffect(() => {
+    fetch('/api/cadastro/contas-banco?ativo=true&limit=100')
+      .then(r => r.json())
+      .then(d => setContas(d.dados ?? []))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!condicao) return
     reset({
-      descricao:      condicao.descricao,
-      tipo:           condicao.tipo,
-      num_parcelas:   condicao.num_parcelas,
-      intervalo_dias: condicao.intervalo_dias,
-      entrada_pct:    Number(condicao.entrada_pct),
-      ativo:          condicao.ativo,
+      descricao:           condicao.descricao,
+      tipo:                condicao.tipo,
+      num_parcelas:        condicao.num_parcelas,
+      intervalo_dias:      condicao.intervalo_dias,
+      entrada_pct:         Number(condicao.entrada_pct),
+      tipo_pagamento:      condicao.tipo_pagamento ?? 'dinheiro',
+      conta_banco_pix_id:  condicao.conta_banco_pix_id ? Number(condicao.conta_banco_pix_id) : null,
+      ativo:               condicao.ativo,
     })
-  }, [condicao, reset])
+  }, [condicao, reset, contas])
 
   useEffect(() => {
     if (tipo === 'V') {
@@ -189,6 +201,32 @@ export default function CondicaoPagamentoFormPage({ condicao }: Props) {
               <option value="P">A Prazo</option>
             </Select>
           </Row>
+
+          {/* Tipo de Pagamento */}
+          <Row label="Tipo de Pagamento:">
+            <Select {...register('tipo_pagamento')} style={{ width: 180 }}>
+              <option value="dinheiro">Dinheiro</option>
+              <option value="debito">Débito</option>
+              <option value="credito">Crédito</option>
+              <option value="pix">PIX</option>
+            </Select>
+          </Row>
+
+          {/* Conta Banco PIX — visível apenas quando tipo_pagamento = pix */}
+          {tipoPagamento === 'pix' && (
+            <Row label="Conta Banco (PIX):">
+              <Select
+                {...register('conta_banco_pix_id', {
+                  setValueAs: v => v ? parseInt(v, 10) : null,
+                })}
+                style={{ width: 250 }}>
+                <option value="">Selecione uma conta...</option>
+                {contas.map(c => (
+                  <option key={c.id} value={String(c.id)}>{c.mnemonico} {c.banco_nome ? `(${c.banco_nome})` : ''}</option>
+                ))}
+              </Select>
+            </Row>
+          )}
 
           <div style={{ height: 1, backgroundColor: 'var(--borda-suave)', margin: '4px 0' }} />
 

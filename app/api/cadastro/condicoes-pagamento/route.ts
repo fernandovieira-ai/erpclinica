@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
   const [{ rows: countRows }, { rows }] = await Promise.all([
     db.query(`SELECT COUNT(*) AS n FROM tab_condicao_pagamento cp ${where}`, params),
     db.query(
-      `SELECT cp.id, cp.descricao, cp.tipo, cp.num_parcelas, cp.intervalo_dias, cp.entrada_pct, cp.ativo
+      `SELECT cp.id, cp.descricao, cp.tipo, cp.num_parcelas, cp.intervalo_dias, cp.entrada_pct, cp.tipo_pagamento, cp.ativo
        FROM tab_condicao_pagamento cp
        ${where}
        ORDER BY cp.descricao
@@ -65,10 +65,10 @@ export async function POST(req: NextRequest) {
 
   const { rows } = await db.query(
     `INSERT INTO tab_condicao_pagamento
-       (empresa_id, descricao, tipo, num_parcelas, intervalo_dias, entrada_pct, ativo)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+       (empresa_id, descricao, tipo, num_parcelas, intervalo_dias, entrada_pct, tipo_pagamento, conta_banco_pix_id, ativo)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING id`,
-    [session.empresa_id_ativa, d.descricao.toUpperCase(), d.tipo, numParcelas, intervaloDias, entradaPct, d.ativo],
+    [session.empresa_id_ativa, d.descricao.toUpperCase(), d.tipo, numParcelas, intervaloDias, entradaPct, d.tipo_pagamento, d.conta_banco_pix_id || null, d.ativo],
   )
 
   return NextResponse.json({ id: rows[0].id }, { status: 201 })

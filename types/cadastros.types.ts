@@ -438,20 +438,22 @@ export interface ReceitaListResponse {
 }
 
 export interface CondicaoPagamento {
-  id:             number
-  empresa_id:     number
-  descricao:      string
-  tipo:           'V' | 'P'
-  num_parcelas:   number
-  intervalo_dias: number
-  entrada_pct:    string
-  ativo:          boolean
-  created_at:     string
+  id:                 number
+  empresa_id:         number
+  descricao:          string
+  tipo:               'V' | 'P'
+  num_parcelas:       number
+  intervalo_dias:     number
+  entrada_pct:        string
+  tipo_pagamento:     'dinheiro' | 'debito' | 'credito' | 'pix'
+  conta_banco_pix_id: number | null
+  ativo:              boolean
+  created_at:         string
 }
 
 export type CondicaoPagamentoListItem = Pick<
   CondicaoPagamento,
-  'id' | 'descricao' | 'tipo' | 'num_parcelas' | 'intervalo_dias' | 'entrada_pct' | 'ativo'
+  'id' | 'descricao' | 'tipo' | 'num_parcelas' | 'intervalo_dias' | 'entrada_pct' | 'tipo_pagamento' | 'ativo'
 >
 
 export interface CondicaoPagamentoListResponse {
