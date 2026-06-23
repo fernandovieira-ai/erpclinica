@@ -96,11 +96,11 @@ export async function DELETE(
     await client.query('BEGIN')
 
     // Buscar título_receber_id antes de deletar
-    const { rows: recRows } = await client.query(
+    const { rows: tituloRows } = await client.query(
       `SELECT titulo_receber_id FROM tab_recebimento_consulta WHERE id = $1`,
       [recebimentoId]
     )
-    const tituloId = recRows[0]?.titulo_receber_id
+    const tituloId = tituloRows[0]?.titulo_receber_id
 
     // Deletar os movimentos de caixa/banco primeiro
     await client.query(
