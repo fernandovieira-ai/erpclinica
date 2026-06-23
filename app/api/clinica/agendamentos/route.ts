@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
     : `, NULL::INT AS recebimento_id, NULL::VARCHAR AS status_recebimento, NULL::NUMERIC AS total_recebimento`
 
   const joinRecebimento = temTabelaRecebimento
-    ? `LEFT JOIN tab_recebimento_consulta rc ON rc.agendamento_id = a.id`
+    ? `LEFT JOIN tab_recebimento_consulta rc ON rc.agendamento_id = a.id AND rc.status_recebimento = 'PAGO'`
     : ''
 
   const { rows } = await db.query(
