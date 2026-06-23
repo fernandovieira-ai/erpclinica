@@ -44,11 +44,13 @@ DECLARE
   v_agendamento_id INT;
   v_paciente_id INT;
   v_condicao_pagamento_id INT;
+  v_tipo_condicao CHAR(1);  -- 'V' = À Vista, 'P' = Parcelado
   v_recebimento_id INT;
   v_existe BOOLEAN;
   v_tipo_receita_id INT;
   v_numero_titulo VARCHAR(50);
   v_titulo_id INT;
+  v_deve_criar_titulo BOOLEAN;
 BEGIN
   -- Processa quando é um movimento de entrada com origem CLI (clinica)
   IF NEW.tipo = 'E' AND NEW.origem_modulo = 'CLI' THEN
@@ -83,29 +85,39 @@ BEGIN
       END IF;
 
       IF v_condicao_pagamento_id IS NOT NULL THEN
-        -- Criar título a receber
-        v_numero_titulo := 'AG-' || v_agendamento_id || '-' || LPAD(CAST(NEW.id AS VARCHAR), 6, '0');
+        -- Buscar tipo da condição (V=À Vista, P=Parcelado)
+        SELECT tipo INTO v_tipo_condicao
+        FROM tab_condicao_pagamento
+        WHERE id = v_condicao_pagamento_id;
 
-        SELECT id INTO v_tipo_receita_id
-        FROM tab_tipo_receita
-        WHERE descricao ILIKE '%Consul%' OR descricao ILIKE '%Serviço%'
-        LIMIT 1;
+        -- Determinar se deve criar título (apenas para parcelado)
+        v_deve_criar_titulo := (v_tipo_condicao = 'P');
 
-        IF v_tipo_receita_id IS NULL THEN
-          SELECT id INTO v_tipo_receita_id FROM tab_tipo_receita ORDER BY id ASC LIMIT 1;
+        -- Criar título apenas se for parcelado
+        IF v_deve_criar_titulo THEN
+          v_numero_titulo := 'AG-' || v_agendamento_id || '-' || LPAD(CAST(NEW.id AS VARCHAR), 6, '0');
+
+          SELECT id INTO v_tipo_receita_id
+          FROM tab_tipo_receita
+          WHERE descricao ILIKE '%Consul%' OR descricao ILIKE '%Serviço%'
+          LIMIT 1;
+
+          IF v_tipo_receita_id IS NULL THEN
+            SELECT id INTO v_tipo_receita_id FROM tab_tipo_receita ORDER BY id ASC LIMIT 1;
+          END IF;
+
+          INSERT INTO tab_titulo_receber (
+            empresa_id, pessoa_id, tipo_receita_id, numero_titulo,
+            data_emissao, data_vencimento, data_liquidacao,
+            valor_original, valor_juros, valor_multa, valor_desconto, valor_retencao, valor_liquidado,
+            status, origem_modulo, origem_id, observacao, created_by
+          ) VALUES (
+            NEW.empresa_id, v_paciente_id, v_tipo_receita_id, v_numero_titulo,
+            NEW.data_movimento, NEW.data_movimento, NEW.data_movimento,
+            NEW.valor, 0, 0, 0, 0, NEW.valor,
+            'L', 'CLI', v_agendamento_id, 'Recebimento de consulta - ' || NEW.observacao, NEW.created_by
+          ) RETURNING id INTO v_titulo_id;
         END IF;
-
-        INSERT INTO tab_titulo_receber (
-          empresa_id, pessoa_id, tipo_receita_id, numero_titulo,
-          data_emissao, data_vencimento, data_liquidacao,
-          valor_original, valor_juros, valor_multa, valor_desconto, valor_retencao, valor_liquidado,
-          status, origem_modulo, origem_id, observacao, created_by
-        ) VALUES (
-          NEW.empresa_id, v_paciente_id, v_tipo_receita_id, v_numero_titulo,
-          NEW.data_movimento, NEW.data_movimento, NEW.data_movimento,
-          NEW.valor, 0, 0, 0, 0, NEW.valor,
-          'L', 'CLI', v_agendamento_id, 'Recebimento de consulta - ' || NEW.observacao, NEW.created_by
-        ) RETURNING id INTO v_titulo_id;
 
         -- Criar recebimento
         INSERT INTO tab_recebimento_consulta (
@@ -116,7 +128,7 @@ BEGIN
         ) VALUES (
           NEW.empresa_id, v_agendamento_id, v_paciente_id, v_condicao_pagamento_id,
           NEW.valor, 0, 0, NEW.valor, NEW.valor,
-          v_titulo_id,
+          CASE WHEN v_deve_criar_titulo THEN v_titulo_id ELSE NULL END,
           CASE WHEN TG_TABLE_NAME = 'tab_movimento_caixa' THEN NEW.id ELSE NULL END,
           CASE WHEN TG_TABLE_NAME = 'tab_movimento_banco'  THEN NEW.id ELSE NULL END,
           NEW.data_movimento,
