@@ -77,7 +77,9 @@ export async function GET(req: NextRequest) {
               TO_CHAR(mb.data_movimento, 'YYYY-MM-DD') AS data_movimento,
               mb.documento,
               mb.conciliado,
+              mb.origem_modulo,
               CASE
+                WHEN mb.origem_modulo = 'REC' THEN 'Recebimento'
                 WHEN mb.titulo_pagar_id   IS NOT NULL THEN 'Tít. Pagar'
                 WHEN mb.titulo_receber_id IS NOT NULL THEN 'Tít. Receber'
                 WHEN mb.despesa_id        IS NOT NULL THEN 'Despesa'
@@ -85,6 +87,7 @@ export async function GET(req: NextRequest) {
                 ELSE 'Manual'
               END AS origem_tipo,
               CASE
+                WHEN mb.origem_modulo = 'REC' THEN 'RECEBIMENTO (Clínica)'
                 WHEN mb.titulo_pagar_id IS NOT NULL THEN
                   COALESCE(td_tp.descricao, tp.num_documento, tp.numero_titulo)
                 WHEN mb.titulo_receber_id IS NOT NULL THEN

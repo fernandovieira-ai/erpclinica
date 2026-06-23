@@ -30,7 +30,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
             mb.conciliado_por,
             mb.created_by,
             mb.created_at,
+            mb.origem_modulo,
             CASE
+              WHEN mb.origem_modulo = 'REC' THEN 'Recebimento'
               WHEN mb.titulo_pagar_id   IS NOT NULL THEN 'Tít. Pagar'
               WHEN mb.titulo_receber_id IS NOT NULL THEN 'Tít. Receber'
               WHEN mb.despesa_id        IS NOT NULL THEN 'Despesa'
@@ -38,6 +40,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
               ELSE 'Manual'
             END AS origem_tipo,
             CASE
+              WHEN mb.origem_modulo = 'REC' THEN 'RECEBIMENTO (Clínica)'
               WHEN mb.titulo_pagar_id IS NOT NULL THEN
                 COALESCE(td_tp.descricao, tp.num_documento, tp.numero_titulo)
               WHEN mb.titulo_receber_id IS NOT NULL THEN
