@@ -52,8 +52,8 @@ DECLARE
   v_titulo_id INT;
   v_deve_criar_titulo BOOLEAN;
 BEGIN
-  -- Processa quando é um movimento de entrada com origem CLI (clinica)
-  IF NEW.tipo = 'E' AND NEW.origem_modulo = 'CLI' THEN
+  -- Processa quando é um movimento de entrada com origem REC (recebimento)
+  IF NEW.tipo = 'E' AND NEW.origem_modulo = 'REC' THEN
     v_agendamento_id := NEW.origem_id;
 
     -- Busca informações do agendamento
@@ -115,7 +115,7 @@ BEGIN
             NEW.empresa_id, v_paciente_id, v_tipo_receita_id, v_numero_titulo,
             NEW.data_movimento, NEW.data_movimento, NEW.data_movimento,
             NEW.valor, 0, 0, 0, 0, NEW.valor,
-            'L', 'CLI', v_agendamento_id, 'Recebimento de consulta - ' || NEW.observacao, NEW.created_by
+            'L', 'REC', v_agendamento_id, 'Recebimento de consulta - ' || NEW.observacao, NEW.created_by
           ) RETURNING id INTO v_titulo_id;
         END IF;
 

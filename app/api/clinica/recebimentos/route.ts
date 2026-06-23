@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
             session.empresa_id_ativa, contaBancoPixId, payload.paciente_id, 'E',
             payload.total_recebimento, payload.data_recebimento, `AG-${payload.agendamento_id}-PIX`,
             `PIX recebido da consulta`, false, session.nome ?? 'sistema',
-            'CLI', payload.agendamento_id,
+            'REC', payload.agendamento_id,
           ],
         )
         movimento_banco_id = movBancoRows[0]?.id
@@ -127,7 +127,7 @@ export async function POST(req: NextRequest) {
             session.empresa_id_ativa, payload.paciente_id, 'E',
             payload.total_recebimento, payload.data_recebimento, `AG-${payload.agendamento_id}`,
             `Recebimento de consulta`, false, session.nome ?? 'sistema',
-            'CLI', payload.agendamento_id,
+            'REC', payload.agendamento_id,
           ],
         )
         movimento_id = movCaixaRows[0]?.id
@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
             session.empresa_id_ativa, contaBancoPixId, payload.paciente_id, titulo_id, 'E',
             payload.total_recebimento, payload.data_recebimento, `AG-${payload.agendamento_id}-PIX`,
             `PIX recebido da consulta`, false, session.nome ?? 'sistema',
-            'CLI', payload.agendamento_id,
+            'REC', payload.agendamento_id,
           ],
         )
         movimento_banco_id = movBancoRows[0]?.id
@@ -164,7 +164,7 @@ export async function POST(req: NextRequest) {
             session.empresa_id_ativa, payload.paciente_id, titulo_id, 'E',
             payload.total_recebimento, payload.data_recebimento, `AG-${payload.agendamento_id}`,
             `Recebimento de consulta`, false, session.nome ?? 'sistema',
-            'CLI', payload.agendamento_id,
+            'REC', payload.agendamento_id,
           ],
         )
         movimento_id = movCaixaRows[0]?.id
