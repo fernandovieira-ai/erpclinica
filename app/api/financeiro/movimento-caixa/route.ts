@@ -49,16 +49,22 @@ export async function GET(req: NextRequest) {
 
   const where = 'WHERE ' + conds.join(' AND ')
 
+  // Query otimizada: evita N+1 usando CTE para limitar primeiro, depois faz JOINs
   const [{ rows: countRows }, { rows }] = await Promise.all([
     db.query(
       `SELECT COUNT(*) AS n
        FROM tab_movimento_caixa mc
-       LEFT JOIN tab_pessoa p ON p.id = mc.pessoa_id
        ${where}`,
       params,
     ),
     db.query(
-      `SELECT mc.id,
+      `WITH mc_limitado AS (
+        SELECT mc.* FROM tab_movimento_caixa mc
+        ${where}
+        ORDER BY mc.data_movimento DESC, mc.id DESC
+        LIMIT $${pi} OFFSET $${pi + 1}
+      )
+       SELECT mc.id,
               toc.descricao         AS tipo_operacao_desc,
               p.nome                AS pessoa_nome,
               mc.titulo_pagar_id,
@@ -91,7 +97,7 @@ export async function GET(req: NextRequest) {
                   tr_rec.descricao
                 ELSE NULL
               END AS origem_desc
-       FROM tab_movimento_caixa mc
+       FROM mc_limitado mc
        LEFT JOIN tab_tipo_operacao_caixa toc ON toc.id     = mc.tipo_operacao_id
        LEFT JOIN tab_pessoa               p   ON p.id      = mc.pessoa_id
        LEFT JOIN tab_titulo_pagar         tp      ON tp.id   = mc.titulo_pagar_id
@@ -102,9 +108,7 @@ export async function GET(req: NextRequest) {
        LEFT JOIN tab_tipo_despesa         td_desp ON td_desp.id = desp.tipo_despesa_id
        LEFT JOIN tab_receita              rec     ON rec.id   = mc.receita_id
        LEFT JOIN tab_tipo_receita         tr_rec  ON tr_rec.id = rec.tipo_receita_id
-       ${where}
-       ORDER BY mc.data_movimento DESC, mc.id DESC
-       LIMIT $${pi} OFFSET $${pi + 1}`,
+       ORDER BY mc.data_movimento DESC, mc.id DESC`,
       [...params, limit, offset],
     ),
   ])

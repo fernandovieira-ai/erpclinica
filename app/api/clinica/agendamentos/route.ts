@@ -53,8 +53,13 @@ export async function GET(req: NextRequest) {
     ? `, rc.id AS recebimento_id, rc.status_recebimento, rc.total_recebimento`
     : `, NULL::INT AS recebimento_id, NULL::VARCHAR AS status_recebimento, NULL::NUMERIC AS total_recebimento`
 
+  // Usa subconsulta para evitar múltiplas linhas com LEFT JOIN filtrado
   const joinRecebimento = temTabelaRecebimento
-    ? `LEFT JOIN tab_recebimento_consulta rc ON rc.agendamento_id = a.id AND rc.status_recebimento = 'PAGO'`
+    ? `LEFT JOIN (
+        SELECT agendamento_id, id, status_recebimento, total_recebimento
+        FROM tab_recebimento_consulta
+        WHERE status_recebimento = 'PAGO'
+      ) rc ON rc.agendamento_id = a.id`
     : ''
 
   const { rows } = await db.query(
@@ -78,7 +83,8 @@ export async function GET(req: NextRequest) {
        LEFT JOIN tab_categoria        cat ON cat.id = a.categoria_id
        ${joinRecebimento}
      WHERE ${where}
-     ORDER BY a.data_hora_inicio`,
+     ORDER BY a.data_hora_inicio
+     LIMIT 500`,
     params,
   )
 

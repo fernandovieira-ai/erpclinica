@@ -47,12 +47,14 @@ CREATE TABLE IF NOT EXISTS tab_movimento_caixa (
   created_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_mc_empresa  ON tab_movimento_caixa(empresa_id);
-CREATE INDEX idx_mc_data     ON tab_movimento_caixa(empresa_id, data_movimento);
+CREATE INDEX idx_mc_data     ON tab_movimento_caixa(empresa_id, data_movimento DESC);
 CREATE INDEX idx_mc_tipo     ON tab_movimento_caixa(empresa_id, tipo);
 CREATE INDEX idx_mc_despesa  ON tab_movimento_caixa(despesa_id);
 CREATE INDEX idx_mc_receita  ON tab_movimento_caixa(receita_id);
 CREATE INDEX idx_mc_tp       ON tab_movimento_caixa(titulo_pagar_id);
 CREATE INDEX idx_mc_tr       ON tab_movimento_caixa(titulo_receber_id);
+CREATE INDEX idx_mc_origem_modulo ON tab_movimento_caixa(empresa_id, origem_modulo, data_movimento DESC);
+CREATE INDEX idx_mc_empresa_tipo_data ON tab_movimento_caixa(empresa_id, tipo, data_movimento DESC);
 
 COMMENT ON COLUMN tab_movimento_caixa.tipo IS 'E=Entrada S=Saída — valor sempre positivo';
 
@@ -261,7 +263,7 @@ CREATE INDEX idx_trec_empresa    ON tab_titulo_receber(empresa_id);
 CREATE INDEX idx_trec_pessoa     ON tab_titulo_receber(pessoa_id);
 CREATE INDEX idx_trec_status     ON tab_titulo_receber(empresa_id, status);
 CREATE INDEX idx_trec_vencimento ON tab_titulo_receber(empresa_id, data_vencimento);
-CREATE INDEX idx_trec_origem     ON tab_titulo_receber(origem_modulo, origem_id);
+CREATE INDEX idx_trec_origem     ON tab_titulo_receber(origem_modulo, origem_id, status);
 CREATE INDEX idx_trec_receita    ON tab_titulo_receber(receita_id);
 
 CREATE TRIGGER trg_tr_updated_at
