@@ -95,48 +95,40 @@ export async function DELETE(
 
     await client.query('BEGIN')
 
-    // Primeiro, remover as referências de movimento no recebimento
-    await client.query(
-      `UPDATE tab_recebimento_consulta
-       SET movimento_caixa_id = NULL, movimento_banco_id = NULL
-       WHERE id = $1`,
+    // Buscar título_receber_id antes de deletar
+    const { rows: recRows } = await client.query(
+      `SELECT titulo_receber_id FROM tab_recebimento_consulta WHERE id = $1`,
       [recebimentoId]
     )
+    const tituloId = recRows[0]?.titulo_receber_id
 
-    // Marcar como estornado
-    await client.query(
-      `UPDATE tab_recebimento_consulta
-       SET status_recebimento = $1,
-           observacao = COALESCE(observacao, '') || ' | ESTORNADO: ' || $2
-       WHERE id = $3`,
-      ['ESTORNADO', payload.motivo_estorno, recebimentoId]
-    )
-
-    // Agora deletar os movimentos (sem FK constraint)
+    // Deletar os movimentos de caixa/banco primeiro
     await client.query(
       `DELETE FROM tab_movimento_caixa
-       WHERE titulo_receber_id IN (
-         SELECT titulo_receber_id FROM tab_recebimento_consulta WHERE id = $1
-       )`,
-      [recebimentoId]
+       WHERE titulo_receber_id = $1`,
+      [tituloId]
     )
 
     await client.query(
       `DELETE FROM tab_movimento_banco
-       WHERE titulo_receber_id IN (
-         SELECT titulo_receber_id FROM tab_recebimento_consulta WHERE id = $1
-       )`,
-      [recebimentoId]
+       WHERE titulo_receber_id = $1`,
+      [tituloId]
     )
 
     // Reabrir o título a receber
+    if (tituloId) {
+      await client.query(
+        `UPDATE tab_titulo_receber
+         SET status = $1, data_liquidacao = NULL, valor_liquidado = 0
+         WHERE id = $2`,
+        ['A', tituloId]
+      )
+    }
+
+    // Deletar o recebimento (limpeza total)
     await client.query(
-      `UPDATE tab_titulo_receber
-       SET status = $1, data_liquidacao = NULL, valor_liquidado = 0, updated_at = NOW()
-       WHERE id IN (
-         SELECT titulo_receber_id FROM tab_recebimento_consulta WHERE id = $2
-       )`,
-      ['A', recebimentoId]
+      `DELETE FROM tab_recebimento_consulta WHERE id = $1`,
+      [recebimentoId]
     )
 
     await client.query('COMMIT')
