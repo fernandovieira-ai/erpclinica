@@ -95,27 +95,40 @@ export async function DELETE(
 
     await client.query('BEGIN')
 
-    // Buscar título_receber_id antes de deletar
-    const { rows: tituloRows } = await client.query(
-      `SELECT titulo_receber_id FROM tab_recebimento_consulta WHERE id = $1`,
+    // Buscar dados antes de deletar
+    const { rows: recRows2 } = await client.query(
+      `SELECT titulo_receber_id, movimento_caixa_id, movimento_banco_id
+       FROM tab_recebimento_consulta WHERE id = $1`,
       [recebimentoId]
     )
-    const tituloId = tituloRows[0]?.titulo_receber_id
+    const tituloId = recRows2[0]?.titulo_receber_id
+    const movimentoCaixaId = recRows2[0]?.movimento_caixa_id
+    const movimentoBancoId = recRows2[0]?.movimento_banco_id
 
-    // Deletar os movimentos de caixa/banco primeiro
+    // Primeiro, remover as referências do recebimento
     await client.query(
-      `DELETE FROM tab_movimento_caixa
-       WHERE titulo_receber_id = $1`,
-      [tituloId]
+      `UPDATE tab_recebimento_consulta
+       SET movimento_caixa_id = NULL, movimento_banco_id = NULL
+       WHERE id = $1`,
+      [recebimentoId]
     )
 
-    await client.query(
-      `DELETE FROM tab_movimento_banco
-       WHERE titulo_receber_id = $1`,
-      [tituloId]
-    )
+    // Deletar os movimentos direto pelo ID (funciona para parcelado e à vista)
+    if (movimentoCaixaId) {
+      await client.query(
+        `DELETE FROM tab_movimento_caixa WHERE id = $1`,
+        [movimentoCaixaId]
+      )
+    }
 
-    // Reabrir o título a receber
+    if (movimentoBancoId) {
+      await client.query(
+        `DELETE FROM tab_movimento_banco WHERE id = $1`,
+        [movimentoBancoId]
+      )
+    }
+
+    // Reabrir o título a receber (se existir)
     if (tituloId) {
       await client.query(
         `UPDATE tab_titulo_receber
