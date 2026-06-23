@@ -5,6 +5,18 @@
 
 SET client_encoding = 'LATIN1';
 
+-- 0. Adicionar colunas de origem nas tabelas de movimento (pré-requisito para triggers)
+ALTER TABLE tab_movimento_caixa
+  ADD COLUMN IF NOT EXISTS origem_modulo VARCHAR(10),
+  ADD COLUMN IF NOT EXISTS origem_id     INT;
+
+ALTER TABLE tab_movimento_banco
+  ADD COLUMN IF NOT EXISTS origem_modulo VARCHAR(10),
+  ADD COLUMN IF NOT EXISTS origem_id     INT;
+
+CREATE INDEX IF NOT EXISTS idx_mc_origem ON tab_movimento_caixa(origem_modulo, origem_id);
+CREATE INDEX IF NOT EXISTS idx_mb_origem ON tab_movimento_banco(origem_modulo, origem_id);
+
 -- 1. Adicionar coluna de status ao recebimento
 DO $$
 BEGIN
@@ -36,6 +48,7 @@ DECLARE
   v_existe BOOLEAN;
   v_tipo_receita_id INT;
   v_numero_titulo VARCHAR(50);
+  v_titulo_id INT;
 BEGIN
   -- Processa quando é um movimento de entrada com origem CLI (clinica)
   IF NEW.tipo = 'E' AND NEW.origem_modulo = 'CLI' THEN
@@ -92,7 +105,7 @@ BEGIN
           NEW.data_movimento, NEW.data_movimento, NEW.data_movimento,
           NEW.valor, 0, 0, 0, 0, NEW.valor,
           'L', 'CLI', v_agendamento_id, 'Recebimento de consulta - ' || NEW.observacao, NEW.created_by
-        ) RETURNING id INTO NEW.titulo_receber_id;
+        ) RETURNING id INTO v_titulo_id;
 
         -- Criar recebimento
         INSERT INTO tab_recebimento_consulta (
@@ -103,9 +116,9 @@ BEGIN
         ) VALUES (
           NEW.empresa_id, v_agendamento_id, v_paciente_id, v_condicao_pagamento_id,
           NEW.valor, 0, 0, NEW.valor, NEW.valor,
-          NEW.titulo_receber_id,
-          CASE WHEN NEW.tipo_origem = 'CAIXA' THEN NEW.id ELSE NULL END,
-          CASE WHEN NEW.tipo_origem = 'BANCO' THEN NEW.id ELSE NULL END,
+          v_titulo_id,
+          CASE WHEN TG_TABLE_NAME = 'tab_movimento_caixa' THEN NEW.id ELSE NULL END,
+          CASE WHEN TG_TABLE_NAME = 'tab_movimento_banco'  THEN NEW.id ELSE NULL END,
           NEW.data_movimento,
           'PAGO', NEW.observacao, NEW.created_by
         ) RETURNING id INTO v_recebimento_id;
@@ -171,8 +184,7 @@ BEGIN
     -- Marcar recebimento como estornado
     UPDATE tab_recebimento_consulta
     SET status_recebimento = 'ESTORNADO',
-        observacao = COALESCE(observacao, '') || ' | ESTORNADO: ' || p_motivo_estorno,
-        updated_at = NOW()
+        observacao = COALESCE(observacao, '') || ' | ESTORNADO: ' || p_motivo_estorno
     WHERE id = p_recebimento_id;
 
     -- Reverter movimentos de caixa/banco

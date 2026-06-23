@@ -99,8 +99,7 @@ export async function DELETE(
     await client.query(
       `UPDATE tab_recebimento_consulta
        SET status_recebimento = $1,
-           observacao = observacao || ' | ESTORNADO: ' || $2,
-           updated_at = NOW()
+           observacao = COALESCE(observacao, '') || ' | ESTORNADO: ' || $2
        WHERE id = $3`,
       ['ESTORNADO', payload.motivo_estorno, recebimentoId]
     )

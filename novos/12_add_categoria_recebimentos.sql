@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS tab_recebimento_consulta (
   observacao              TEXT,
   created_by              VARCHAR(100),
   created_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  updated_at              TIMESTAMPTZ,
   UNIQUE (agendamento_id, data_recebimento)
 );
 
