@@ -95,6 +95,14 @@ export async function DELETE(
 
     await client.query('BEGIN')
 
+    // Primeiro, remover as referências de movimento no recebimento
+    await client.query(
+      `UPDATE tab_recebimento_consulta
+       SET movimento_caixa_id = NULL, movimento_banco_id = NULL
+       WHERE id = $1`,
+      [recebimentoId]
+    )
+
     // Marcar como estornado
     await client.query(
       `UPDATE tab_recebimento_consulta
@@ -104,7 +112,7 @@ export async function DELETE(
       ['ESTORNADO', payload.motivo_estorno, recebimentoId]
     )
 
-    // Limpar os movimentos associados
+    // Agora deletar os movimentos (sem FK constraint)
     await client.query(
       `DELETE FROM tab_movimento_caixa
        WHERE titulo_receber_id IN (
