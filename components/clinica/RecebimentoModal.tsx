@@ -11,6 +11,7 @@ interface Props {
   open: boolean
   onClose: () => void
   agendamento: AgendamentoListItem | null
+  onRecebimentoSalvo?: () => Promise<void>
 }
 
 interface CondicaoPagamento {
@@ -46,7 +47,7 @@ function Field({ children, style }: { children: React.ReactNode; style?: React.C
   return <div style={{ display: 'flex', flexDirection: 'column', ...style }}>{children}</div>
 }
 
-export default function RecebimentoModal({ open, onClose, agendamento }: Props) {
+export default function RecebimentoModal({ open, onClose, agendamento, onRecebimentoSalvo }: Props) {
   const [saving, setSaving] = useState(false)
   const [condicoes, setCondicoes] = useState<CondicaoPagamento[]>([])
   const [loadingCondicoes, setLoadingCondicoes] = useState(false)
@@ -140,6 +141,9 @@ export default function RecebimentoModal({ open, onClose, agendamento }: Props) 
       }
 
       toast.success('Recebimento registrado com sucesso!')
+      if (onRecebimentoSalvo) {
+        await onRecebimentoSalvo()
+      }
       onClose()
     } catch (error) {
       toast.error('Erro ao processar recebimento')

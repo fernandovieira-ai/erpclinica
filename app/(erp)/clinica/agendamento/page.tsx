@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ChevronLeft, ChevronRight, Plus, CalendarDays, LayoutGrid, List,
   Stethoscope, RefreshCw, UserCheck,
@@ -15,8 +15,9 @@ import { ptBR } from 'date-fns/locale'
 import { toast } from 'sonner'
 import type { AgendamentoListItem, ProfissionalListItem } from '@/types/clinica.types'
 import AgendamentoModal from '@/components/clinica/AgendamentoModal'
+import PacienteCheckInFormModal from '@/components/clinica/PacienteCheckInFormModal'
 
-type ViewMode = 'dia' | 'semana' | 'mes' | 'lista'
+type ViewMode = 'dia' | 'semana' | 'mes' | 'lista' | 'confirmar'
 
 // Computa os dias bloqueados para qualquer intervalo usando os dados já carregados
 function computarIndisponíveis(
@@ -90,6 +91,10 @@ export default function AgendamentoPage() {
   const [configAgendaAberta, setConfigAgendaAberta] = useState(false)
   const [agendaProf, setAgendaProf] = useState<Record<number, { hora_inicio: string; hora_fim: string; ativo: boolean; id?: number }>>({})
   const [salvandoAgenda, setSalvandoAgenda] = useState(false)
+
+  const [modalPacienteOpen, setModalPacienteOpen] = useState(false)
+  const [pacienteDados, setPacienteDados] = useState<any>(null)
+  const [agendamentoAtual, setAgendamentoAtual] = useState<AgendamentoListItem | null>(null)
 
   const periodo = useMemo(() => {
     if (view === 'dia') return { ini: selectedDay, fim: selectedDay }
@@ -239,6 +244,42 @@ export default function AgendamentoPage() {
     }
   }
 
+  async function confirmarAgendamento(ag: AgendamentoListItem, e: React.MouseEvent) {
+    e.stopPropagation()
+    const res = await fetch(`/api/clinica/agendamentos/${ag.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'CONFIRMADO' }),
+    })
+    if (res.ok) {
+      toast.success('Agendamento confirmado!')
+      carregar()
+    } else {
+      toast.error('Erro ao confirmar agendamento')
+    }
+  }
+
+  async function abrirModalPaciente(ag: AgendamentoListItem, e: React.MouseEvent) {
+    e.stopPropagation()
+    try {
+      const res = await fetch(`/api/cadastro/pessoas/${ag.paciente_id}`)
+      if (res.ok) {
+        const data = await res.json()
+        setPacienteDados(data)
+        setAgendamentoAtual(ag)
+        setModalPacienteOpen(true)
+      }
+    } catch (err) {
+      toast.error('Erro ao carregar dados do paciente')
+    }
+  }
+
+  function fecharModalPaciente() {
+    setModalPacienteOpen(false)
+    setPacienteDados(null)
+    setAgendamentoAtual(null)
+  }
+
   async function abrirNovoProximoDisponivel() {
     setBuscandoSlot(true)
     try {
@@ -281,6 +322,9 @@ export default function AgendamentoPage() {
 
       for (let d = 0; d <= 14; d++) {
         const dia = startOfDay(addDays(agora, d))
+        const dataStr = format(dia, 'yyyy-MM-dd')
+        if (diasIndisponíveis.has(dataStr)) continue
+
         for (const slot of HORAS) {
           if (d === 0 && (slot.h < nextH || (slot.h === nextH && slot.m < nextM))) continue
 
@@ -632,7 +676,13 @@ export default function AgendamentoPage() {
                       {/* Chegada do paciente */}
                       {isToday(parseISO(ag.data_hora_inicio)) && (ag.status === 'AGENDADO' || ag.status === 'CONFIRMADO' || ag.status === 'AGUARDANDO') && (
                         <button
-                          onClick={e => marcarChegada(ag, e)}
+                          onClick={e => {
+                            if (ag.status === 'AGUARDANDO') {
+                              marcarChegada(ag, e)
+                            } else {
+                              abrirModalPaciente(ag, e)
+                            }
+                          }}
                           title={ag.status === 'AGUARDANDO' ? 'Paciente aguardando — clique para desfazer' : 'Marcar chegada do paciente'}
                           style={{
                             flexShrink: 0,
@@ -744,9 +794,8 @@ export default function AgendamentoPage() {
           })}
 
           {HORAS.map(slot => (
-            <>
+            <Fragment key={slot.label}>
               <div
-                key={`h-${slot.label}`}
                 style={{
                   height: SLOT_H,
                   borderBottom: slot.m === 30 ? '0.5px solid var(--borda-suave)' : 'none',
@@ -817,7 +866,7 @@ export default function AgendamentoPage() {
                   </div>
                 )
               })}
-            </>
+            </Fragment>
           ))}
         </div>
       </div>
@@ -925,24 +974,33 @@ export default function AgendamentoPage() {
     )
   }
 
-  // ── Visão Lista ──────────────────────────────────────────────
-  function renderLista() {
-    const agOrdenados = [...agendamentos].sort((a, b) =>
-      new Date(a.data_hora_inicio).getTime() - new Date(b.data_hora_inicio).getTime()
-    )
+  // ── Visão Confirmar Agendamento ──────────────────────────────
+  function renderConfirmar() {
+    const hoje = startOfDay(new Date())
+    // Filtrar agendamentos a partir de hoje com status AGENDADO
+    const agsConfirmar = agendamentos
+      .filter(ag => {
+        const dataAg = startOfDay(parseISO(ag.data_hora_inicio))
+        return dataAg >= hoje && ag.status === 'AGENDADO'
+      })
+      .sort((a, b) =>
+        new Date(a.data_hora_inicio).getTime() - new Date(b.data_hora_inicio).getTime()
+      )
+
+    if (agsConfirmar.length === 0) {
+      return (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--texto-terciario)', fontSize: 14 }}>
+          Nenhum agendamento para confirmar
+        </div>
+      )
+    }
+
+    // Agrupar por dia
     const porDia = new Map<string, AgendamentoListItem[]>()
-    for (const ag of agOrdenados) {
+    for (const ag of agsConfirmar) {
       const key = format(parseISO(ag.data_hora_inicio), 'yyyy-MM-dd')
       if (!porDia.has(key)) porDia.set(key, [])
       porDia.get(key)!.push(ag)
-    }
-
-    if (agOrdenados.length === 0) {
-      return (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--texto-terciario)', fontSize: 14 }}>
-          Nenhum agendamento no período
-        </div>
-      )
     }
 
     return (
@@ -950,9 +1008,10 @@ export default function AgendamentoPage() {
         {Array.from(porDia.entries()).map(([key, ags]) => (
           <div key={key}>
             <div style={{ padding: '10px 16px 6px', fontSize: 11, fontWeight: 700, color: 'var(--texto-terciario)', textTransform: 'uppercase', letterSpacing: '.05em', background: 'var(--bg-page)', borderBottom: '0.5px solid var(--borda-suave)' }}>
-              {format(parseISO(key), "EEEE, d 'de' MMMM", { locale: ptBR })}
+              {format(parseISO(key), "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })}
             </div>
             {ags.map(ag => {
+              const dur         = durMinutes(ag)
               const statusColor = STATUS_COLOR[ag.status] ?? '#378ADD'
               const tipoColor   = ag.tipo_cor ?? statusColor
               return (
@@ -961,37 +1020,292 @@ export default function AgendamentoPage() {
                   onClick={e => abrirEditar(ag, e)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 12,
-                    padding: '10px 16px',
-                    borderBottom: '0.5px solid var(--borda-suave)',
+                    background: statusColor + '12',
+                    border: `0.5px solid ${statusColor}35`,
+                    borderLeft: `3px solid ${statusColor}`,
+                    borderRadius: 7,
+                    padding: '8px 12px',
+                    marginBottom: 4,
+                    marginLeft: 12,
+                    marginRight: 12,
+                    marginTop: 8,
                     cursor: 'pointer',
+                    transition: 'background 0.12s',
                   }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = statusColor + '22' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = statusColor + '12' }}
                 >
-                  <div style={{ width: 4, alignSelf: 'stretch', borderRadius: 2, background: statusColor, flexShrink: 0 }} />
-                  <div style={{ width: 50, fontSize: 13, fontWeight: 600, color: 'var(--texto-secundario)', flexShrink: 0 }}>
+                  {/* Hora */}
+                  <div style={{
+                    fontSize: 12, fontWeight: 700, color: statusColor,
+                    width: 38, flexShrink: 0,
+                  }}>
                     {format(parseISO(ag.data_hora_inicio), 'HH:mm')}
                   </div>
+
+                  {/* Paciente + info */}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div style={{
+                      fontWeight: 600, fontSize: 13,
+                      color: 'var(--texto-principal)',
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    }}>
                       {ag.paciente_nome}
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--texto-terciario)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
                       {ag.tipo_descricao && (
-                        <>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                           <span style={{ width: 7, height: 7, borderRadius: 2, background: tipoColor, flexShrink: 0, display: 'inline-block' }} />
-                          {ag.tipo_descricao} ·{' '}
-                        </>
+                          {ag.tipo_descricao}
+                        </span>
                       )}
-                      {ag.profissional_nome}
+                      {ag.tipo_descricao && <span>·</span>}
+                      <span>{ag.profissional_nome}</span>
+                      <span>·</span>
+                      <span>{dur}min</span>
                     </div>
                   </div>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: statusColor, background: statusColor + '20', padding: '2px 9px', borderRadius: 20, flexShrink: 0 }}>
-                    {STATUS_LABEL[ag.status]}
-                  </div>
+
+                  {/* Observação */}
+                  {ag.observacao && (
+                    <div style={{
+                      fontSize: 11, color: 'var(--texto-terciario)',
+                      maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden',
+                      textOverflow: 'ellipsis', flexShrink: 1,
+                      fontStyle: 'italic',
+                    }}
+                      title={ag.observacao}
+                    >
+                      {ag.observacao}
+                    </div>
+                  )}
+
+                  {/* Telefone */}
+                  {ag.paciente_celular && (
+                    <div style={{
+                      fontSize: 11, color: 'var(--texto-terciario)',
+                      flexShrink: 0, display: 'flex', alignItems: 'center', gap: 3,
+                    }}>
+                      {ag.paciente_celular}
+                    </div>
+                  )}
+
+                  {/* Categoria */}
+                  {ag.categoria_descricao && (
+                    <div style={{
+                      fontSize: 11, fontWeight: 500,
+                      color: 'var(--texto-secundario)',
+                      background: 'var(--bg-hover)',
+                      padding: '2px 9px', borderRadius: 20,
+                      flexShrink: 0,
+                    }}>
+                      {ag.categoria_descricao}
+                    </div>
+                  )}
+
+                  {/* Botão Confirmar */}
+                  {ag.status === 'AGENDADO' && (
+                    <button
+                      onClick={e => confirmarAgendamento(ag, e)}
+                      style={{
+                        flexShrink: 0,
+                        display: 'flex', alignItems: 'center', gap: 4,
+                        padding: '4px 12px', borderRadius: 20,
+                        border: 'none',
+                        background: statusColor,
+                        color: '#fff',
+                        fontSize: 11, fontWeight: 600,
+                        cursor: 'pointer',
+                        transition: 'opacity 0.2s',
+                      }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = '0.9' }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '1' }}
+                    >
+                      Confirmar
+                    </button>
+                  )}
+
+                  {/* Status badge */}
+                  {ag.status !== 'AGUARDANDO' && ag.status !== 'AGENDADO' && (
+                    <div style={{
+                      fontSize: 11, fontWeight: 600, color: statusColor,
+                      background: statusColor + '18',
+                      padding: '2px 9px', borderRadius: 20,
+                      flexShrink: 0,
+                    }}>
+                      {STATUS_LABEL[ag.status]}
+                    </div>
+                  )}
                 </div>
               )
             })}
           </div>
         ))}
+      </div>
+    )
+  }
+
+  // ── Visão Lista de Espera ────────────────────────────────────
+  function renderLista() {
+    // Mostrar apenas agendamentos confirmados do dia selecionado
+    const agsEsperaDia = agendamentos
+      .filter(ag =>
+        isSameDay(parseISO(ag.data_hora_inicio), selectedDay) &&
+        ag.status === 'CONFIRMADO'
+      )
+      .sort((a, b) =>
+        new Date(a.data_hora_inicio).getTime() - new Date(b.data_hora_inicio).getTime()
+      )
+
+    if (agsEsperaDia.length === 0) {
+      return (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--texto-terciario)', fontSize: 14 }}>
+          Nenhum paciente em espera para {format(selectedDay, "d 'de' MMMM", { locale: ptBR })}
+        </div>
+      )
+    }
+
+    return (
+      <div style={{ flex: 1, overflow: 'auto' }}>
+        <div style={{ padding: '10px 16px 6px', fontSize: 11, fontWeight: 700, color: 'var(--texto-terciario)', textTransform: 'uppercase', letterSpacing: '.05em', background: 'var(--bg-page)', borderBottom: '0.5px solid var(--borda-suave)' }}>
+          {format(selectedDay, "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })}
+        </div>
+        {agsEsperaDia.map(ag => {
+          const dur         = durMinutes(ag)
+          const statusColor = STATUS_COLOR[ag.status] ?? '#378ADD'
+          const tipoColor   = ag.tipo_cor ?? statusColor
+          return (
+            <div
+              key={ag.id}
+              onClick={e => abrirEditar(ag, e)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                background: statusColor + '12',
+                border: `0.5px solid ${statusColor}35`,
+                borderLeft: `3px solid ${statusColor}`,
+                borderRadius: 7,
+                padding: '8px 12px',
+                marginBottom: 4,
+                marginLeft: 12,
+                marginRight: 12,
+                marginTop: 8,
+                cursor: 'pointer',
+                transition: 'background 0.12s',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = statusColor + '22' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = statusColor + '12' }}
+            >
+              {/* Hora */}
+              <div style={{
+                fontSize: 12, fontWeight: 700, color: statusColor,
+                width: 38, flexShrink: 0,
+              }}>
+                {format(parseISO(ag.data_hora_inicio), 'HH:mm')}
+              </div>
+
+              {/* Paciente + info */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontWeight: 600, fontSize: 13,
+                  color: 'var(--texto-principal)',
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                }}>
+                  {ag.paciente_nome}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {ag.tipo_descricao && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                      <span style={{ width: 7, height: 7, borderRadius: 2, background: tipoColor, flexShrink: 0, display: 'inline-block' }} />
+                      {ag.tipo_descricao}
+                    </span>
+                  )}
+                  {ag.tipo_descricao && <span>·</span>}
+                  <span>{ag.profissional_nome}</span>
+                  <span>·</span>
+                  <span>{dur}min</span>
+                </div>
+              </div>
+
+              {/* Observação */}
+              {ag.observacao && (
+                <div style={{
+                  fontSize: 11, color: 'var(--texto-terciario)',
+                  maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden',
+                  textOverflow: 'ellipsis', flexShrink: 1,
+                  fontStyle: 'italic',
+                }}
+                  title={ag.observacao}
+                >
+                  {ag.observacao}
+                </div>
+              )}
+
+              {/* Telefone */}
+              {ag.paciente_celular && (
+                <div style={{
+                  fontSize: 11, color: 'var(--texto-terciario)',
+                  flexShrink: 0, display: 'flex', alignItems: 'center', gap: 3,
+                }}>
+                  {ag.paciente_celular}
+                </div>
+              )}
+
+              {/* Categoria */}
+              {ag.categoria_descricao && (
+                <div style={{
+                  fontSize: 11, fontWeight: 500,
+                  color: 'var(--texto-secundario)',
+                  background: 'var(--bg-hover)',
+                  padding: '2px 9px', borderRadius: 20,
+                  flexShrink: 0,
+                }}>
+                  {ag.categoria_descricao}
+                </div>
+              )}
+
+              {/* Chegada do paciente */}
+              {isToday(parseISO(ag.data_hora_inicio)) && (ag.status === 'AGENDADO' || ag.status === 'CONFIRMADO' || ag.status === 'AGUARDANDO') && (
+                <button
+                  onClick={e => {
+                    if (ag.status === 'AGUARDANDO') {
+                      marcarChegada(ag, e)
+                    } else {
+                      abrirModalPaciente(ag, e)
+                    }
+                  }}
+                  title={ag.status === 'AGUARDANDO' ? 'Paciente aguardando — clique para desfazer' : 'Marcar chegada do paciente'}
+                  style={{
+                    flexShrink: 0,
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    padding: '3px 9px', borderRadius: 20,
+                    border: ag.status === 'AGUARDANDO'
+                      ? '1px solid #EF9F27'
+                      : '1px solid var(--borda-media)',
+                    background: ag.status === 'AGUARDANDO' ? '#EF9F2720' : 'transparent',
+                    color: ag.status === 'AGUARDANDO' ? '#EF9F27' : 'var(--texto-terciario)',
+                    fontSize: 11, fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <UserCheck size={12} />
+                  {ag.status === 'AGUARDANDO' ? 'Aguardando' : 'Chegou?'}
+                </button>
+              )}
+
+              {/* Status badge */}
+              {ag.status !== 'AGUARDANDO' && (
+                <div style={{
+                  fontSize: 11, fontWeight: 600, color: statusColor,
+                  background: statusColor + '18',
+                  padding: '2px 9px', borderRadius: 20,
+                  flexShrink: 0,
+                }}>
+                  {STATUS_LABEL[ag.status]}
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
     )
   }
@@ -1046,10 +1360,11 @@ export default function AgendamentoPage() {
             {/* Views */}
             <div style={{ display: 'flex', gap: 2, background: 'var(--bg-card)', border: '0.5px solid var(--borda-suave)', borderRadius: 6, padding: 2 }}>
               {[
-                { key: 'dia',    icon: <CalendarDays size={13} />, label: 'Dia' },
-                { key: 'semana', icon: <LayoutGrid size={13} />,   label: 'Semana' },
-                { key: 'mes',    icon: <LayoutGrid size={13} />,   label: 'Mês' },
-                { key: 'lista',  icon: <List size={13} />,         label: 'Lista' },
+                { key: 'dia',       icon: <CalendarDays size={13} />, label: 'Dia' },
+                { key: 'semana',    icon: <LayoutGrid size={13} />,   label: 'Semana' },
+                { key: 'mes',       icon: <LayoutGrid size={13} />,   label: 'Mês' },
+                { key: 'confirmar', icon: <List size={13} />,         label: 'Confirmar Agendamento' },
+                { key: 'lista',     icon: <List size={13} />,         label: 'Lista de Espera' },
               ].map(v => (
                 <button
                   key={v.key}
@@ -1092,10 +1407,11 @@ export default function AgendamentoPage() {
 
             {/* Conteúdo principal */}
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              {view === 'dia'    && renderDia()}
-              {view === 'semana' && renderSemana()}
-              {view === 'mes'    && renderMes()}
-              {view === 'lista'  && renderLista()}
+              {view === 'dia'       && renderDia()}
+              {view === 'semana'    && renderSemana()}
+              {view === 'mes'       && renderMes()}
+              {view === 'confirmar' && renderConfirmar()}
+              {view === 'lista'     && renderLista()}
             </div>
 
             {/* Sidebar: mini calendário + legenda */}
@@ -1111,6 +1427,14 @@ export default function AgendamentoPage() {
         agendamento={editAg}
         dataHoraInicio={slotInicio}
         profissionalPre={profissionais.find(p => p.id === profFiltro) ?? null}
+      />
+
+      <PacienteCheckInFormModal
+        open={modalPacienteOpen}
+        paciente={pacienteDados}
+        agendamento={agendamentoAtual}
+        onClose={fecharModalPaciente}
+        onSaved={carregar}
       />
     </>
   )

@@ -458,6 +458,7 @@ export default function RecebimentosPage() {
           setAgendamentoSel(null)
         }}
         agendamento={agendamentoSel}
+        onRecebimentoSalvo={carregar}
       />
     </>
   )

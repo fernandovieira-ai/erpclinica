@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
   LayoutDashboard, TrendingUp, TrendingDown, DollarSign, FileText,
   Users, Settings, LogOut, ChevronDown, ChevronRight,
@@ -89,10 +89,14 @@ const NAV: NavItem[] = [
 
 export default function Sidebar({ session }: Props) {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const router   = useRouter()
   const [open, setOpen] = useState<string[]>(() =>
     NAV
-      .filter(item => item.children?.some(c => pathname === c.href || pathname.startsWith(c.href + '/')))
+      .filter(item => item.children?.some(c => {
+        const [path] = c.href.split('?')
+        return pathname === path || pathname.startsWith(path + '/')
+      }))
       .map(item => item.label),
   )
 
@@ -107,7 +111,22 @@ export default function Sidebar({ session }: Props) {
     router.push('/login')
   }
 
-  const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/')
+  const isActive = (href: string) => {
+    const [hrefPath, hrefQuery] = href.split('?')
+    const matches = pathname === hrefPath || pathname.startsWith(hrefPath + '/')
+
+    if (!matches) return false
+
+    // Se tem query string, verifica se corresponde
+    if (hrefQuery) {
+      const params = new URLSearchParams(hrefQuery)
+      for (const [key, value] of params) {
+        if (searchParams.get(key) !== value) return false
+      }
+    }
+
+    return true
+  }
 
   return (
     <aside className="sidebar">
