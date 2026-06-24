@@ -36,10 +36,44 @@ const STATUS_OPTIONS = [
   { value: 'CANCELADO',  label: 'Cancelado',  color: '#6B7280' },
 ]
 
-function Label({ children }: { children: React.ReactNode }) {
+function validarCPF(valor: string): boolean {
+  const c = valor.replace(/\D/g, '')
+  if (c.length !== 11 || /^(\d)\1{10}$/.test(c)) return false
+  let soma = 0
+  for (let i = 0; i < 9; i++) soma += parseInt(c[i]) * (10 - i)
+  let r = (soma * 10) % 11
+  if (r === 10 || r === 11) r = 0
+  if (r !== parseInt(c[9])) return false
+  soma = 0
+  for (let i = 0; i < 10; i++) soma += parseInt(c[i]) * (11 - i)
+  r = (soma * 10) % 11
+  if (r === 10 || r === 11) r = 0
+  return r === parseInt(c[10])
+}
+
+function validarCNPJ(valor: string): boolean {
+  const c = valor.replace(/\D/g, '')
+  if (c.length !== 14 || /^(\d)\1{13}$/.test(c)) return false
+  const calc = (s: string, n: number) => {
+    let soma = 0; let pos = n - 7
+    for (let i = n; i >= 1; i--) { soma += parseInt(s[n - i]) * pos--; if (pos < 2) pos = 9 }
+    const r = soma % 11
+    return r < 2 ? 0 : 11 - r
+  }
+  return calc(c, 12) === parseInt(c[12]) && calc(c, 13) === parseInt(c[13])
+}
+
+function validarCpfCnpj(valor: string): boolean {
+  const digits = valor.replace(/\D/g, '')
+  if (digits.length === 11) return validarCPF(digits)
+  if (digits.length === 14) return validarCNPJ(digits)
+  return false
+}
+
+function Label({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
     <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--texto-terciario)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 }}>
-      {children}
+      {children}{required && <span style={{ color: 'var(--cor-erro)', marginLeft: 2 }}>*</span>}
     </div>
   )
 }
@@ -58,6 +92,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
   const [pacienteSel,   setPacienteSel]   = useState<Paciente | null>(null)
   const [buscaPaciente, setBuscaPaciente] = useState('')
   const [loadingPac,    setLoadingPac]    = useState(false)
+  const [loadingSlot,   setLoadingSlot]   = useState(false)
   const [saving,        setSaving]        = useState(false)
 
   const [showCadRapido,   setShowCadRapido]   = useState(false)
@@ -76,6 +111,28 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
     observacao:      '',
     categoria_id:    null as number | null,
   })
+
+  const buscarProximoHorario = useCallback(async (profissionalId: number, dataInicio?: string, horaInicioMin?: string) => {
+    if (!profissionalId) return
+    setLoadingSlot(true)
+    try {
+      const params = new URLSearchParams()
+      if (dataInicio)   params.set('data_inicio',    dataInicio)
+      if (horaInicioMin) params.set('hora_inicio_min', horaInicioMin)
+      const res  = await fetch(`/api/clinica/profissionais/${profissionalId}/proximo-horario?${params}`)
+      if (!res.ok) {
+        const err = await res.json()
+        toast.error(err.erro ?? 'Nenhum horário disponível')
+        return
+      }
+      const slot = await res.json()
+      setForm(f => ({ ...f, data: slot.data, hora_inicio: slot.hora_inicio, hora_fim: slot.hora_fim }))
+    } catch {
+      toast.error('Erro ao buscar próximo horário disponível')
+    } finally {
+      setLoadingSlot(false)
+    }
+  }, [])
 
   // Carregar dados auxiliares
   useEffect(() => {
@@ -113,25 +170,64 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
       setBuscaPaciente(agendamento.paciente_nome)
       setPacienteSel({ id: agendamento.paciente_id, nome: agendamento.paciente_nome, cpf_cnpj: null, celular: agendamento.paciente_celular ?? null, telefone: null, cidade: null, uf: null, email: null })
     } else {
-      const ini = dataHoraInicio ?? new Date()
-      const fim = new Date(ini.getTime() + 30 * 60000)
-      setForm({
-        paciente_id:     0,
-        profissional_id: profissionalPre?.id ?? 0,
-        tipo_id:         null,
-        data:            format(ini, 'yyyy-MM-dd'),
-        hora_inicio:     format(ini, 'HH:mm'),
-        hora_fim:        format(fim, 'HH:mm'),
-        status:          'AGENDADO',
-        motivo:          '',
-        observacao:      '',
-        categoria_id:    null,
-      })
+      if (dataHoraInicio && profissionalPre?.id) {
+        // Slot clicado no calendário com profissional: consulta endpoint para validar e ajustar
+        // o horário respeitando grade semanal, pausas e agendamentos existentes
+        const dataStr = format(dataHoraInicio, 'yyyy-MM-dd')
+        const horaStr = format(dataHoraInicio, 'HH:mm')
+        setForm({
+          paciente_id:     0,
+          profissional_id: profissionalPre.id,
+          tipo_id:         null,
+          data:            dataStr,
+          hora_inicio:     '',
+          hora_fim:        '',
+          status:          'AGENDADO',
+          motivo:          '',
+          observacao:      '',
+          categoria_id:    null,
+        })
+        buscarProximoHorario(profissionalPre.id, dataStr, horaStr)
+      } else if (dataHoraInicio) {
+        // Slot clicado sem profissional pré-selecionado: usa o horário do slot diretamente
+        const ini = dataHoraInicio
+        const fim = new Date(ini.getTime() + 30 * 60000)
+        setForm({
+          paciente_id:     0,
+          profissional_id: 0,
+          tipo_id:         null,
+          data:            format(ini, 'yyyy-MM-dd'),
+          hora_inicio:     format(ini, 'HH:mm'),
+          hora_fim:        format(fim, 'HH:mm'),
+          status:          'AGENDADO',
+          motivo:          '',
+          observacao:      '',
+          categoria_id:    null,
+        })
+      } else {
+        // Botão "Novo agendamento" sem slot: inicializa vazio e busca próximo horário
+        setForm({
+          paciente_id:     0,
+          profissional_id: profissionalPre?.id ?? 0,
+          tipo_id:         null,
+          data:            '',
+          hora_inicio:     '',
+          hora_fim:        '',
+          status:          'AGENDADO',
+          motivo:          '',
+          observacao:      '',
+          categoria_id:    null,
+        })
+        if (profissionalPre?.id) {
+          buscarProximoHorario(profissionalPre.id)
+        }
+      }
       setBuscaPaciente('')
       setPacienteSel(null)
     }
     setShowCadRapido(false)
     setFormCad({ nome: '', data_nascimento: '', cpf_cnpj: '', celular: '' })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, agendamento, dataHoraInicio, profissionalPre])
 
   // Busca de pacientes com debounce
@@ -173,7 +269,11 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
   }
 
   async function handleCadastroRapido() {
-    if (!formCad.nome.trim()) { toast.error('Informe o nome do paciente'); return }
+    if (!formCad.nome.trim())                        { toast.error('Informe o nome do paciente'); return }
+    if (!formCad.data_nascimento)                    { toast.error('Informe a data de nascimento'); return }
+    if (!formCad.cpf_cnpj.trim())                    { toast.error('Informe o CPF / CNPJ'); return }
+    if (!validarCpfCnpj(formCad.cpf_cnpj))           { toast.error('CPF / CNPJ inválido'); return }
+    if (!formCad.celular.trim())                      { toast.error('Informe o celular'); return }
     setSalvandoCad(true)
     try {
       const res = await fetch('/api/clinica/pacientes', {
@@ -214,6 +314,8 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
     if (!form.profissional_id) { toast.error('Selecione o profissional'); return }
     if (!form.data)            { toast.error('Informe a data'); return }
     if (!form.hora_inicio || !form.hora_fim) { toast.error('Informe os horários'); return }
+    if (!form.tipo_id)         { toast.error('Selecione o tipo de atendimento'); return }
+    if (!form.categoria_id)    { toast.error('Selecione a categoria'); return }
 
     const ini = `${form.data}T${form.hora_inicio}:00`
     const fim = `${form.data}T${form.hora_fim}:00`
@@ -347,7 +449,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
           {/* ── Paciente ────────────────────────────────────────── */}
           <fieldset style={{ border: '1px solid var(--borda-suave)', borderRadius: 4, padding: '8px 10px 10px', margin: 0 }}>
             <legend style={{ fontSize: 10, fontWeight: 700, color: 'var(--texto-terciario)', textTransform: 'uppercase', letterSpacing: '.06em', padding: '0 6px', display: 'flex', alignItems: 'center', gap: 4 }}>
-              <User size={10} /> Paciente
+              <User size={10} /> Paciente<span style={{ color: 'var(--cor-erro)', marginLeft: 2 }}>*</span>
             </legend>
 
             <div style={{ position: 'relative' }}>
@@ -463,7 +565,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     <div>
                       <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--texto-terciario)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>
-                        Data de Nascimento
+                        Data de Nascimento<span style={{ color: 'var(--cor-erro)', marginLeft: 2 }}>*</span>
                       </div>
                       <input
                         type="date"
@@ -479,7 +581,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                     </div>
                     <div>
                       <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--texto-terciario)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>
-                        CPF / CNPJ
+                        CPF / CNPJ<span style={{ color: 'var(--cor-erro)', marginLeft: 2 }}>*</span>
                       </div>
                       <input
                         value={formCad.cpf_cnpj}
@@ -498,7 +600,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                   {/* Celular */}
                   <div>
                     <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--texto-terciario)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>
-                      Celular
+                      Celular<span style={{ color: 'var(--cor-erro)', marginLeft: 2 }}>*</span>
                     </div>
                     <input
                       value={formCad.celular}
@@ -523,14 +625,14 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                     </button>
                     <button
                       onClick={handleCadastroRapido}
-                      disabled={salvandoCad || !formCad.nome.trim()}
+                      disabled={salvandoCad || !formCad.nome.trim() || !formCad.data_nascimento || !formCad.cpf_cnpj.trim() || !formCad.celular.trim()}
                       style={{
                         display: 'flex', alignItems: 'center', gap: 6,
                         padding: '6px 18px', fontSize: 12, fontWeight: 600,
-                        background: salvandoCad || !formCad.nome.trim() ? 'var(--cor-primaria-hover)' : 'var(--cor-primaria)',
+                        background: salvandoCad || !formCad.nome.trim() || !formCad.data_nascimento || !formCad.cpf_cnpj.trim() || !formCad.celular.trim() ? 'var(--cor-primaria-hover)' : 'var(--cor-primaria)',
                         color: '#fff', border: 'none', borderRadius: 5,
-                        cursor: salvandoCad || !formCad.nome.trim() ? 'not-allowed' : 'pointer',
-                        opacity: salvandoCad || !formCad.nome.trim() ? 0.7 : 1,
+                        cursor: salvandoCad || !formCad.nome.trim() || !formCad.data_nascimento || !formCad.cpf_cnpj.trim() || !formCad.celular.trim() ? 'not-allowed' : 'pointer',
+                        opacity: salvandoCad || !formCad.nome.trim() || !formCad.data_nascimento || !formCad.cpf_cnpj.trim() || !formCad.celular.trim() ? 0.7 : 1,
                       }}
                     >
                       <UserPlus size={13} />
@@ -572,14 +674,21 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
           <fieldset style={{ border: '1px solid var(--borda-suave)', borderRadius: 4, padding: '8px 10px 10px', margin: 0 }}>
             <legend style={{ fontSize: 10, fontWeight: 700, color: 'var(--texto-terciario)', textTransform: 'uppercase', letterSpacing: '.06em', padding: '0 6px', display: 'flex', alignItems: 'center', gap: 4 }}>
               <Stethoscope size={10} /> Agendamento
+              {loadingSlot && <span style={{ fontWeight: 400, color: 'var(--cor-primaria)', textTransform: 'none', letterSpacing: 0, marginLeft: 6 }}>Buscando próximo horário...</span>}
             </legend>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: 8, alignItems: 'end' }}>
               <Field>
-                <Label>Profissional</Label>
+                <Label required>Profissional</Label>
                 <select
                   value={form.profissional_id}
-                  onChange={e => setForm(f => ({ ...f, profissional_id: Number(e.target.value) }))}
+                  onChange={e => {
+                    const id = Number(e.target.value)
+                    setForm(f => ({ ...f, profissional_id: id }))
+                    if (!isEdit && id && !dataHoraInicio) {
+                      buscarProximoHorario(id, form.data || undefined)
+                    }
+                  }}
                   style={{ padding: '5px 6px', fontSize: 12, backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3 }}
                 >
                   <option value={0}>Selecione...</option>
@@ -590,21 +699,23 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
               </Field>
 
               <Field>
-                <Label>Data</Label>
+                <Label required>Data</Label>
                 <input
                   type="date"
                   value={form.data}
+                  disabled={loadingSlot}
                   min={!isEdit ? format(new Date(), 'yyyy-MM-dd') : undefined}
                   onChange={e => setForm(f => ({ ...f, data: e.target.value }))}
-                  style={{ padding: '5px 6px', fontSize: 12, backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3, width: 130 }}
+                  style={{ padding: '5px 6px', fontSize: 12, backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3, width: 130, opacity: loadingSlot ? 0.5 : 1 }}
                 />
               </Field>
 
               <Field>
-                <Label>Hora início</Label>
+                <Label required>Hora início</Label>
                 <input
                   type="time"
                   value={form.hora_inicio}
+                  disabled={loadingSlot}
                   onChange={e => setForm(f => ({ ...f, hora_inicio: e.target.value }))}
                   style={{
                     padding: '5px 6px', fontSize: 12,
@@ -615,18 +726,19 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                         ? 'var(--cor-erro)'
                         : 'var(--borda-media)'
                     }`,
-                    borderRadius: 3, width: 90,
+                    borderRadius: 3, width: 90, opacity: loadingSlot ? 0.5 : 1,
                   }}
                 />
               </Field>
 
               <Field>
-                <Label>Hora fim</Label>
+                <Label required>Hora fim</Label>
                 <input
                   type="time"
                   value={form.hora_fim}
+                  disabled={loadingSlot}
                   onChange={e => setForm(f => ({ ...f, hora_fim: e.target.value }))}
-                  style={{ padding: '5px 6px', fontSize: 12, backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3, width: 90 }}
+                  style={{ padding: '5px 6px', fontSize: 12, backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3, width: 90, opacity: loadingSlot ? 0.5 : 1 }}
                 />
               </Field>
             </div>
@@ -635,13 +747,13 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
           {/* ── Tipo de Atendimento + Status ────────────────────────────── */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <Field>
-              <Label>Tipo de Atendimento</Label>
+              <Label required>Tipo de Atendimento</Label>
               <select
                 value={form.tipo_id ?? ''}
                 onChange={e => handleTipo(e.target.value ? Number(e.target.value) : null)}
                 style={{ padding: '5px 6px', fontSize: 12, backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3 }}
               >
-                <option value="">Sem tipo de atendimento</option>
+                <option value="">Selecione o tipo...</option>
                 {tipos.map(t => (
                   <option key={t.id} value={t.id}>{t.descricao} ({t.duracao_min}min)</option>
                 ))}
@@ -649,7 +761,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
             </Field>
 
             <Field>
-              <Label>Status</Label>
+              <Label required>Status</Label>
               <select
                 value={form.status}
                 onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
@@ -670,13 +782,13 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
 
           {/* ── Categoria ────────────────────────────────────────── */}
           <Field>
-            <Label>Categoria</Label>
+            <Label required>Categoria</Label>
             <select
               value={form.categoria_id ?? ''}
               onChange={e => setForm(f => ({ ...f, categoria_id: e.target.value ? Number(e.target.value) : null }))}
               style={{ padding: '5px 6px', fontSize: 12, backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3 }}
             >
-              <option value="">Sem categoria</option>
+              <option value="">Selecione a categoria...</option>
               {categorias.map(c => (
                 <option key={c.id} value={c.id}>{c.descricao}</option>
               ))}

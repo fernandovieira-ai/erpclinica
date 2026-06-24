@@ -280,78 +280,12 @@ export default function AgendamentoPage() {
     setAgendamentoAtual(null)
   }
 
-  async function abrirNovoProximoDisponivel() {
-    setBuscandoSlot(true)
-    try {
-      const agora = new Date()
-
-      const m = agora.getMinutes()
-      let nextH = agora.getHours()
-      let nextM: number
-      if (m < 30) { nextM = 30 } else { nextM = 0; nextH += 1 }
-
-      // sem profissional no filtro: abre modal no próximo slot sem checar conflito
-      if (!profFiltro) {
-        const dia = startOfDay(agora)
-        for (const slot of HORAS) {
-          if (slot.h < nextH || (slot.h === nextH && slot.m < nextM)) continue
-          setEditAg(null)
-          setSlotInicio(setMinutes(setHours(dia, slot.h), slot.m))
-          setModalOpen(true)
-          return
-        }
-        setEditAg(null)
-        setSlotInicio(setHours(addDays(agora, 1), 8))
-        setModalOpen(true)
-        return
-      }
-
-      // com profissional: busca o primeiro slot livre dele nos próximos 14 dias
-      const sp = new URLSearchParams({
-        inicio:          format(agora, 'yyyy-MM-dd'),
-        fim:             format(addDays(agora, 14), 'yyyy-MM-dd'),
-        profissional_id: String(profFiltro),
-      })
-
-      let ags: AgendamentoListItem[] = []
-      const res = await fetch(`/api/clinica/agendamentos?${sp}`)
-      if (res.ok) {
-        const data = await res.json()
-        ags = data.dados ?? []
-      }
-
-      for (let d = 0; d <= 14; d++) {
-        const dia = startOfDay(addDays(agora, d))
-        const dataStr = format(dia, 'yyyy-MM-dd')
-        if (diasIndisponíveis.has(dataStr)) continue
-
-        for (const slot of HORAS) {
-          if (d === 0 && (slot.h < nextH || (slot.h === nextH && slot.m < nextM))) continue
-
-          const slotDt = setMinutes(setHours(dia, slot.h), slot.m)
-          const ocupado = ags.some(ag => {
-            if (ag.profissional_id !== profFiltro) return false
-            const ini = parseISO(ag.data_hora_inicio)
-            const fim = parseISO(ag.data_hora_fim)
-            return slotDt >= ini && slotDt < fim
-          })
-
-          if (!ocupado) {
-            setEditAg(null)
-            setSlotInicio(slotDt)
-            setModalOpen(true)
-            return
-          }
-        }
-      }
-
-      // fallback: próximo dia às 8h
-      setEditAg(null)
-      setSlotInicio(setHours(addDays(agora, 1), 8))
-      setModalOpen(true)
-    } finally {
-      setBuscandoSlot(false)
-    }
+  function abrirNovoProximoDisponivel() {
+    // Delega ao modal a busca do próximo horário via /api/.../proximo-horario
+    // para respeitar corretamente grade semanal, pausas, exceções e agendamentos existentes
+    setEditAg(null)
+    setSlotInicio(null)
+    setModalOpen(true)
   }
 
   const tituloNav = useMemo(() => {

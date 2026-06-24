@@ -21,7 +21,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   try {
     // Verificar se há exceção para esta data
     const { rows: excecoes } = await db.query(
-      `SELECT nao_atende, hora_inicio, hora_fim
+      `SELECT nao_atende,
+              SUBSTRING(hora_inicio::text, 1, 5) AS hora_inicio,
+              SUBSTRING(hora_fim::text,    1, 5) AS hora_fim
        FROM tab_agenda_profissional_excecao
        WHERE profissional_id = $1 AND empresa_id = $2 AND data = $3`,
       [profissionalId, session.empresa_id_ativa, data],
@@ -51,7 +53,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       const diaSemana = dataObj.getDay() // 0=Dom, 1=Seg, ..., 6=Sáb
 
       const { rows: agendaDias } = await db.query(
-        `SELECT hora_inicio, hora_fim, ativo
+        `SELECT SUBSTRING(hora_inicio::text, 1, 5) AS hora_inicio,
+                SUBSTRING(hora_fim::text,    1, 5) AS hora_fim,
+                ativo
          FROM tab_agenda_profissional
          WHERE profissional_id = $1 AND empresa_id = $2 AND dia_semana = $3`,
         [profissionalId, session.empresa_id_ativa, diaSemana],
@@ -76,7 +80,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
       // Validar pausas
       const { rows: pausas } = await db.query(
-        `SELECT hora_inicio, hora_fim
+        `SELECT SUBSTRING(hora_inicio::text, 1, 5) AS hora_inicio,
+                SUBSTRING(hora_fim::text,    1, 5) AS hora_fim
          FROM tab_agenda_profissional_pausa
          WHERE profissional_id = $1 AND empresa_id = $2 AND dia_semana = $3`,
         [profissionalId, session.empresa_id_ativa, diaSemana],
