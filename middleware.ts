@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyTokenEdge } from '@/lib/auth/jwt-edge'
 
-// DEV: bypass de login — definir DEV_NO_AUTH=true no .env.local para desenvolvimento
-const DEV_NO_AUTH = process.env.DEV_NO_AUTH === 'true'
+// DEV: bypass de login — autenticação ERP desativada temporariamente
+const DEV_NO_AUTH = true
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
