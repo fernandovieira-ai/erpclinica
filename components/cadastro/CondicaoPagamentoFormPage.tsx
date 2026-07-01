@@ -209,6 +209,7 @@ export default function CondicaoPagamentoFormPage({ condicao }: Props) {
               <option value="debito">Débito</option>
               <option value="credito">Crédito</option>
               <option value="pix">PIX</option>
+              <option value="a_prazo">A Prazo</option>
             </Select>
           </Row>
 

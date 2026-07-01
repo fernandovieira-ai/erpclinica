@@ -28,6 +28,7 @@ export default function PessoaModal({ pessoa, onClose, onSaved }: Props) {
     defaultValues: {
       tipo_pessoa: 'J', ind_cliente: false, ind_fornecedor: false,
       ind_banco: false, ind_transportador: false,
+      profissao: '', altura: null, peso: null,
       limite_credito: 0, contribuinte_icms: false, optante_simples: false,
     },
   })
@@ -41,6 +42,9 @@ export default function PessoaModal({ pessoa, onClose, onSaved }: Props) {
         cpf_cnpj:           pessoa.cpf_cnpj ?? '',
         rg_ie:              pessoa.rg_ie ?? '',
         im:                 pessoa.im ?? '',
+        profissao:          pessoa.profissao ?? '',
+        altura:             pessoa.altura != null ? Number(pessoa.altura) : null,
+        peso:               pessoa.peso   != null ? Number(pessoa.peso)   : null,
         ind_cliente:        pessoa.ind_cliente,
         ind_fornecedor:     pessoa.ind_fornecedor,
         ind_banco:          pessoa.ind_banco,
@@ -222,6 +226,57 @@ export default function PessoaModal({ pessoa, onClose, onSaved }: Props) {
                     </div>
                   )}
                 </div>
+
+                {tipoPessoa === 'F' && (
+                  <div>
+                    <div className="field-section">Dados Pessoais</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <div>
+                        <label className="field-label">Profissão</label>
+                        <input className="input-field" {...register('profissao')} placeholder="Ex: MÉDICO, ADVOGADO..." />
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 12, alignItems: 'end' }}>
+                        <div>
+                          <label className="field-label">Altura (m)</label>
+                          <input
+                            type="number" step="0.01" min="0" max="3"
+                            className="input-field font-mono"
+                            {...register('altura', { setValueAs: v => v === '' ? null : Number(v) })}
+                            placeholder="1.75"
+                          />
+                        </div>
+                        <div>
+                          <label className="field-label">Peso (kg)</label>
+                          <input
+                            type="number" step="0.1" min="0" max="999"
+                            className="input-field font-mono"
+                            {...register('peso', { setValueAs: v => v === '' ? null : Number(v) })}
+                            placeholder="70.0"
+                          />
+                        </div>
+                        {(() => {
+                          const a = Number(watch('altura')), p = Number(watch('peso'))
+                          if (!a || !p || a <= 0 || p <= 0) return <div />
+                          const imc = p / (a * a)
+                          let label = '', cor = ''
+                          if      (imc < 18.5) { label = 'Abaixo do peso'; cor = '#3B82F6' }
+                          else if (imc < 25)   { label = 'Normal';          cor = '#10B981' }
+                          else if (imc < 30)   { label = 'Sobrepeso';       cor = '#F59E0B' }
+                          else if (imc < 35)   { label = 'Ob. Grau I';      cor = '#F97316' }
+                          else if (imc < 40)   { label = 'Ob. Grau II';     cor = '#EF4444' }
+                          else                  { label = 'Ob. Grau III';    cor = '#7C3AED' }
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '6px 10px', background: `${cor}18`, borderRadius: 6, border: `1px solid ${cor}50`, marginBottom: 1 }}>
+                              <span style={{ fontSize: 9, color: 'var(--texto-terciario)', fontWeight: 600, letterSpacing: '.05em' }}>IMC</span>
+                              <span style={{ fontSize: 15, fontWeight: 700, color: cor, fontFamily: 'var(--fonte-mono)', lineHeight: 1.2 }}>{imc.toFixed(1)}</span>
+                              <span style={{ fontSize: 9, color: cor, fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</span>
+                            </div>
+                          )
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <div className="field-section">Papéis</div>

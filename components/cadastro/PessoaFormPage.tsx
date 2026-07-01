@@ -471,6 +471,16 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
   const [buscandoCep,  setBuscandoCep]  = useState(false)
   const [buscandoCnpj, setBuscandoCnpj] = useState(false)
 
+  // ── Tipos de cobrança ────────────────────────────────────
+  const [tiposCobranca, setTiposCobranca] = useState<{ cod_tipo_cobranca: number; des_tipo_cobranca: string }[]>([])
+
+  useEffect(() => {
+    fetch('/api/cadastro/formas-pagamento?ativo=true&limit=200')
+      .then(r => r.json())
+      .then(d => setTiposCobranca(d.dados ?? []))
+      .catch(() => {})
+  }, [])
+
   // ── Agenda do profissional ───────────────────────────────
   const [agenda,            setAgenda]            = useState<AgendaDia[]>([])
   const [pausas,            setPausas]            = useState<AgendaPausa[]>([])
@@ -633,15 +643,15 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
     resolver: zodResolver(pessoaSchema),
     defaultValues: {
       tipo_pessoa: 'F', cpf_cnpj: '', data_nascimento: '', cep: '',
-      sexo: undefined, cor_raca: '', estado_civil: '', naturalidade: '', foto: null,
-      pai_pessoa_id: null, pai_nome: '', pai_profissao: '', pai_paciente: false,
-      mae_pessoa_id: null, mae_nome: '', mae_profissao: '', mae_paciente: false,
-      conjuge_pessoa_id: null, conjuge_nome: '', conjuge_profissao: '', conjuge_paciente: false,
+      sexo: undefined, cor_raca: '', estado_civil: '', naturalidade: '', profissao: '', altura: null, peso: null, foto: null,
+      pai_pessoa_id: null, pai_nome: '', pai_paciente: false,
+      mae_pessoa_id: null, mae_nome: '', mae_paciente: false,
+      conjuge_pessoa_id: null, conjuge_nome: '', conjuge_paciente: false,
       indicacao_pessoa_id: null, indicacao_nome: '', indicacao_fone: '', indicacao_ligacao: '',
       ind_cliente: false, ind_fornecedor: false,
       ind_banco: false, ind_transportador: false,
       ind_paciente: papelInicial === 'paciente', ind_profissional: papelInicial === 'profissional',
-      limite_credito: 0, contribuinte_icms: false, optante_simples: false,
+      limite_credito: 0, cod_tipo_cobranca: null, contribuinte_icms: false, optante_simples: false,
     },
   })
 
@@ -660,18 +670,18 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
       cor_raca:          pessoa.cor_raca ?? '',
       estado_civil:      pessoa.estado_civil ?? '',
       naturalidade:      pessoa.naturalidade ?? '',
+      profissao:         pessoa.profissao ?? '',
+      altura:            pessoa.altura != null ? Number(pessoa.altura) : null,
+      peso:              pessoa.peso   != null ? Number(pessoa.peso)   : null,
       foto:              pessoa.foto ?? null,
       pai_pessoa_id:     pessoa.pai_pessoa_id ?? null,
       pai_nome:          pessoa.pai_nome ?? '',
-      pai_profissao:     pessoa.pai_profissao ?? '',
       pai_paciente:      pessoa.pai_paciente ?? false,
       mae_pessoa_id:     pessoa.mae_pessoa_id ?? null,
       mae_nome:          pessoa.mae_nome ?? '',
-      mae_profissao:     pessoa.mae_profissao ?? '',
       mae_paciente:      pessoa.mae_paciente ?? false,
       conjuge_pessoa_id: pessoa.conjuge_pessoa_id ?? null,
       conjuge_nome:      pessoa.conjuge_nome ?? '',
-      conjuge_profissao: pessoa.conjuge_profissao ?? '',
       conjuge_paciente:  pessoa.conjuge_paciente ?? false,
       indicacao_pessoa_id: pessoa.indicacao_pessoa_id ?? null,
       indicacao_nome:    pessoa.indicacao_nome ?? '',
@@ -698,6 +708,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
       email:             pessoa.email ?? '',
       email_nfe:         pessoa.email_nfe ?? '',
       limite_credito:    Number(pessoa.limite_credito),
+      cod_tipo_cobranca: pessoa.cod_tipo_cobranca ?? null,
       banco_nome:        pessoa.banco_nome ?? '',
       banco_agencia:     pessoa.banco_agencia ?? '',
       banco_conta:       pessoa.banco_conta ?? '',
@@ -767,7 +778,6 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
     setSaving(true)
     try {
       const payload = { ...data, cpf_cnpj: (data.cpf_cnpj ?? '').replace(/\D/g, '') || null }
-      console.log('[PessoaForm] onSubmit payload:', JSON.stringify(payload, null, 2))
       const url    = pessoa ? `/api/cadastro/pessoas/${pessoa.id}` : '/api/cadastro/pessoas'
       const method = pessoa ? 'PATCH' : 'POST'
       const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
@@ -1049,6 +1059,48 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
                 <FormRow label="Naturalidade:">
                   <Input {...register('naturalidade')} placeholder="Cidade de nascimento" />
                 </FormRow>
+                <FormRow label="Profissão:">
+                  <Input {...register('profissao')} placeholder="Ex: MÉDICO, ENFERMEIRO..." />
+                </FormRow>
+                <div style={{ display: 'flex', gap: 8, paddingLeft: 116, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 11, color: 'var(--texto-secundario)', whiteSpace: 'nowrap' }}>Altura (m):</span>
+                    <Input
+                      type="number" step="0.01" min="0" max="3"
+                      {...register('altura', { setValueAs: v => v === '' ? null : Number(v) })}
+                      placeholder="1.75"
+                      style={{ width: 70, fontFamily: 'var(--fonte-mono)' }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 11, color: 'var(--texto-secundario)', whiteSpace: 'nowrap' }}>Peso (kg):</span>
+                    <Input
+                      type="number" step="0.1" min="0" max="999"
+                      {...register('peso', { setValueAs: v => v === '' ? null : Number(v) })}
+                      placeholder="70.0"
+                      style={{ width: 75, fontFamily: 'var(--fonte-mono)' }}
+                    />
+                  </div>
+                  {(() => {
+                    const a = Number(watch('altura')), p = Number(watch('peso'))
+                    if (!a || !p || a <= 0 || p <= 0) return null
+                    const imc = p / (a * a)
+                    let label = '', cor = ''
+                    if      (imc < 18.5) { label = 'Abaixo do peso'; cor = '#3B82F6' }
+                    else if (imc < 25)   { label = 'Normal';          cor = '#10B981' }
+                    else if (imc < 30)   { label = 'Sobrepeso';       cor = '#F59E0B' }
+                    else if (imc < 35)   { label = 'Ob. Grau I';      cor = '#F97316' }
+                    else if (imc < 40)   { label = 'Ob. Grau II';     cor = '#EF4444' }
+                    else                  { label = 'Ob. Grau III';    cor = '#7C3AED' }
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '2px 8px', background: `${cor}18`, borderRadius: 4, border: `1px solid ${cor}50` }}>
+                        <span style={{ fontSize: 10, color: 'var(--texto-terciario)', whiteSpace: 'nowrap' }}>IMC</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: cor, fontFamily: 'var(--fonte-mono)' }}>{imc.toFixed(1)}</span>
+                        <span style={{ fontSize: 10, color: cor, fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</span>
+                      </div>
+                    )
+                  })()}
+                </div>
               </>)}
             </div>
           </div>
@@ -1142,9 +1194,6 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
                   placeholder="Nome do pai..."
                 />
               </FormRow>
-              <FormRow label="Profissão:">
-                <Input {...register('pai_profissao')} />
-              </FormRow>
               <FormRow label="">
                 <Check label="É paciente" checked={!!watch('pai_paciente')} onChange={e => setValue('pai_paciente', e.target.checked)} />
               </FormRow>
@@ -1163,9 +1212,6 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
                   placeholder="Nome da mãe..."
                 />
               </FormRow>
-              <FormRow label="Profissão:">
-                <Input {...register('mae_profissao')} />
-              </FormRow>
               <FormRow label="">
                 <Check label="É paciente" checked={!!watch('mae_paciente')} onChange={e => setValue('mae_paciente', e.target.checked)} />
               </FormRow>
@@ -1183,9 +1229,6 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
                   onLimpar={() => { setValue('conjuge_pessoa_id', null); setValue('conjuge_nome', '') }}
                   placeholder="Nome do cônjuge..."
                 />
-              </FormRow>
-              <FormRow label="Profissão:">
-                <Input {...register('conjuge_profissao')} />
               </FormRow>
               <FormRow label="">
                 <Check label="É paciente" checked={!!watch('conjuge_paciente')} onChange={e => setValue('conjuge_paciente', e.target.checked)} />
@@ -1235,6 +1278,20 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
           <Secao titulo="Financeiro">
             <FormRow label="Lim. Crédito:">
               <MoneyInput value={watch('limite_credito')} onValue={n => setValue('limite_credito', n)} style={{ width: 130 }} />
+            </FormRow>
+            <FormRow label="Tipo Cobrança:">
+              <Select
+                value={watch('cod_tipo_cobranca') ?? ''}
+                onChange={e => setValue('cod_tipo_cobranca', e.target.value ? Number(e.target.value) : null)}
+                style={{ width: 280 }}
+              >
+                <option value="">— Nenhum —</option>
+                {tiposCobranca.map(tc => (
+                  <option key={tc.cod_tipo_cobranca} value={tc.cod_tipo_cobranca}>
+                    {tc.des_tipo_cobranca.toUpperCase()}
+                  </option>
+                ))}
+              </Select>
             </FormRow>
             <FormRow label="Banco:">
               <Input {...register('banco_nome')} />

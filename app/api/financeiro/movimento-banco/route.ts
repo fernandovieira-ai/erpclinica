@@ -85,6 +85,7 @@ export async function GET(req: NextRequest) {
               mb.conciliado,
               mb.origem_modulo,
               CASE
+                WHEN mb.origem_modulo = 'CLI' THEN 'Clínica'
                 WHEN mb.origem_modulo = 'REC' THEN 'Recebimento'
                 WHEN mb.titulo_pagar_id   IS NOT NULL THEN 'Tít. Pagar'
                 WHEN mb.titulo_receber_id IS NOT NULL THEN 'Tít. Receber'
@@ -93,6 +94,7 @@ export async function GET(req: NextRequest) {
                 ELSE 'Manual'
               END AS origem_tipo,
               CASE
+                WHEN mb.origem_modulo = 'CLI' THEN COALESCE(mb.observacao, 'Recebimento de consulta')
                 WHEN mb.origem_modulo = 'REC' THEN 'RECEBIMENTO (Clínica)'
                 WHEN mb.titulo_pagar_id IS NOT NULL THEN
                   COALESCE(td_tp.descricao, tp.num_documento, tp.numero_titulo)

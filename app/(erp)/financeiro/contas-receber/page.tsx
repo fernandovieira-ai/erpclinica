@@ -49,6 +49,10 @@ export default function TitulosReceberPage() {
   useEffect(() => { carregar() }, [carregar])
   useEffect(() => { setPage(1) }, [busca, status, dataInicio, dataFim])
 
+  function abrirTitulo(t: TituloReceberListItem) {
+    router.push(`/financeiro/contas-receber/${t.id}`)
+  }
+
   const inicio = (page - 1) * 50 + 1
   const fim    = Math.min(page * 50, total)
 
@@ -118,7 +122,7 @@ export default function TitulosReceberPage() {
                 {dados.map(t => {
                   const st = STATUS_LABEL[t.status] ?? { label: t.status, cor: 'inherit' }
                   return (
-                    <tr key={t.id} style={{ cursor: 'pointer' }} onClick={() => router.push(`/financeiro/contas-receber/${t.id}`)}>
+                    <tr key={t.id} style={{ cursor: 'pointer' }} onClick={() => abrirTitulo(t)}>
                       <td style={{ fontFamily: 'var(--fonte-mono)', color: 'var(--texto-terciario)' }}>{t.id}</td>
                       <td style={{ fontFamily: 'var(--fonte-mono)' }}>{t.numero_titulo || '—'}</td>
                       <td style={{ fontFamily: 'var(--fonte-mono)' }}>{t.num_documento || '—'}</td>

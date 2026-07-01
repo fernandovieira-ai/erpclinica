@@ -16,20 +16,20 @@ export const pessoaSchema = z.object({
   cor_raca:           z.preprocess(v => v === '' ? null : v, z.string().max(20).nullable().optional()),
   estado_civil:       z.preprocess(v => v === '' ? null : v, z.string().max(20).nullable().optional()),
   naturalidade:       z.preprocess(v => v === '' ? null : v, z.string().max(80).nullable().optional()),
+  profissao:          z.preprocess(v => v === '' ? null : v, z.string().max(100).nullable().optional()),
+  altura:             z.preprocess(v => (v == null || v === '') ? null : Number(v), z.number().min(0).max(3).nullable().optional()),
+  peso:               z.preprocess(v => (v == null || v === '') ? null : Number(v), z.number().min(0).max(999).nullable().optional()),
   foto:               z.string().optional().nullable(),
 
   // Filiação
   pai_pessoa_id:       z.number().int().optional().nullable(),
   pai_nome:            z.string().max(150).optional().nullable(),
-  pai_profissao:       z.string().max(100).optional().nullable(),
   pai_paciente:        z.boolean().default(false),
   mae_pessoa_id:       z.number().int().optional().nullable(),
   mae_nome:            z.string().max(150).optional().nullable(),
-  mae_profissao:       z.string().max(100).optional().nullable(),
   mae_paciente:        z.boolean().default(false),
   conjuge_pessoa_id:   z.number().int().optional().nullable(),
   conjuge_nome:        z.string().max(150).optional().nullable(),
-  conjuge_profissao:   z.string().max(100).optional().nullable(),
   conjuge_paciente:    z.boolean().default(false),
   indicacao_pessoa_id: z.number().int().optional().nullable(),
   indicacao_nome:      z.string().max(150).optional().nullable(),
@@ -65,6 +65,7 @@ export const pessoaSchema = z.object({
 
   // Financeiro
   limite_credito:     z.number().min(0).default(0),
+  cod_tipo_cobranca:  z.number().int().optional().nullable(),
   banco_nome:         z.string().max(60).optional().nullable(),
   banco_agencia:      z.string().max(10).optional().nullable(),
   banco_conta:        z.string().max(20).optional().nullable(),

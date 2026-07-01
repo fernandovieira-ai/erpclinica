@@ -98,6 +98,8 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
   const [showCadRapido,   setShowCadRapido]   = useState(false)
   const [salvandoCad,     setSalvandoCad]     = useState(false)
   const [formCad, setFormCad] = useState({ nome: '', data_nascimento: '', cpf_cnpj: '', celular: '' })
+  const [cpfJaCadastrado, setCpfJaCadastrado] = useState<Paciente | null>(null)
+  const [verificandoCpf,  setVerificandoCpf]  = useState(false)
 
   const [form, setForm] = useState({
     paciente_id:     0,
@@ -236,9 +238,11 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
     setLoadingPac(true)
     try {
       const res  = await fetch(`/api/clinica/pacientes?busca=${encodeURIComponent(q)}`)
+      if (!res.ok) { setPacientes([]); return }
       const data = await res.json()
       setPacientes(data.dados ?? [])
-    } finally { setLoadingPac(false) }
+    } catch { setPacientes([]) }
+    finally { setLoadingPac(false) }
   }, [])
 
   useEffect(() => {
@@ -264,30 +268,84 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
 
   function abrirCadRapido() {
     setFormCad({ nome: buscaPaciente.trim(), data_nascimento: '', cpf_cnpj: '', celular: '' })
+    setCpfJaCadastrado(null)
     setShowCadRapido(true)
     setPacientes([])
   }
 
+  async function verificarCpfExistente(cpf: string) {
+    const digits = cpf.replace(/\D/g, '')
+    if (digits.length !== 11 && digits.length !== 14) { setCpfJaCadastrado(null); return }
+    if (!validarCpfCnpj(digits)) { setCpfJaCadastrado(null); return }
+    setVerificandoCpf(true)
+    try {
+      // Usa ?cpf= que faz comparação exata cobrindo CPF formatado e sem formatação
+      const res  = await fetch(`/api/clinica/pacientes?cpf=${encodeURIComponent(digits)}`)
+      if (!res.ok) return
+      const data = await res.json()
+      const encontrado = (data.dados ?? []).find(
+        (p: Paciente) => p.cpf_cnpj?.replace(/\D/g, '') === digits
+      )
+      setCpfJaCadastrado(encontrado ?? null)
+    } catch { /* silencia erro de rede */ }
+    finally {
+      setVerificandoCpf(false)
+    }
+  }
+
   async function handleCadastroRapido() {
-    if (!formCad.nome.trim())                        { toast.error('Informe o nome do paciente'); return }
-    if (!formCad.data_nascimento)                    { toast.error('Informe a data de nascimento'); return }
-    if (!formCad.cpf_cnpj.trim())                    { toast.error('Informe o CPF / CNPJ'); return }
-    if (!validarCpfCnpj(formCad.cpf_cnpj))           { toast.error('CPF / CNPJ inválido'); return }
-    if (!formCad.celular.trim())                      { toast.error('Informe o celular'); return }
+    // Se verificação já encontrou o paciente (banner amarelo), usa direto
+    if (cpfJaCadastrado) {
+      selecionarPaciente(cpfJaCadastrado)
+      setShowCadRapido(false)
+      setCpfJaCadastrado(null)
+      toast.success(`Paciente ${cpfJaCadastrado.nome} selecionado!`)
+      return
+    }
+
+    if (!formCad.nome.trim())              { toast.error('Informe o nome do paciente'); return }
+    if (!formCad.data_nascimento)          { toast.error('Informe a data de nascimento'); return }
+    if (!formCad.cpf_cnpj.trim())          { toast.error('Informe o CPF / CNPJ'); return }
+    if (!validarCpfCnpj(formCad.cpf_cnpj)) { toast.error('CPF / CNPJ inválido'); return }
+    if (!formCad.celular.trim())           { toast.error('Informe o celular'); return }
+
+    // Verificação de CPF no momento do submit — cobre casos em que o onChange não terminou
     setSalvandoCad(true)
     try {
-      const res = await fetch('/api/clinica/pacientes', {
+      const digits = formCad.cpf_cnpj.replace(/\D/g, '')
+      const checkRes  = await fetch(`/api/clinica/pacientes?cpf=${encodeURIComponent(digits)}`)
+      const checkData = checkRes.ok ? await checkRes.json() : { dados: [] }
+      const existente = (checkData.dados ?? []).find(
+        (p: Paciente) => p.cpf_cnpj?.replace(/\D/g, '') === digits
+      )
+      if (existente) {
+        selecionarPaciente(existente)
+        setShowCadRapido(false)
+        setCpfJaCadastrado(null)
+        toast.info(`Paciente já cadastrado: ${existente.nome}`)
+        return
+      }
+
+      const res  = await fetch('/api/clinica/pacientes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formCad),
       })
-      if (!res.ok) {
-        const err = await res.json()
-        toast.error(err.erro ?? 'Erro ao cadastrar paciente')
+      const data = await res.json()
+
+      if (res.status === 409 && data.paciente_existente) {
+        const p = data.paciente_existente
+        selecionarPaciente({ id: p.id, nome: p.nome, cpf_cnpj: p.cpf_cnpj, celular: p.celular, telefone: null, cidade: null, uf: null, email: null })
+        setShowCadRapido(false)
+        setCpfJaCadastrado(null)
+        toast.info(`Paciente já cadastrado: ${p.nome}`)
         return
       }
-      const novo = await res.json()
-      selecionarPaciente({ id: novo.id, nome: novo.nome, cpf_cnpj: novo.cpf_cnpj, celular: novo.celular, telefone: null, cidade: null, uf: null, email: null })
+      if (!res.ok) {
+        toast.error(data.erro ?? 'Erro ao cadastrar paciente')
+        return
+      }
+      selecionarPaciente({ id: data.id, nome: data.nome, cpf_cnpj: data.cpf_cnpj, celular: data.celular, telefone: null, cidade: null, uf: null, email: null })
       setShowCadRapido(false)
       toast.success('Paciente cadastrado!')
     } finally {
@@ -585,19 +643,46 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                       </div>
                       <input
                         value={formCad.cpf_cnpj}
-                        onChange={e => setFormCad(f => ({ ...f, cpf_cnpj: e.target.value }))}
+                        onChange={e => {
+                          const val = e.target.value
+                          setFormCad(f => ({ ...f, cpf_cnpj: val }))
+                          verificarCpfExistente(val)
+                        }}
                         placeholder="000.000.000-00"
                         style={{
                           width: '100%', padding: '6px 10px', fontSize: 12,
                           background: 'var(--bg-input)', color: 'var(--texto-principal)',
-                          border: '1px solid var(--borda-media)', borderRadius: 5,
+                          border: `1px solid ${cpfJaCadastrado ? 'var(--cor-aviso, #F59E0B)' : 'var(--borda-media)'}`,
+                          borderRadius: 5,
                           boxSizing: 'border-box', fontFamily: 'var(--fonte-mono)',
                         }}
                       />
+                      {verificandoCpf && (
+                        <div style={{ fontSize: 10, color: 'var(--texto-terciario)', marginTop: 2 }}>Verificando CPF...</div>
+                      )}
                     </div>
                   </div>
 
+                  {/* Banner: CPF já cadastrado */}
+                  {cpfJaCadastrado && (
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '8px 10px',
+                      background: 'var(--cor-aviso-light, #FEF3C7)',
+                      border: '1px solid var(--cor-aviso, #F59E0B)',
+                      borderRadius: 6,
+                    }}>
+                      <User size={14} style={{ color: 'var(--cor-aviso, #F59E0B)', flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#92400E' }}>CPF já cadastrado</div>
+                        <div style={{ fontSize: 12, color: '#78350F', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cpfJaCadastrado.nome}</div>
+                        {cpfJaCadastrado.celular && <div style={{ fontSize: 11, color: '#92400E' }}>{cpfJaCadastrado.celular}</div>}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Celular */}
+                  {!cpfJaCadastrado && (
                   <div>
                     <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--texto-terciario)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>
                       Celular<span style={{ color: 'var(--cor-erro)', marginLeft: 2 }}>*</span>
@@ -614,6 +699,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                       }}
                     />
                   </div>
+                  )}
 
                   {/* Ação */}
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, paddingTop: 2 }}>
@@ -625,18 +711,18 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                     </button>
                     <button
                       onClick={handleCadastroRapido}
-                      disabled={salvandoCad || !formCad.nome.trim() || !formCad.data_nascimento || !formCad.cpf_cnpj.trim() || !formCad.celular.trim()}
+                      disabled={salvandoCad || verificandoCpf || (!cpfJaCadastrado && (!formCad.nome.trim() || !formCad.data_nascimento || !formCad.cpf_cnpj.trim() || !formCad.celular.trim()))}
                       style={{
                         display: 'flex', alignItems: 'center', gap: 6,
                         padding: '6px 18px', fontSize: 12, fontWeight: 600,
-                        background: salvandoCad || !formCad.nome.trim() || !formCad.data_nascimento || !formCad.cpf_cnpj.trim() || !formCad.celular.trim() ? 'var(--cor-primaria-hover)' : 'var(--cor-primaria)',
+                        background: 'var(--cor-primaria)',
                         color: '#fff', border: 'none', borderRadius: 5,
-                        cursor: salvandoCad || !formCad.nome.trim() || !formCad.data_nascimento || !formCad.cpf_cnpj.trim() || !formCad.celular.trim() ? 'not-allowed' : 'pointer',
-                        opacity: salvandoCad || !formCad.nome.trim() || !formCad.data_nascimento || !formCad.cpf_cnpj.trim() || !formCad.celular.trim() ? 0.7 : 1,
+                        cursor: 'pointer',
+                        opacity: salvandoCad || verificandoCpf ? 0.7 : 1,
                       }}
                     >
                       <UserPlus size={13} />
-                      {salvandoCad ? 'Cadastrando...' : 'Cadastrar e usar'}
+                      {salvandoCad ? 'Cadastrando...' : cpfJaCadastrado ? 'Usar este cadastro' : 'Cadastrar e usar'}
                     </button>
                   </div>
                 </div>

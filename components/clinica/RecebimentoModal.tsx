@@ -11,6 +11,7 @@ interface Props {
   open: boolean
   onClose: () => void
   agendamento: AgendamentoListItem | null
+  agendamentos?: AgendamentoListItem[]
   onRecebimentoSalvo?: () => Promise<void>
 }
 
@@ -47,7 +48,7 @@ function Field({ children, style }: { children: React.ReactNode; style?: React.C
   return <div style={{ display: 'flex', flexDirection: 'column', ...style }}>{children}</div>
 }
 
-export default function RecebimentoModal({ open, onClose, agendamento, onRecebimentoSalvo }: Props) {
+export default function RecebimentoModal({ open, onClose, agendamento, agendamentos, onRecebimentoSalvo }: Props) {
   const [saving, setSaving] = useState(false)
   const [condicoes, setCondicoes] = useState<CondicaoPagamento[]>([])
   const [loadingCondicoes, setLoadingCondicoes] = useState(false)
@@ -60,7 +61,15 @@ export default function RecebimentoModal({ open, onClose, agendamento, onRecebim
     observacao: '',
   })
 
+  const listaAgs = (agendamentos && agendamentos.length > 0) ? agendamentos : (agendamento ? [agendamento] : [])
   const condicaoSelecionada = condicoes.find(c => c.id === form.condicao_pagamento_id)
+
+  function getValorBase(ag: AgendamentoListItem): number {
+    const isPrazo = condicaoSelecionada?.tipo === 'P'
+    const valorVista = Number(ag.tipo_valor) || 0
+    const valorPrazo = ag.tipo_valor_prazo != null ? Number(ag.tipo_valor_prazo) : null
+    return isPrazo && valorPrazo !== null ? valorPrazo : valorVista
+  }
 
   useEffect(() => {
     if (open) {
@@ -68,14 +77,33 @@ export default function RecebimentoModal({ open, onClose, agendamento, onRecebim
     }
   }, [open])
 
+  // Recalcula valor ao abrir (valor à vista como base inicial)
   useEffect(() => {
-    if (agendamento?.tipo_valor) {
-      setForm(prev => ({
-        ...prev,
-        valor_recebido: agendamento.tipo_valor || 0,
-      }))
+    if (!open) return
+    const list = (agendamentos && agendamentos.length > 0) ? agendamentos : (agendamento ? [agendamento] : [])
+    const soma = list.reduce((acc, ag) => acc + (Number(ag.tipo_valor) || 0), 0)
+    if (soma > 0) {
+      setForm(prev => ({ ...prev, valor_recebido: soma, desconto: 0, acrescimo: 0, observacao: '' }))
     }
-  }, [agendamento])
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Recalcula valor quando muda a condição de pagamento (à vista vs a prazo)
+  useEffect(() => {
+    if (!open || condicoes.length === 0 || form.condicao_pagamento_id === 0) return
+    const list = (agendamentos && agendamentos.length > 0) ? agendamentos : (agendamento ? [agendamento] : [])
+    const condicao = condicoes.find(c => c.id === form.condicao_pagamento_id)
+    const isPrazo = condicao?.tipo === 'P'
+
+    const soma = list.reduce((acc, ag) => {
+      const valorVista = Number(ag.tipo_valor) || 0
+      const valorPrazo = ag.tipo_valor_prazo != null ? Number(ag.tipo_valor_prazo) : null
+      return acc + (isPrazo && valorPrazo !== null ? valorPrazo : valorVista)
+    }, 0)
+
+    if (soma > 0) {
+      setForm(prev => ({ ...prev, valor_recebido: soma, desconto: 0, acrescimo: 0 }))
+    }
+  }, [form.condicao_pagamento_id, condicoes]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function carregarCondicoesPagamento() {
     setLoadingCondicoes(true)
@@ -97,7 +125,7 @@ export default function RecebimentoModal({ open, onClose, agendamento, onRecebim
   const totalComAjustes = form.valor_recebido - form.desconto + form.acrescimo
 
   async function handleSalvar() {
-    if (!agendamento) return
+    if (listaAgs.length === 0) return
 
     if (!form.condicao_pagamento_id) {
       toast.error('Selecione uma condição de pagamento')
@@ -111,25 +139,44 @@ export default function RecebimentoModal({ open, onClose, agendamento, onRecebim
 
     setSaving(true)
     try {
-      const dataMovimento = format(parseISO(agendamento.data_hora_inicio), 'yyyy-MM-dd')
+      const isPrazo = condicaoSelecionada?.tipo === 'P'
+      const somaOriginal = listaAgs.reduce((acc, ag) => {
+        const valorVista = Number(ag.tipo_valor) || 0
+        const valorPrazo = ag.tipo_valor_prazo != null ? Number(ag.tipo_valor_prazo) : null
+        return acc + (isPrazo && valorPrazo !== null ? valorPrazo : valorVista)
+      }, 0)
 
-      const payload = {
-        agendamento_id: agendamento.id,
-        paciente_id: agendamento.paciente_id,
-        condicao_pagamento_id: form.condicao_pagamento_id,
-        valor_original: agendamento.tipo_valor || form.valor_recebido,
-        valor_desconto: form.desconto,
-        valor_acrescimo: form.acrescimo,
-        valor_recebido: form.valor_recebido,
-        total_recebimento: totalComAjustes,
-        data_recebimento: dataMovimento,
-        observacao: form.observacao,
-      }
+      // Monta os itens com valores proporcionais — um único payload para todos os atendimentos
+      const itens = listaAgs.map(ag => {
+        const valorVista = Number(ag.tipo_valor) || 0
+        const valorPrazo = ag.tipo_valor_prazo != null ? Number(ag.tipo_valor_prazo) : null
+        const tipoValor = isPrazo && valorPrazo !== null ? valorPrazo : valorVista
+        const proporcao = somaOriginal > 0 ? tipoValor / somaOriginal : 1 / listaAgs.length
+        const valorRecebido_ag = form.valor_recebido * proporcao
+        const desconto_ag = form.desconto * proporcao
+        const acrescimo_ag = form.acrescimo * proporcao
+        const total_ag = valorRecebido_ag - desconto_ag + acrescimo_ag
+        return {
+          agendamento_id: ag.id,
+          paciente_id: ag.paciente_id,
+          valor_original: tipoValor || valorRecebido_ag,
+          valor_desconto: desconto_ag,
+          valor_acrescimo: acrescimo_ag,
+          valor_recebido: valorRecebido_ag,
+          total_recebimento: total_ag,
+          data_recebimento: format(parseISO(ag.data_hora_inicio), 'yyyy-MM-dd'),
+        }
+      })
 
+      // Uma única chamada — gera 1 movimento, 1 título (se necessário) e N recebimentos
       const res = await fetch('/api/clinica/recebimentos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          condicao_pagamento_id: form.condicao_pagamento_id,
+          observacao: form.observacao,
+          itens,
+        }),
       })
 
       if (!res.ok) {
@@ -140,7 +187,7 @@ export default function RecebimentoModal({ open, onClose, agendamento, onRecebim
         return
       }
 
-      toast.success('Recebimento registrado com sucesso!')
+      toast.success(listaAgs.length > 1 ? 'Recebimentos registrados com sucesso!' : 'Recebimento registrado com sucesso!')
       if (onRecebimentoSalvo) {
         await onRecebimentoSalvo()
       }
@@ -153,7 +200,7 @@ export default function RecebimentoModal({ open, onClose, agendamento, onRecebim
     }
   }
 
-  if (!open || !agendamento) return null
+  if (!open || listaAgs.length === 0) return null
 
   return (
     <div style={{
@@ -195,7 +242,11 @@ export default function RecebimentoModal({ open, onClose, agendamento, onRecebim
               Recebimento da Consulta
             </h2>
             <div style={{ fontSize: 12, color: 'var(--texto-terciario)', marginTop: 2 }}>
-              {agendamento.paciente_nome} • {format(parseISO(agendamento.data_hora_inicio), "d 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR })}
+              {listaAgs[0]?.paciente_nome}
+              {listaAgs.length === 1
+                ? ` • ${format(parseISO(listaAgs[0].data_hora_inicio), "d 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR })}`
+                : ` • ${listaAgs.length} atendimentos`
+              }
             </div>
           </div>
           <button
@@ -229,27 +280,72 @@ export default function RecebimentoModal({ open, onClose, agendamento, onRecebim
             padding: 12,
             marginBottom: 20,
           }}>
-            <Label>Informações da Consulta</Label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12, marginTop: 8 }}>
-              <div>
-                <div style={{ color: 'var(--texto-terciario)', marginBottom: 2 }}>Profissional</div>
-                <div style={{ fontWeight: 600, color: 'var(--texto-principal)' }}>{agendamento.profissional_nome}</div>
-              </div>
-              <div>
-                <div style={{ color: 'var(--texto-terciario)', marginBottom: 2 }}>Tipo</div>
-                <div style={{ fontWeight: 600, color: 'var(--texto-principal)' }}>{agendamento.tipo_descricao || '—'}</div>
-              </div>
-              <div>
-                <div style={{ color: 'var(--texto-terciario)', marginBottom: 2 }}>Valor da Consulta</div>
-                <div style={{ fontWeight: 700, color: 'var(--cor-primaria)', fontSize: 14 }}>
-                  {fmtValor(agendamento.tipo_valor || 0)}
+            <Label>{listaAgs.length > 1 ? 'Atendimentos' : 'Informações da Consulta'}</Label>
+            {listaAgs.length === 1 ? (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12, marginTop: 8 }}>
+                <div>
+                  <div style={{ color: 'var(--texto-terciario)', marginBottom: 2 }}>Profissional</div>
+                  <div style={{ fontWeight: 600, color: 'var(--texto-principal)' }}>{listaAgs[0].profissional_nome}</div>
+                </div>
+                <div>
+                  <div style={{ color: 'var(--texto-terciario)', marginBottom: 2 }}>Tipo</div>
+                  <div style={{ fontWeight: 600, color: 'var(--texto-principal)' }}>{listaAgs[0].tipo_descricao || '—'}</div>
+                </div>
+                <div>
+                  <div style={{ color: 'var(--texto-terciario)', marginBottom: 2 }}>
+                    Valor da Consulta
+                    {condicaoSelecionada && (
+                      <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: condicaoSelecionada.tipo === 'P' ? 'var(--cor-aviso)' : 'var(--cor-sucesso)' }}>
+                        ({condicaoSelecionada.tipo === 'P' ? 'A PRAZO' : 'À VISTA'})
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontWeight: 700, color: 'var(--cor-primaria)', fontSize: 14 }}>
+                    {fmtValor(getValorBase(listaAgs[0]))}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ color: 'var(--texto-terciario)', marginBottom: 2 }}>Status</div>
+                  <div style={{ fontWeight: 600, color: 'var(--texto-principal)' }}>{listaAgs[0].status}</div>
                 </div>
               </div>
-              <div>
-                <div style={{ color: 'var(--texto-terciario)', marginBottom: 2 }}>Status</div>
-                <div style={{ fontWeight: 600, color: 'var(--texto-principal)' }}>{agendamento.status}</div>
+            ) : (
+              <div style={{ marginTop: 8 }}>
+                {listaAgs.map((ag, i) => (
+                  <div key={ag.id} style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '7px 0',
+                    borderBottom: i < listaAgs.length - 1 ? '0.5px solid var(--borda-suave)' : 'none',
+                    fontSize: 12,
+                    gap: 8,
+                  }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, color: 'var(--texto-principal)' }}>
+                        {format(parseISO(ag.data_hora_inicio), 'HH:mm')} — {ag.tipo_descricao || 'Consulta'}
+                      </div>
+                      <div style={{ color: 'var(--texto-terciario)', fontSize: 11, marginTop: 2 }}>
+                        {ag.profissional_nome}
+                      </div>
+                    </div>
+                    <div style={{ fontWeight: 700, color: 'var(--cor-primaria)', flexShrink: 0 }}>
+                      {fmtValor(getValorBase(ag))}
+                    </div>
+                  </div>
+                ))}
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '8px 0 0 0', marginTop: 4,
+                  borderTop: '1px solid var(--borda-suave)',
+                }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--texto-terciario)' }}>Total</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--cor-primaria)' }}>
+                    {fmtValor(listaAgs.reduce((acc, ag) => acc + getValorBase(ag), 0))}
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Condição de Pagamento */}

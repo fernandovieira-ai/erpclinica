@@ -116,7 +116,7 @@ function mascaraCnpj(v: string) {
 // ── Abas disponíveis ─────────────────────────────────────────────────────────
 const ABAS = [
   'Principal',
-  'NF-e',
+  'Faturamento',
 ] as const
 type Aba = typeof ABAS[number]
 
@@ -131,6 +131,7 @@ export default function EmpresaFormPage({ empresa }: Props) {
   const [buscandoCep,  setBuscandoCep]  = useState(false)
   const [buscandoCnpj, setBuscandoCnpj] = useState(false)
   const [displayCnpj,  setDisplayCnpj]  = useState('')
+  const [tiposCobranca, setTiposCobranca] = useState<{ cod_tipo_cobranca: number; des_tipo_cobranca: string }[]>([])
 
   const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<EmpresaInput>({
     resolver: zodResolver(empresaSchema),
@@ -139,6 +140,13 @@ export default function EmpresaFormPage({ empresa }: Props) {
       serie_nfe: '001', prox_num_nfe: 1, serie_nfce: '001', prox_num_nfce: 1,
     },
   })
+
+  useEffect(() => {
+    fetch('/api/cadastro/formas-pagamento?ativo=true&limit=200')
+      .then(r => r.json())
+      .then(d => setTiposCobranca(d.dados ?? []))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!empresa) return
@@ -170,6 +178,7 @@ export default function EmpresaFormPage({ empresa }: Props) {
       prox_num_nfce:     empresa.prox_num_nfce ?? 1,
       csc_nfce:          empresa.csc_nfce ?? '',
       id_token_nfce:     empresa.id_token_nfce ?? '',
+      cod_tipo_cobranca: empresa.cod_tipo_cobranca ?? null,
       ativo:             empresa.ativo,
     })
   }, [empresa, reset])
@@ -325,22 +334,21 @@ export default function EmpresaFormPage({ empresa }: Props) {
       }}>
         {ABAS.map(t => {
           const ativa    = aba === t
-          const temDados = t === 'Principal'
           return (
             <button
               key={t}
               type="button"
-              onClick={() => temDados && setAba(t)}
+              onClick={() => setAba(t)}
               style={{
                 padding: '7px 14px',
                 fontSize: 12,
                 fontWeight: ativa ? 600 : 400,
-                color: ativa ? 'var(--cor-primaria)' : temDados ? 'var(--texto-secundario)' : 'var(--texto-terciario)',
+                color: ativa ? 'var(--cor-primaria)' : 'var(--texto-secundario)',
                 background: ativa ? 'var(--bg-card)' : 'none',
                 border: 'none',
                 borderBottom: ativa ? '2px solid var(--cor-primaria)' : '2px solid transparent',
                 borderRight: '1px solid var(--borda-suave)',
-                cursor: temDados ? 'pointer' : 'default',
+                cursor: 'pointer',
                 whiteSpace: 'nowrap',
               }}
             >
@@ -470,8 +478,26 @@ export default function EmpresaFormPage({ empresa }: Props) {
           </>
         )}
 
-        {aba === 'NF-e' && (
+        {aba === 'Faturamento' && (
           <>
+            {/* Tipo de Cobrança Padrão */}
+            <Row label="Tipo Cobrança:">
+              <Select
+                value={watch('cod_tipo_cobranca') ?? ''}
+                onChange={e => setValue('cod_tipo_cobranca', e.target.value ? Number(e.target.value) : null)}
+                style={{ width: 280 }}
+              >
+                <option value="">— Nenhum —</option>
+                {tiposCobranca.map(tc => (
+                  <option key={tc.cod_tipo_cobranca} value={tc.cod_tipo_cobranca}>
+                    {tc.des_tipo_cobranca}
+                  </option>
+                ))}
+              </Select>
+            </Row>
+
+            <div style={{ height: 1, backgroundColor: 'var(--borda-suave)', margin: '4px 0' }} />
+
             {/* Ambiente */}
             <Row label="Ambiente:">
               <Select {...register('ambiente_nfe')} style={{ width: 200 }}>
@@ -526,7 +552,7 @@ export default function EmpresaFormPage({ empresa }: Props) {
           </>
         )}
 
-        {aba !== 'Principal' && aba !== 'NF-e' && (
+        {aba !== 'Principal' && aba !== 'Faturamento' && (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--texto-terciario)', fontSize: 13 }}>
             Aba <strong>{aba}</strong> ainda não implementada.
           </div>

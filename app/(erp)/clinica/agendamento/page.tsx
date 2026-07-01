@@ -95,6 +95,7 @@ export default function AgendamentoPage() {
   const [modalPacienteOpen, setModalPacienteOpen] = useState(false)
   const [pacienteDados, setPacienteDados] = useState<any>(null)
   const [agendamentoAtual, setAgendamentoAtual] = useState<AgendamentoListItem | null>(null)
+  const [agendamentosAtuais, setAgendamentosAtuais] = useState<AgendamentoListItem[]>([])
 
   const periodo = useMemo(() => {
     if (view === 'dia') return { ini: selectedDay, fim: selectedDay }
@@ -259,14 +260,36 @@ export default function AgendamentoPage() {
     }
   }
 
+  async function cancelarAgendamento(ag: AgendamentoListItem, e: React.MouseEvent) {
+    e.stopPropagation()
+    if (!confirm(`Cancelar o agendamento de ${ag.paciente_nome}?`)) return
+    const res = await fetch(`/api/clinica/agendamentos/${ag.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'CANCELADO' }),
+    })
+    if (res.ok) {
+      toast.success('Agendamento cancelado.')
+      carregar()
+    } else {
+      toast.error('Erro ao cancelar agendamento')
+    }
+  }
+
   async function abrirModalPaciente(ag: AgendamentoListItem, e: React.MouseEvent) {
     e.stopPropagation()
     try {
       const res = await fetch(`/api/cadastro/pessoas/${ag.paciente_id}`)
       if (res.ok) {
         const data = await res.json()
+        const diaAg = format(parseISO(ag.data_hora_inicio), 'yyyy-MM-dd')
+        const todosNoDia = agendamentos.filter(a =>
+          a.paciente_id === ag.paciente_id &&
+          format(parseISO(a.data_hora_inicio), 'yyyy-MM-dd') === diaAg
+        ).sort((a, b) => new Date(a.data_hora_inicio).getTime() - new Date(b.data_hora_inicio).getTime())
         setPacienteDados(data)
         setAgendamentoAtual(ag)
+        setAgendamentosAtuais(todosNoDia.length > 1 ? todosNoDia : [])
         setModalPacienteOpen(true)
       }
     } catch (err) {
@@ -278,11 +301,14 @@ export default function AgendamentoPage() {
     setModalPacienteOpen(false)
     setPacienteDados(null)
     setAgendamentoAtual(null)
+    setAgendamentosAtuais([])
   }
 
   function abrirNovoProximoDisponivel() {
-    // Delega ao modal a busca do próximo horário via /api/.../proximo-horario
-    // para respeitar corretamente grade semanal, pausas, exceções e agendamentos existentes
+    if (!profFiltro) {
+      toast.warning('Selecione um profissional no filtro antes de criar um novo agendamento.')
+      return
+    }
     setEditAg(null)
     setSlotInicio(null)
     setModalOpen(true)
@@ -1037,26 +1063,61 @@ export default function AgendamentoPage() {
                     </div>
                   )}
 
-                  {/* Botão Confirmar */}
+                  {/* Botões de ação */}
                   {ag.status === 'AGENDADO' && (
-                    <button
-                      onClick={e => confirmarAgendamento(ag, e)}
-                      style={{
-                        flexShrink: 0,
-                        display: 'flex', alignItems: 'center', gap: 4,
-                        padding: '4px 12px', borderRadius: 20,
-                        border: 'none',
-                        background: statusColor,
-                        color: '#fff',
-                        fontSize: 11, fontWeight: 600,
-                        cursor: 'pointer',
-                        transition: 'opacity 0.2s',
-                      }}
-                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = '0.9' }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '1' }}
-                    >
-                      Confirmar
-                    </button>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                      <button
+                        onClick={e => cancelarAgendamento(ag, e)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 4,
+                          padding: '4px 10px', borderRadius: 20,
+                          border: '1px solid #888780',
+                          background: 'transparent',
+                          color: '#888780',
+                          fontSize: 11, fontWeight: 600,
+                          cursor: 'pointer',
+                          transition: 'opacity 0.2s',
+                        }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = '0.8' }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '1' }}
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={e => abrirEditar(ag, e)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 4,
+                          padding: '4px 10px', borderRadius: 20,
+                          border: '1px solid var(--borda-media)',
+                          background: 'transparent',
+                          color: 'var(--texto-secundario)',
+                          fontSize: 11, fontWeight: 600,
+                          cursor: 'pointer',
+                          transition: 'opacity 0.2s',
+                        }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = '0.8' }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '1' }}
+                      >
+                        Novo Horário
+                      </button>
+                      <button
+                        onClick={e => confirmarAgendamento(ag, e)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 4,
+                          padding: '4px 12px', borderRadius: 20,
+                          border: 'none',
+                          background: statusColor,
+                          color: '#fff',
+                          fontSize: 11, fontWeight: 600,
+                          cursor: 'pointer',
+                          transition: 'opacity 0.2s',
+                        }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = '0.9' }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '1' }}
+                      >
+                        Confirmar
+                      </button>
+                    </div>
                   )}
 
                   {/* Status badge */}
@@ -1367,6 +1428,7 @@ export default function AgendamentoPage() {
         open={modalPacienteOpen}
         paciente={pacienteDados}
         agendamento={agendamentoAtual}
+        agendamentos={agendamentosAtuais}
         onClose={fecharModalPaciente}
         onSaved={carregar}
       />

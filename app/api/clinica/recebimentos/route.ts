@@ -2,17 +2,21 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 
-interface RecebimentoPayload {
+interface RecebimentoItem {
   agendamento_id: number
   paciente_id: number
-  condicao_pagamento_id: number
   valor_original: number
   valor_desconto: number
   valor_acrescimo: number
   valor_recebido: number
   total_recebimento: number
   data_recebimento: string
+}
+
+interface RecebimentoPayload {
+  condicao_pagamento_id: number
   observacao?: string
+  itens: RecebimentoItem[]
 }
 
 export async function POST(req: NextRequest) {
@@ -24,186 +28,222 @@ export async function POST(req: NextRequest) {
   try {
     const payload: RecebimentoPayload = await req.json()
 
-    if (!payload.agendamento_id || !payload.paciente_id || !payload.condicao_pagamento_id || payload.valor_recebido <= 0) {
+    if (!payload.condicao_pagamento_id || !payload.itens?.length) {
       return NextResponse.json({ erro: 'Dados inválidos' }, { status: 400 })
+    }
+
+    const totalGeral = payload.itens.reduce((acc, i) => acc + i.total_recebimento, 0)
+    if (totalGeral <= 0) {
+      return NextResponse.json({ erro: 'Valor total deve ser maior que zero' }, { status: 400 })
     }
 
     await client.query('BEGIN')
 
-    // Verificar se agendamento existe
-    const { rows: agendamentos } = await client.query(
-      'SELECT id FROM tab_agendamento WHERE id = $1 AND empresa_id = $2',
-      [payload.agendamento_id, session.empresa_id_ativa],
-    )
-
-    if (agendamentos.length === 0) {
-      await client.query('ROLLBACK')
-      return NextResponse.json({ erro: 'Agendamento não encontrado' }, { status: 404 })
+    for (const item of payload.itens) {
+      const { rows } = await client.query(
+        'SELECT id FROM tab_agendamento WHERE id = $1 AND empresa_id = $2',
+        [item.agendamento_id, session.empresa_id_ativa],
+      )
+      if (rows.length === 0) {
+        await client.query('ROLLBACK')
+        return NextResponse.json({ erro: `Agendamento ${item.agendamento_id} não encontrado` }, { status: 404 })
+      }
     }
 
-    // Obter tipo, tipo_pagamento e conta PIX da condição
     const { rows: condRows } = await client.query(
-      'SELECT tipo, tipo_pagamento, conta_banco_pix_id FROM tab_condicao_pagamento WHERE id = $1',
+      'SELECT tipo_pagamento, conta_banco_pix_id, num_parcelas, intervalo_dias, entrada_pct FROM tab_condicao_pagamento WHERE id = $1',
       [payload.condicao_pagamento_id],
     )
-
     if (condRows.length === 0) {
       await client.query('ROLLBACK')
       return NextResponse.json({ erro: 'Condição de pagamento não encontrada' }, { status: 404 })
     }
 
-    const tipoCondicao = condRows[0].tipo  // 'V' = À Vista, 'P' = Parcelado
-    const tipoPagamento = condRows[0].tipo_pagamento  // 'dinheiro', 'pix', 'debito', 'credito'
+    const tipoPagamento   = condRows[0].tipo_pagamento
     const contaBancoPixId = condRows[0].conta_banco_pix_id
+    const numParcelas     = parseInt(condRows[0].num_parcelas) || 1
+    const intervaloDias   = parseInt(condRows[0].intervalo_dias) || 30
+    const entradaPct      = parseFloat(condRows[0].entrada_pct) || 0
 
-    // Validar PIX
+    const isAPrazo = tipoPagamento === 'a_prazo'
+
     if (tipoPagamento === 'pix' && !contaBancoPixId) {
       await client.query('ROLLBACK')
       return NextResponse.json({ erro: 'PIX sem conta bancária configurada' }, { status: 400 })
     }
 
-    // Determinar se deve criar título a receber (apenas para parcelado ou crédito)
-    const deveCriarTitulo = tipoCondicao === 'P' || tipoPagamento === 'credito'
+    const pacienteId    = payload.itens[0].paciente_id
+    const dataMovimento = payload.itens[0].data_recebimento
+    const ids           = payload.itens.map(i => i.agendamento_id)
+    const docNumero     = ids.length === 1 ? `AG-${ids[0]}` : `AG-${ids[0]}+${ids.length - 1}`
 
-    // Atualizar status do agendamento para ATENDIDO
-    await client.query(
-      'UPDATE tab_agendamento SET status = $1, updated_at = NOW() WHERE id = $2',
-      ['ATENDIDO', payload.agendamento_id],
+    // cod_tipo_cobranca: prioridade paciente → empresa
+    const { rows: pessoaRows } = await client.query(
+      'SELECT cod_tipo_cobranca FROM tab_pessoa WHERE id = $1',
+      [pacienteId],
     )
+    let codTipoCobranca: number | null = pessoaRows[0]?.cod_tipo_cobranca ?? null
+    if (codTipoCobranca == null) {
+      const { rows: empresaRows } = await client.query(
+        'SELECT cod_tipo_cobranca FROM tab_empresa WHERE id = $1',
+        [session.empresa_id_ativa],
+      )
+      codTipoCobranca = empresaRows[0]?.cod_tipo_cobranca ?? null
+    }
 
     let titulo_id: number | null = null
     let movimento_id: number | null = null
     let movimento_banco_id: number | null = null
 
-    if (deveCriarTitulo) {
-      // Criar título apenas para parcelado ou crédito
+    if (isAPrazo) {
+      // Cria N títulos independentes, um por parcela — padrão ERP correto.
+      // Cada tab_titulo_receber representa uma parcela com seu próprio valor e vencimento.
       const tipo_receita_id = await obterTipoReceitaPadrao(client)
-      const numeroTitulo = `AG-${payload.agendamento_id}-${Date.now().toString().slice(-6)}`
+      const obsTexto = `Recebimento de ${ids.length} consulta(s). ${payload.observacao || ''}`.trim()
 
-      const { rows: tituloRows } = await client.query(
-        `INSERT INTO tab_titulo_receber (
-          empresa_id, pessoa_id, tipo_receita_id, numero_titulo,
-          data_emissao, data_vencimento, data_liquidacao,
-          valor_original, valor_juros, valor_multa, valor_desconto, valor_retencao, valor_liquidado,
-          status, origem_modulo, origem_id, observacao, created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-        RETURNING id`,
-        [
-          session.empresa_id_ativa, payload.paciente_id, tipo_receita_id, numeroTitulo,
-          payload.data_recebimento, payload.data_recebimento, payload.data_recebimento,
-          payload.valor_original, payload.valor_acrescimo > 0 ? payload.valor_acrescimo : 0, 0, payload.valor_desconto, 0, payload.total_recebimento,
-          'L', 'CLI', payload.agendamento_id, `Recebimento de consulta. ${payload.observacao || ''}`, session.nome ?? 'sistema',
-        ],
-      )
-      titulo_id = tituloRows[0]?.id
-    } else {
-      // À vista: criar movimento direto sem título a receber
-      if (tipoPagamento === 'pix') {
-        const { rows: movBancoRows } = await client.query(
-          `INSERT INTO tab_movimento_banco (
-            empresa_id, conta_banco_id, pessoa_id, tipo, valor,
-            data_movimento, documento, observacao, conciliado, created_by,
-            origem_modulo, origem_id
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      const criarTituloParc = async (numTitulo: string, valor: number, dataVenc: string): Promise<number> => {
+        const { rows } = await client.query(
+          `INSERT INTO tab_titulo_receber (
+            empresa_id, pessoa_id, tipo_receita_id, numero_titulo,
+            data_emissao, data_vencimento, data_liquidacao,
+            valor_original, valor_juros, valor_multa, valor_desconto, valor_retencao, valor_liquidado,
+            cod_tipo_cobranca,
+            status, origem_modulo, origem_id, observacao, created_by
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
           RETURNING id`,
           [
-            session.empresa_id_ativa, contaBancoPixId, payload.paciente_id, 'E',
-            payload.total_recebimento, payload.data_recebimento, `AG-${payload.agendamento_id}-PIX`,
-            `PIX recebido da consulta`, false, session.nome ?? 'sistema',
-            'REC', payload.agendamento_id,
+            session.empresa_id_ativa, pacienteId, tipo_receita_id, numTitulo,
+            dataMovimento, dataVenc, null,
+            valor, 0, 0, 0, 0, 0,
+            codTipoCobranca,
+            'A', 'CLI', ids[0],
+            obsTexto, session.nome ?? 'sistema',
           ],
         )
-        movimento_banco_id = movBancoRows[0]?.id
-      } else {
-        // Dinheiro, débito, etc: criar movimento em caixa
-        const { rows: movCaixaRows } = await client.query(
-          `INSERT INTO tab_movimento_caixa (
-            empresa_id, pessoa_id, tipo, valor,
-            data_movimento, documento, observacao, conciliado, created_by,
-            origem_modulo, origem_id
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-          RETURNING id`,
-          [
-            session.empresa_id_ativa, payload.paciente_id, 'E',
-            payload.total_recebimento, payload.data_recebimento, `AG-${payload.agendamento_id}`,
-            `Recebimento de consulta`, false, session.nome ?? 'sistema',
-            'REC', payload.agendamento_id,
-          ],
-        )
-        movimento_id = movCaixaRows[0]?.id
+        return rows[0].id as number
       }
-    }
 
-    // Se foi criado título, criar movimentos asociados
-    if (titulo_id) {
+      if (entradaPct > 0 && numParcelas > 1) {
+        const valorEntrada = Math.round(totalGeral * (entradaPct / 100) * 100) / 100
+        titulo_id = await criarTituloParc(`${docNumero}-1/${numParcelas}`, valorEntrada, dataMovimento)
+
+        const valorRestante = totalGeral - valorEntrada
+        const numRestantes  = numParcelas - 1
+        const valorParcela  = Math.round((valorRestante / numRestantes) * 100) / 100
+        let acumulado = 0
+        for (let i = 1; i <= numRestantes; i++) {
+          const isUltima = i === numRestantes
+          const valor    = isUltima ? Math.round((valorRestante - acumulado) * 100) / 100 : valorParcela
+          acumulado += valorParcela
+          await criarTituloParc(`${docNumero}-${i + 1}/${numParcelas}`, valor, addDias(dataMovimento, i * intervaloDias))
+        }
+      } else {
+        const valorParcela = Math.round((totalGeral / numParcelas) * 100) / 100
+        let acumulado = 0
+        for (let i = 1; i <= numParcelas; i++) {
+          const isUltima = i === numParcelas
+          const valor    = isUltima ? Math.round((totalGeral - acumulado) * 100) / 100 : valorParcela
+          acumulado += valorParcela
+          const id = await criarTituloParc(`${docNumero}-${i}/${numParcelas}`, valor, addDias(dataMovimento, i * intervaloDias))
+          if (i === 1) titulo_id = id
+        }
+      }
+    } else {
+      // Pagamento à vista → movimento caixa ou banco (sem título)
       if (tipoPagamento === 'pix') {
-        const { rows: movBancoRows } = await client.query(
+        const { rows: movRows } = await client.query(
           `INSERT INTO tab_movimento_banco (
             empresa_id, conta_banco_id, pessoa_id, titulo_receber_id, tipo, valor,
             data_movimento, documento, observacao, conciliado, created_by,
             origem_modulo, origem_id
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
           RETURNING id`,
           [
-            session.empresa_id_ativa, contaBancoPixId, payload.paciente_id, titulo_id, 'E',
-            payload.total_recebimento, payload.data_recebimento, `AG-${payload.agendamento_id}-PIX`,
-            `PIX recebido da consulta`, false, session.nome ?? 'sistema',
-            'REC', payload.agendamento_id,
+            session.empresa_id_ativa, contaBancoPixId, pacienteId, null, 'E',
+            totalGeral, dataMovimento, `${docNumero}-PIX`,
+            `PIX recebido - ${ids.length} consulta(s)`, false, session.nome ?? 'sistema',
+            'CLI', ids[0],
           ],
         )
-        movimento_banco_id = movBancoRows[0]?.id
+        movimento_banco_id = movRows[0]?.id
       } else {
-        const { rows: movCaixaRows } = await client.query(
+        const { rows: movRows } = await client.query(
           `INSERT INTO tab_movimento_caixa (
             empresa_id, pessoa_id, titulo_receber_id, tipo, valor,
             data_movimento, documento, observacao, conciliado, created_by,
             origem_modulo, origem_id
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
           RETURNING id`,
           [
-            session.empresa_id_ativa, payload.paciente_id, titulo_id, 'E',
-            payload.total_recebimento, payload.data_recebimento, `AG-${payload.agendamento_id}`,
-            `Recebimento de consulta`, false, session.nome ?? 'sistema',
-            'REC', payload.agendamento_id,
+            session.empresa_id_ativa, pacienteId, null, 'E',
+            totalGeral, dataMovimento, docNumero,
+            `Recebimento - ${ids.length} consulta(s)`, false, session.nome ?? 'sistema',
+            'CLI', ids[0],
           ],
         )
-        movimento_id = movCaixaRows[0]?.id
+        movimento_id = movRows[0]?.id
       }
     }
 
-    // Atualizar status do agendamento para ATENDIDO
+    // batch_agendamento_id = agendamento raiz do lote (= origem_id nos títulos gerados)
+    // Para à vista: é o próprio agendamento (ids[0])
+    // Para a prazo: também ids[0], que é o mesmo valor gravado como origem_id nos N títulos
+    const batchAgendamentoId = ids[0]
+
+    const statusRecebimento = 'PAGO'
+    for (const item of payload.itens) {
+      await client.query(
+        `INSERT INTO tab_recebimento_consulta (
+          empresa_id, agendamento_id, paciente_id, condicao_pagamento_id,
+          valor_original, valor_desconto, valor_acrescimo, valor_recebido, total_recebimento,
+          batch_agendamento_id, movimento_caixa_id, movimento_banco_id,
+          data_recebimento, status_recebimento, observacao, created_by
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+        [
+          session.empresa_id_ativa, item.agendamento_id, item.paciente_id, payload.condicao_pagamento_id,
+          item.valor_original, item.valor_desconto, item.valor_acrescimo,
+          item.valor_recebido, item.total_recebimento,
+          batchAgendamentoId, movimento_id, movimento_banco_id,
+          item.data_recebimento, statusRecebimento,
+          payload.observacao || null,
+          session.nome ?? 'sistema',
+        ],
+      )
+    }
+
     await client.query(
-      'UPDATE tab_agendamento SET status = $1, updated_at = NOW() WHERE id = $2',
-      ['ATENDIDO', payload.agendamento_id],
+      `UPDATE tab_agendamento SET status = 'ATENDIDO', updated_at = NOW()
+       WHERE id = ANY($1::int[]) AND empresa_id = $2`,
+      [ids, session.empresa_id_ativa],
     )
 
     await client.query('COMMIT')
 
-    // Nota: O recebimento será criado automaticamente pela trigger
-    // quando o movimento for inserido com origem_modulo='CLI'
     return NextResponse.json({
       sucesso: true,
       titulo_receber_id: titulo_id,
       movimento_caixa_id: movimento_id,
       movimento_banco_id,
       tipo_pagamento: tipoPagamento,
-      mensagem: 'Movimento registrado com sucesso. Recebimento será processado automaticamente.',
+      total: totalGeral,
+      agendamentos: ids.length,
+      parcelas: isAPrazo ? numParcelas : null,
     })
   } catch (error) {
-    try {
-      await client.query('ROLLBACK')
-    } catch {
-      // Transaction já foi finalizada
-    }
+    try { await client.query('ROLLBACK') } catch { /* já finalizada */ }
     const errorMessage = error instanceof Error ? error.message : String(error)
     console.error('Erro ao processar recebimento:', errorMessage, error)
-    return NextResponse.json({
-      erro: 'Erro ao processar recebimento',
-      detalhes: errorMessage
-    }, { status: 500 })
+    return NextResponse.json({ erro: 'Erro ao processar recebimento', detalhes: errorMessage }, { status: 500 })
   } finally {
     client.release()
   }
+}
+
+function addDias(dateStr: string, dias: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const date = new Date(Date.UTC(y, m - 1, d))
+  date.setUTCDate(date.getUTCDate() + dias)
+  return date.toISOString().split('T')[0]
 }
 
 async function obterTipoReceitaPadrao(client: any): Promise<number> {

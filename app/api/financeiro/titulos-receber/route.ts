@@ -36,41 +36,39 @@ export async function GET(req: NextRequest) {
     params.push(data_fim)
   }
   if (busca) {
-    conds.push(`(t.numero_titulo ILIKE $${pi} OR t.num_documento ILIKE $${pi} OR p.nome ILIKE $${pi})`)
+    conds.push(`(t.numero_titulo ILIKE $${pi} OR t.num_documento ILIKE $${pi} OR pes.nome ILIKE $${pi})`)
     params.push(`%${busca}%`)
     pi++
   }
 
   const where = 'WHERE ' + conds.join(' AND ')
 
+  const selectBase = `
+    FROM tab_titulo_receber t
+    LEFT JOIN tab_pessoa        pes ON pes.id  = t.pessoa_id
+    LEFT JOIN tab_tipo_receita  tr  ON tr.id   = t.tipo_receita_id
+    LEFT JOIN tab_tipo_cobranca tc  ON tc.cod_tipo_cobranca = t.cod_tipo_cobranca
+    LEFT JOIN tab_centro_custo  cc  ON cc.id   = t.centro_custo_id
+    ${where}`
+
   const [{ rows: countRows }, { rows }] = await Promise.all([
+    db.query(`SELECT COUNT(*) AS n ${selectBase}`, params),
     db.query(
-      `SELECT COUNT(*) AS n
-       FROM tab_titulo_receber t
-       LEFT JOIN tab_pessoa p ON p.id = t.pessoa_id
-       ${where}`,
-      params,
-    ),
-    db.query(
-      `SELECT t.id,
-              t.numero_titulo,
-              t.num_documento,
-              p.nome                AS pessoa_nome,
-              tr.descricao          AS tipo_receita_desc,
-              tc.des_tipo_cobranca  AS tipo_cobranca_desc,
-              cc.descricao          AS centro_custo_desc,
-              TO_CHAR(t.data_emissao,    'YYYY-MM-DD') AS data_emissao,
-              TO_CHAR(t.data_vencimento, 'YYYY-MM-DD') AS data_vencimento,
-              TO_CHAR(t.data_liquidacao, 'YYYY-MM-DD') AS data_liquidacao,
-              t.valor_original,
-              t.valor_liquidado,
-              t.status
-       FROM tab_titulo_receber t
-       LEFT JOIN tab_pessoa        p  ON p.id  = t.pessoa_id
-       LEFT JOIN tab_tipo_receita  tr ON tr.id = t.tipo_receita_id
-       LEFT JOIN tab_tipo_cobranca tc ON tc.cod_tipo_cobranca = t.cod_tipo_cobranca
-       LEFT JOIN tab_centro_custo  cc ON cc.id = t.centro_custo_id
-       ${where}
+      `SELECT
+         t.id,
+         t.numero_titulo,
+         t.num_documento,
+         pes.nome                                     AS pessoa_nome,
+         tr.descricao                                 AS tipo_receita_desc,
+         tc.des_tipo_cobranca                         AS tipo_cobranca_desc,
+         cc.descricao                                 AS centro_custo_desc,
+         TO_CHAR(t.data_emissao,    'YYYY-MM-DD')    AS data_emissao,
+         TO_CHAR(t.data_vencimento, 'YYYY-MM-DD')    AS data_vencimento,
+         TO_CHAR(t.data_liquidacao, 'YYYY-MM-DD')    AS data_liquidacao,
+         t.valor_original,
+         t.valor_liquidado,
+         t.status
+       ${selectBase}
        ORDER BY t.data_vencimento DESC, t.id DESC
        LIMIT $${pi} OFFSET $${pi + 1}`,
       [...params, limit, offset],

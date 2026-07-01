@@ -16,6 +16,7 @@ export default async function EditarEmpresaPage({ params }: { params: { id: stri
             ambiente_nfe, serie_nfe, prox_num_nfe,
             serie_nfce, prox_num_nfce, csc_nfce, id_token_nfce,
             TO_CHAR(cert_validade, 'YYYY-MM-DD') AS cert_validade,
+            cod_tipo_cobranca,
             ativo, created_at, updated_at
      FROM tab_empresa
      WHERE id = $1`,

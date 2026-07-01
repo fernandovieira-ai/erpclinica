@@ -53,8 +53,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const raw = await req.json()
   const db  = getDb(session.database_name)
 
+  const STATUS_TITULO_RECEBER = ['A', 'L', 'C'] as const
   // Atualização rápida de status apenas
   if ('status' in raw && Object.keys(raw).length === 1) {
+    if (!STATUS_TITULO_RECEBER.includes(raw.status)) {
+      return NextResponse.json({ erro: 'Status inválido' }, { status: 400 })
+    }
     await db.query(
       `UPDATE tab_titulo_receber SET status=$1, updated_at=NOW() WHERE id=$2 AND empresa_id=$3`,
       [raw.status, params.id, session.empresa_id_ativa],
@@ -134,12 +138,35 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
 
-  const db = getDb(session.database_name)
-  const { rowCount } = await db.query(
-    `DELETE FROM tab_titulo_receber WHERE id=$1 AND empresa_id=$2`,
-    [params.id, session.empresa_id_ativa],
-  )
+  const db     = getDb(session.database_name)
+  const client = await db.connect()
 
-  if (!rowCount) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
-  return NextResponse.json({ ok: true })
+  try {
+    // Verifica existência antes de apagar
+    const { rows } = await client.query(
+      `SELECT id FROM tab_titulo_receber WHERE id=$1 AND empresa_id=$2`,
+      [params.id, session.empresa_id_ativa],
+    )
+    if (!rows.length) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
+
+    await client.query('BEGIN')
+    // Parcelas primeiro (FK parcela → título sem CASCADE)
+    await client.query(
+      `DELETE FROM tab_titulo_receber_parcela WHERE titulo_id = $1`,
+      [params.id],
+    )
+    await client.query(
+      `DELETE FROM tab_titulo_receber WHERE id=$1 AND empresa_id=$2`,
+      [params.id, session.empresa_id_ativa],
+    )
+    await client.query('COMMIT')
+
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    try { await client.query('ROLLBACK') } catch { /* já finalizada */ }
+    const msg = error instanceof Error ? error.message : String(error)
+    return NextResponse.json({ erro: 'Erro ao excluir título', detalhes: msg }, { status: 500 })
+  } finally {
+    client.release()
+  }
 }

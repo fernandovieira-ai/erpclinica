@@ -54,8 +54,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const raw = await req.json()
   const db  = getDb(session.database_name)
 
+  const STATUS_TITULO_PAGAR = ['A', 'L', 'C'] as const
   // Atualização rápida de status apenas
   if ('status' in raw && Object.keys(raw).length === 1) {
+    if (!STATUS_TITULO_PAGAR.includes(raw.status)) {
+      return NextResponse.json({ erro: 'Status inválido' }, { status: 400 })
+    }
     await db.query(
       `UPDATE tab_titulo_pagar SET status=$1, updated_at=NOW() WHERE id=$2 AND empresa_id=$3`,
       [raw.status, params.id, session.empresa_id_ativa],

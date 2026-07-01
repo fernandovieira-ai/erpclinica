@@ -36,6 +36,8 @@ export const empresaSchema = z.object({
   csc_nfce:           z.string().max(36).optional().nullable(),
   id_token_nfce:      z.string().max(6).optional().nullable(),
   cert_validade:      z.string().optional().nullable(),
+  // Faturamento
+  cod_tipo_cobranca:  z.number().int().optional().nullable(),
   // Status
   ativo:              z.boolean().default(true),
 })

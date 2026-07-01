@@ -75,9 +75,13 @@ export type AgendamentoListItem = Pick<
   | 'categoria_id' | 'categoria_descricao'
 > & {
   tipo_valor?: number | null
+  tipo_valor_prazo?: number | null
   recebimento_id?: number | null
   status_recebimento?: string | null
   total_recebimento?: number | null
+  movimento_caixa_id?: number | null
+  movimento_banco_id?: number | null
+  batch_agendamento_id?: number | null
 }
 
 export interface AgendamentoListResponse {
@@ -116,6 +120,7 @@ export interface TipoCategoriaValorItem {
   categoria_id: number
   descricao:    string
   valor:        number | null
+  valor_prazo:  number | null
 }
 
 export interface ProfissionalListItem {

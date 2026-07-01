@@ -20,6 +20,9 @@ interface Pessoa {
   cor_raca?: string
   estado_civil?: string
   naturalidade?: string
+  profissao?: string | null
+  altura?: string | null
+  peso?: string | null
   rg_ie?: string
   im?: string
   cep?: string
@@ -37,15 +40,12 @@ interface Pessoa {
   foto?: string | null
   pai_pessoa_id?: number | null
   pai_nome?: string
-  pai_profissao?: string
   pai_paciente?: boolean
   mae_pessoa_id?: number | null
   mae_nome?: string
-  mae_profissao?: string
   mae_paciente?: boolean
   conjuge_pessoa_id?: number | null
   conjuge_nome?: string
-  conjuge_profissao?: string
   conjuge_paciente?: boolean
   indicacao_pessoa_id?: number | null
   indicacao_nome?: string
@@ -57,6 +57,7 @@ interface Props {
   open: boolean
   paciente?: Pessoa | null
   agendamento?: AgendamentoListItem | null
+  agendamentos?: AgendamentoListItem[]
   onClose: () => void
   onSaved?: () => void
 }
@@ -495,18 +496,18 @@ function BuscarPessoa({
   )
 }
 
-export default function PacienteCheckInFormModal({ open, paciente, agendamento, onClose, onSaved }: Props) {
+export default function PacienteCheckInFormModal({ open, paciente, agendamento, agendamentos, onClose, onSaved }: Props) {
   const { register, watch, setValue, handleSubmit, reset } = useForm({
     defaultValues: {
       tipo_pessoa: 'F',
       nome: '', nome_fantasia: '', cpf_cnpj: '', rg_ie: '', im: '',
-      data_nascimento: '', sexo: '', cor_raca: '', estado_civil: '', naturalidade: '',
+      data_nascimento: '', sexo: '', cor_raca: '', estado_civil: '', naturalidade: '', profissao: '', altura: null as number | null, peso: null as number | null,
       cep: '', logradouro: '', numero: '', complemento: '', bairro: '', cidade: '', uf: '',
       telefone: '', celular: '', whatsapp: '', email: '', email_nfe: '',
       foto: null as string | null,
-      pai_pessoa_id: null as number | null, pai_nome: '', pai_profissao: '', pai_paciente: false,
-      mae_pessoa_id: null as number | null, mae_nome: '', mae_profissao: '', mae_paciente: false,
-      conjuge_pessoa_id: null as number | null, conjuge_nome: '', conjuge_profissao: '', conjuge_paciente: false,
+      pai_pessoa_id: null as number | null, pai_nome: '', pai_paciente: false,
+      mae_pessoa_id: null as number | null, mae_nome: '', mae_paciente: false,
+      conjuge_pessoa_id: null as number | null, conjuge_nome: '', conjuge_paciente: false,
       indicacao_pessoa_id: null as number | null, indicacao_nome: '', indicacao_fone: '', indicacao_ligacao: '',
     },
   })
@@ -515,14 +516,12 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
   const [buscandoCep,  setBuscandoCep]  = useState(false)
   const [cpfStatus,    setCpfStatus]    = useState<'valido' | 'invalido' | null>(null)
   const [recModalOpen, setRecModalOpen] = useState(false)
-  const [statusLocal,  setStatusLocal]  = useState<string | null>(null)
-  const [foiPago,      setFoiPago]      = useState(false)
+  const [pagosIds,     setPagosIds]     = useState<Set<number>>(new Set())
 
   useEffect(() => {
     if (open && paciente) {
       setCpfStatus(null)
-      setStatusLocal(null)
-      setFoiPago(false)
+      setPagosIds(new Set())
       const rawDoc = (paciente.cpf_cnpj ?? '').replace(/\D/g, '')
       reset({
         tipo_pessoa:        paciente.tipo_pessoa ?? 'F',
@@ -536,6 +535,9 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
         cor_raca:           paciente.cor_raca ?? '',
         estado_civil:       paciente.estado_civil ?? '',
         naturalidade:       paciente.naturalidade ?? '',
+        profissao:          paciente.profissao ?? '',
+        altura:             paciente.altura != null ? Number(paciente.altura) : null,
+        peso:               paciente.peso   != null ? Number(paciente.peso)   : null,
         cep:                paciente.cep ?? '',
         logradouro:         paciente.logradouro ?? '',
         numero:             paciente.numero ?? '',
@@ -551,15 +553,12 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
         foto:               paciente.foto ?? null,
         pai_pessoa_id:      paciente.pai_pessoa_id ?? null,
         pai_nome:           paciente.pai_nome ?? '',
-        pai_profissao:      paciente.pai_profissao ?? '',
         pai_paciente:       paciente.pai_paciente ?? false,
         mae_pessoa_id:      paciente.mae_pessoa_id ?? null,
         mae_nome:           paciente.mae_nome ?? '',
-        mae_profissao:      paciente.mae_profissao ?? '',
         mae_paciente:       paciente.mae_paciente ?? false,
         conjuge_pessoa_id:  paciente.conjuge_pessoa_id ?? null,
         conjuge_nome:       paciente.conjuge_nome ?? '',
-        conjuge_profissao:  paciente.conjuge_profissao ?? '',
         conjuge_paciente:   paciente.conjuge_paciente ?? false,
         indicacao_pessoa_id: paciente.indicacao_pessoa_id ?? null,
         indicacao_nome:     paciente.indicacao_nome ?? '',
@@ -587,16 +586,19 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
   }
 
   async function handleRecebimentoSalvo() {
-    if (!agendamento) return
-    try {
-      await fetch(`/api/clinica/agendamentos/${agendamento.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'AGUARDANDO' }),
-      })
-      setStatusLocal('AGUARDANDO')
-    } catch { /* status update failure is non-critical */ }
-    setFoiPago(true)
+    const listaAgsAll = (agendamentos && agendamentos.length > 0) ? agendamentos : agendamento ? [agendamento] : []
+    const pending = listaAgsAll.filter(ag => !pagosIds.has(ag.id) && !['CANCELADO', 'FALTOU'].includes(ag.status))
+    await Promise.all(
+      pending.map(ag =>
+        fetch(`/api/clinica/agendamentos/${ag.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'AGUARDANDO' }),
+        }).catch(() => {})
+      )
+    )
+    setPagosIds(prev => new Set([...prev, ...pending.map(ag => ag.id)]))
+    setRecModalOpen(false)
     onSaved?.()
   }
 
@@ -857,6 +859,48 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
                   <FormRow label="Naturalidade:">
                     <Input {...register('naturalidade')} placeholder="Cidade de nascimento" />
                   </FormRow>
+                  <FormRow label="Profissão:">
+                    <Input {...register('profissao')} placeholder="Ex: MÉDICO, ENFERMEIRO..." />
+                  </FormRow>
+                  <div style={{ display: 'flex', gap: 8, paddingLeft: 116, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ fontSize: 11, color: 'var(--texto-secundario)', whiteSpace: 'nowrap' }}>Altura (m):</span>
+                      <Input
+                        type="number" step="0.01" min="0" max="3"
+                        {...register('altura', { setValueAs: v => v === '' ? null : Number(v) })}
+                        placeholder="1.75"
+                        style={{ width: 70, fontFamily: 'var(--fonte-mono)' }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ fontSize: 11, color: 'var(--texto-secundario)', whiteSpace: 'nowrap' }}>Peso (kg):</span>
+                      <Input
+                        type="number" step="0.1" min="0" max="999"
+                        {...register('peso', { setValueAs: v => v === '' ? null : Number(v) })}
+                        placeholder="70.0"
+                        style={{ width: 75, fontFamily: 'var(--fonte-mono)' }}
+                      />
+                    </div>
+                    {(() => {
+                      const a = Number(watch('altura')), p = Number(watch('peso'))
+                      if (!a || !p || a <= 0 || p <= 0) return null
+                      const imc = p / (a * a)
+                      let label = '', cor = ''
+                      if      (imc < 18.5) { label = 'Abaixo do peso'; cor = '#3B82F6' }
+                      else if (imc < 25)   { label = 'Normal';          cor = '#10B981' }
+                      else if (imc < 30)   { label = 'Sobrepeso';       cor = '#F59E0B' }
+                      else if (imc < 35)   { label = 'Ob. Grau I';      cor = '#F97316' }
+                      else if (imc < 40)   { label = 'Ob. Grau II';     cor = '#EF4444' }
+                      else                  { label = 'Ob. Grau III';    cor = '#7C3AED' }
+                      return (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '2px 8px', background: `${cor}18`, borderRadius: 4, border: `1px solid ${cor}50` }}>
+                          <span style={{ fontSize: 10, color: 'var(--texto-terciario)', whiteSpace: 'nowrap' }}>IMC</span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: cor, fontFamily: 'var(--fonte-mono)' }}>{imc.toFixed(1)}</span>
+                          <span style={{ fontSize: 10, color: cor, fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</span>
+                        </div>
+                      )
+                    })()}
+                  </div>
                 </>)}
               </div>
             </div>
@@ -950,9 +994,6 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
                     placeholder="Nome do pai..."
                   />
                 </FormRow>
-                <FormRow label="Profissão:">
-                  <Input {...register('pai_profissao')} />
-                </FormRow>
                 <FormRow label="">
                   <Check label="É paciente" checked={!!watch('pai_paciente')} onChange={e => setValue('pai_paciente', e.target.checked)} />
                 </FormRow>
@@ -971,9 +1012,6 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
                     placeholder="Nome da mãe..."
                   />
                 </FormRow>
-                <FormRow label="Profissão:">
-                  <Input {...register('mae_profissao')} />
-                </FormRow>
                 <FormRow label="">
                   <Check label="É paciente" checked={!!watch('mae_paciente')} onChange={e => setValue('mae_paciente', e.target.checked)} />
                 </FormRow>
@@ -991,9 +1029,6 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
                     onLimpar={() => { setValue('conjuge_pessoa_id', null); setValue('conjuge_nome', '') }}
                     placeholder="Nome do cônjuge..."
                   />
-                </FormRow>
-                <FormRow label="Profissão:">
-                  <Input {...register('conjuge_profissao')} />
                 </FormRow>
                 <FormRow label="">
                   <Check label="É paciente" checked={!!watch('conjuge_paciente')} onChange={e => setValue('conjuge_paciente', e.target.checked)} />
@@ -1026,80 +1061,111 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
           </Secao>
           )}
 
-          {/* ══ AGENDAMENTO ════════════════════════════════════════ */}
-          {agendamento && (() => {
-            const statusAtual = statusLocal ?? agendamento.status
-            const statusColor = STATUS_COLOR[statusAtual] ?? '#378ADD'
-            const durMin = Math.round(
-              (new Date(agendamento.data_hora_fim).getTime() - new Date(agendamento.data_hora_inicio).getTime()) / 60000
-            )
-            const jaFoiPago = foiPago || (!!agendamento.recebimento_id && agendamento.status_recebimento === 'PAGO')
-            const podeReceber = !jaFoiPago && !['CANCELADO', 'FALTOU'].includes(statusAtual)
+          {/* ══ AGENDAMENTO(S) ══════════════════════════════════════ */}
+          {(() => {
+            const listaAgs = (agendamentos && agendamentos.length > 0)
+              ? agendamentos
+              : agendamento ? [agendamento] : []
+            if (listaAgs.length === 0) return null
             return (
-              <Secao titulo="Agendamento">
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '8px 10px',
-                  background: statusColor + '12',
-                  borderLeft: `3px solid ${statusColor}`,
-                  borderRadius: 4,
-                  marginBottom: 8,
-                }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: statusColor, flexShrink: 0 }}>
-                    {format(parseISO(agendamento.data_hora_inicio), 'HH:mm')}
+              <Secao titulo={listaAgs.length > 1 ? `Agendamentos do dia (${listaAgs.length})` : 'Agendamento'}>
+                {listaAgs.length === 1 && (
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--texto-principal)', marginBottom: 4 }}>
+                    {format(parseISO(listaAgs[0].data_hora_inicio), "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })}
                   </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--texto-principal)' }}>
-                      {format(parseISO(agendamento.data_hora_inicio), "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })}
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginTop: 1, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                      {agendamento.profissional_nome && <span>{agendamento.profissional_nome}</span>}
-                      {agendamento.tipo_descricao && <><span>·</span><span>{agendamento.tipo_descricao}</span></>}
-                      {agendamento.categoria_descricao && <><span>·</span><span>{agendamento.categoria_descricao}</span></>}
-                      {durMin > 0 && <><span>·</span><span>{durMin}min</span></>}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                    {jaFoiPago && (
-                      <div style={{
-                        display: 'flex', alignItems: 'center', gap: 4,
-                        fontSize: 11, fontWeight: 700, color: '#1D9E75',
-                        background: '#1D9E7520',
-                        padding: '3px 10px', borderRadius: 20,
-                      }}>
-                        <CheckCircle2 size={12} />
-                        Pago{agendamento.total_recebimento
-                          ? ` • ${Number(agendamento.total_recebimento).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
-                          : ''}
-                      </div>
-                    )}
-                    <div style={{
-                      fontSize: 11, fontWeight: 700, color: statusColor,
-                      background: statusColor + '20',
-                      padding: '3px 10px', borderRadius: 20,
-                    }}>
-                      {STATUS_LABEL[statusAtual] ?? statusAtual}
-                    </div>
-                    {podeReceber && (
+                )}
+                {(() => {
+                  const algumPodeReceber = listaAgs.some(
+                    ag => !pagosIds.has(ag.id) && !['CANCELADO', 'FALTOU'].includes(ag.status)
+                  )
+                  if (!algumPodeReceber) return null
+                  const somaTotal = listaAgs
+                    .filter(ag => !pagosIds.has(ag.id) && !['CANCELADO', 'FALTOU'].includes(ag.status))
+                    .reduce((acc, ag) => acc + (Number(ag.tipo_valor) || 0), 0)
+                  return (
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                      {somaTotal > 0 && (
+                        <div style={{ fontSize: 12, color: 'var(--texto-terciario)' }}>
+                          Total: <strong style={{ color: 'var(--cor-primaria)' }}>
+                            {somaTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </strong>
+                        </div>
+                      )}
                       <button
                         type="button"
                         onClick={() => setRecModalOpen(true)}
                         style={{
-                          display: 'flex', alignItems: 'center', gap: 4,
-                          fontSize: 11, fontWeight: 700, color: '#fff',
+                          display: 'flex', alignItems: 'center', gap: 6,
+                          fontSize: 12, fontWeight: 700, color: '#fff',
                           background: '#1D9E75',
-                          padding: '3px 12px', borderRadius: 20,
+                          padding: '6px 16px', borderRadius: 6,
                           border: 'none', cursor: 'pointer',
                           transition: 'opacity 0.15s',
                         }}
                         onMouseEnter={e => { e.currentTarget.style.opacity = '0.85' }}
                         onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
                       >
-                        <DollarSign size={12} /> RECEBER
+                        <DollarSign size={14} /> RECEBER
                       </button>
-                    )}
-                  </div>
-                </div>
+                    </div>
+                  )
+                })()}
+                {listaAgs.map(ag => {
+                  const jaFoiPago = pagosIds.has(ag.id) || (!!ag.recebimento_id && ag.status_recebimento === 'PAGO')
+                  const statusAtual = pagosIds.has(ag.id) ? 'AGUARDANDO' : ag.status
+                  const statusColor = STATUS_COLOR[statusAtual] ?? '#378ADD'
+                  const podeReceber = !jaFoiPago && !['CANCELADO', 'FALTOU'].includes(statusAtual)
+                  const durMin = Math.round(
+                    (new Date(ag.data_hora_fim).getTime() - new Date(ag.data_hora_inicio).getTime()) / 60000
+                  )
+                  return (
+                    <div key={ag.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '8px 10px',
+                      background: statusColor + '12',
+                      borderLeft: `3px solid ${statusColor}`,
+                      borderRadius: 4,
+                      marginBottom: 6,
+                    }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: statusColor, flexShrink: 0, width: 42 }}>
+                        {format(parseISO(ag.data_hora_inicio), 'HH:mm')}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 11, color: 'var(--texto-terciario)', display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                          {ag.profissional_nome && <span>{ag.profissional_nome}</span>}
+                          {ag.tipo_descricao && <><span>·</span><span>{ag.tipo_descricao}</span></>}
+                          {ag.categoria_descricao && <><span>·</span><span>{ag.categoria_descricao}</span></>}
+                          {durMin > 0 && <><span>·</span><span>{durMin}min</span></>}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        {ag.tipo_valor ? (
+                          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--cor-primaria)' }}>
+                            {Number(ag.tipo_valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </div>
+                        ) : null}
+                        {jaFoiPago && (
+                          <div style={{
+                            display: 'flex', alignItems: 'center', gap: 4,
+                            fontSize: 11, fontWeight: 700, color: '#1D9E75',
+                            background: '#1D9E7520',
+                            padding: '3px 10px', borderRadius: 20,
+                          }}>
+                            <CheckCircle2 size={12} />
+                            Pago
+                          </div>
+                        )}
+                        <div style={{
+                          fontSize: 11, fontWeight: 700, color: statusColor,
+                          background: statusColor + '20',
+                          padding: '3px 10px', borderRadius: 20,
+                        }}>
+                          {STATUS_LABEL[statusAtual] ?? statusAtual}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
               </Secao>
             )
           })()}
@@ -1133,14 +1199,20 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
 
         </form>
 
-        {agendamento && (
-          <RecebimentoModal
-            open={recModalOpen}
-            onClose={() => setRecModalOpen(false)}
-            agendamento={{ ...agendamento, status: (statusLocal ?? agendamento.status) as typeof agendamento.status }}
-            onRecebimentoSalvo={handleRecebimentoSalvo}
-          />
-        )}
+        {(() => {
+          const listaAgsAll = (agendamentos && agendamentos.length > 0) ? agendamentos : agendamento ? [agendamento] : []
+          const pendingAgs = listaAgsAll.filter(ag => !pagosIds.has(ag.id) && !['CANCELADO', 'FALTOU'].includes(ag.status))
+          if (pendingAgs.length === 0) return null
+          return (
+            <RecebimentoModal
+              open={recModalOpen}
+              onClose={() => setRecModalOpen(false)}
+              agendamento={pendingAgs[0]}
+              agendamentos={pendingAgs}
+              onRecebimentoSalvo={handleRecebimentoSalvo}
+            />
+          )
+        })()}
       </div>
     </div>
   )

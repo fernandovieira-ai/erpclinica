@@ -48,9 +48,10 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
   const [deleting,  setDeleting]  = useState(false)
   const [excluding, setExcluding] = useState(false)
   const [aba,       setAba]       = useState<Aba>('principal')
-  const [categorias,   setCategorias]   = useState<TipoCategoriaValorItem[]>([])
-  const [valoresEdit,  setValoresEdit]  = useState<Record<number, string>>({})
-  const [savingCat,    setSavingCat]    = useState(false)
+  const [categorias,        setCategorias]        = useState<TipoCategoriaValorItem[]>([])
+  const [valoresEdit,       setValoresEdit]       = useState<Record<number, string>>({})
+  const [valoresPrazoEdit,  setValoresPrazoEdit]  = useState<Record<number, string>>({})
+  const [savingCat,         setSavingCat]         = useState(false)
 
   const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<AgendamentoTipoInput>({
     resolver: zodResolver(agendamentoTipoSchema),
@@ -78,8 +79,13 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
       .then((data: TipoCategoriaValorItem[]) => {
         setCategorias(data)
         const vals: Record<number, string> = {}
-        data.forEach(c => { vals[c.categoria_id] = c.valor != null ? String(c.valor) : '' })
+        const valsPrazo: Record<number, string> = {}
+        data.forEach(c => {
+          vals[c.categoria_id]      = c.valor       != null ? String(c.valor)       : ''
+          valsPrazo[c.categoria_id] = c.valor_prazo != null ? String(c.valor_prazo) : ''
+        })
         setValoresEdit(vals)
+        setValoresPrazoEdit(valsPrazo)
       })
   }, [tipo, aba])
 
@@ -89,7 +95,8 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
     try {
       const valores = categorias.map(c => ({
         categoria_id: c.categoria_id,
-        valor: parseFloat(valoresEdit[c.categoria_id] || '0') || 0,
+        valor:       parseFloat(valoresEdit[c.categoria_id]      || '0') || 0,
+        valor_prazo: parseFloat(valoresPrazoEdit[c.categoria_id] || '0') || 0,
       }))
       const res = await fetch(`/api/clinica/tipos-agendamento/${tipo.id}/categorias`, {
         method: 'PUT',
@@ -333,7 +340,8 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--borda-media)' }}>
                     <th style={{ textAlign: 'left', padding: '4px 8px', color: 'var(--texto-secundario)', fontWeight: 600 }}>Categoria</th>
-                    <th style={{ textAlign: 'right', padding: '4px 8px', color: 'var(--texto-secundario)', fontWeight: 600, width: 140 }}>Valor (R$)</th>
+                    <th style={{ textAlign: 'right', padding: '4px 8px', color: 'var(--texto-secundario)', fontWeight: 600, width: 140 }}>Valor à Vista (R$)</th>
+                    <th style={{ textAlign: 'right', padding: '4px 8px', color: 'var(--texto-secundario)', fontWeight: 600, width: 140 }}>Valor a Prazo (R$)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -347,6 +355,17 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
                           step={0.01}
                           value={valoresEdit[cat.categoria_id] ?? ''}
                           onChange={e => setValoresEdit(prev => ({ ...prev, [cat.categoria_id]: e.target.value }))}
+                          placeholder="0,00"
+                          style={{ width: 110, padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, textAlign: 'right' }}
+                        />
+                      </td>
+                      <td style={{ padding: '4px 8px', textAlign: 'right' }}>
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          value={valoresPrazoEdit[cat.categoria_id] ?? ''}
+                          onChange={e => setValoresPrazoEdit(prev => ({ ...prev, [cat.categoria_id]: e.target.value }))}
                           placeholder="0,00"
                           style={{ width: 110, padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, textAlign: 'right' }}
                         />

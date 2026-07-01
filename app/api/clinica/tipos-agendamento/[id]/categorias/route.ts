@@ -11,6 +11,7 @@ const putSchema = z.object({
     z.object({
       categoria_id: z.number().int().positive(),
       valor:        z.number().nonnegative(),
+      valor_prazo:  z.number().nonnegative().optional().default(0),
     }),
   ),
 })
@@ -36,7 +37,8 @@ export async function GET(req: NextRequest, { params }: Params) {
     `SELECT
        c.id   AS categoria_id,
        c.descricao,
-       v.valor
+       v.valor,
+       v.valor_prazo
      FROM tab_categoria c
      LEFT JOIN tab_agendamento_tipo_categoria v
             ON v.categoria_id = c.id AND v.tipo_id = $1
@@ -78,13 +80,13 @@ export async function PUT(req: NextRequest, { params }: Params) {
       [tipoId],
     )
 
-    // Insere apenas os que têm valor > 0
+    // Insere apenas os que têm ao menos um valor > 0
     for (const v of valores) {
-      if (v.valor > 0) {
+      if (v.valor > 0 || (v.valor_prazo ?? 0) > 0) {
         await db.query(
-          `INSERT INTO tab_agendamento_tipo_categoria (empresa_id, tipo_id, categoria_id, valor)
-           VALUES ($1, $2, $3, $4)`,
-          [session.empresa_id_ativa, tipoId, v.categoria_id, v.valor],
+          `INSERT INTO tab_agendamento_tipo_categoria (empresa_id, tipo_id, categoria_id, valor, valor_prazo)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [session.empresa_id_ativa, tipoId, v.categoria_id, v.valor, v.valor_prazo ?? null],
         )
       }
     }

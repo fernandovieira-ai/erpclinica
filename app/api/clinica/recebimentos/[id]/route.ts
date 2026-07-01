@@ -47,17 +47,13 @@ export async function GET(
     return NextResponse.json({ dados: rows[0] })
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
-    console.error('Erro ao buscar recebimento:', errorMessage)
-    return NextResponse.json({
-      erro: 'Erro ao buscar recebimento',
-      detalhes: errorMessage
-    }, { status: 500 })
+    return NextResponse.json({ erro: 'Erro ao buscar recebimento', detalhes: errorMessage }, { status: 500 })
   } finally {
     client.release()
   }
 }
 
-// DELETE - Estornar recebimento
+// DELETE - Estornar recebimento e todos os demais vinculados ao mesmo movimento
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -76,9 +72,9 @@ export async function DELETE(
       return NextResponse.json({ erro: 'Motivo do estorno é obrigatório' }, { status: 400 })
     }
 
-    // Verificar se recebimento existe e pertence à empresa
+    // 1. Busca o recebimento clicado
     const { rows: recRows } = await client.query(
-      `SELECT id, status_recebimento, agendamento_id
+      `SELECT id, status_recebimento, agendamento_id, batch_agendamento_id, movimento_caixa_id, movimento_banco_id
        FROM tab_recebimento_consulta
        WHERE id = $1 AND empresa_id = $2`,
       [recebimentoId, session.empresa_id_ativa]
@@ -87,81 +83,86 @@ export async function DELETE(
     if (recRows.length === 0) {
       return NextResponse.json({ erro: 'Recebimento não encontrado' }, { status: 404 })
     }
-
-    const status = recRows[0].status_recebimento
-    if (status === 'ESTORNADO') {
+    if (recRows[0].status_recebimento === 'ESTORNADO') {
       return NextResponse.json({ erro: 'Este recebimento já foi estornado' }, { status: 400 })
     }
 
+    // batch_agendamento_id é o grupo do lote — igual ao origem_id de todos os N títulos gerados
+    const batchAgendamentoId = (recRows[0].batch_agendamento_id ?? recRows[0].agendamento_id) as number
+
+    // 2. Todos os N títulos do lote (origem_id = batchAgendamentoId)
+    const { rows: tituloRows } = await client.query(
+      `SELECT id, movimento_caixa_id, movimento_banco_id FROM tab_titulo_receber
+       WHERE empresa_id = $1 AND origem_modulo = 'CLI' AND origem_id = $2`,
+      [session.empresa_id_ativa, batchAgendamentoId]
+    )
+    const tituloIds   = tituloRows.map((r: { id: number }) => r.id)
+    const movCaixaIds = tituloRows.map((r: { movimento_caixa_id: number | null }) => r.movimento_caixa_id).filter((x): x is number => x != null)
+    const movBancoIds = tituloRows.map((r: { movimento_banco_id: number | null }) => r.movimento_banco_id).filter((x): x is number => x != null)
+
+    // 3. Todos os recebimentos do lote (mesmo batch_agendamento_id)
+    const { rows: todosRecRows } = await client.query(
+      `SELECT id, movimento_caixa_id, movimento_banco_id FROM tab_recebimento_consulta
+       WHERE empresa_id = $1 AND batch_agendamento_id = $2`,
+      [session.empresa_id_ativa, batchAgendamentoId]
+    )
+    const todosRecIds    = todosRecRows.map((r: { id: number }) => r.id)
+    const recMovCaixaIds = todosRecRows.map((r: { movimento_caixa_id: number | null }) => r.movimento_caixa_id).filter((x): x is number => x != null)
+    const recMovBancoIds = todosRecRows.map((r: { movimento_banco_id: number | null }) => r.movimento_banco_id).filter((x): x is number => x != null)
+
     await client.query('BEGIN')
 
-    // Buscar dados antes de deletar
-    const { rows: recRows2 } = await client.query(
-      `SELECT titulo_receber_id, movimento_caixa_id, movimento_banco_id
-       FROM tab_recebimento_consulta WHERE id = $1`,
-      [recebimentoId]
-    )
-    const tituloId = recRows2[0]?.titulo_receber_id
-    const movimentoCaixaId = recRows2[0]?.movimento_caixa_id
-    const movimentoBancoId = recRows2[0]?.movimento_banco_id
-
-    // Primeiro, remover as referências do recebimento
-    await client.query(
-      `UPDATE tab_recebimento_consulta
-       SET movimento_caixa_id = NULL, movimento_banco_id = NULL
-       WHERE id = $1`,
-      [recebimentoId]
-    )
-
-    // Deletar os movimentos direto pelo ID (funciona para parcelado e à vista)
-    if (movimentoCaixaId) {
-      await client.query(
-        `DELETE FROM tab_movimento_caixa WHERE id = $1`,
-        [movimentoCaixaId]
-      )
-    }
-
-    if (movimentoBancoId) {
-      await client.query(
-        `DELETE FROM tab_movimento_banco WHERE id = $1`,
-        [movimentoBancoId]
-      )
-    }
-
-    // Reabrir o título a receber (se existir)
-    if (tituloId) {
+    // A. Zera FK dos títulos para movimentos (sem mudar status — trigger não dispara)
+    if (tituloIds.length > 0) {
       await client.query(
         `UPDATE tab_titulo_receber
-         SET status = $1, data_liquidacao = NULL, valor_liquidado = 0
-         WHERE id = $2`,
-        ['A', tituloId]
+         SET movimento_caixa_id = NULL, movimento_banco_id = NULL,
+             destino_liquidacao  = NULL, conta_banco_liq_id = NULL
+         WHERE id = ANY($1::int[])`,
+        [tituloIds]
       )
     }
 
-    // Deletar o recebimento (limpeza total)
-    await client.query(
-      `DELETE FROM tab_recebimento_consulta WHERE id = $1`,
-      [recebimentoId]
-    )
+    // B. Deleta recebimentos — libera FK para tab_movimento_caixa e tab_titulo_receber
+    if (todosRecIds.length > 0) {
+      await client.query(
+        `DELETE FROM tab_recebimento_consulta WHERE id = ANY($1::int[])`,
+        [todosRecIds]
+      )
+    }
+
+    // C. Deleta movimentos (IDs coletados de títulos + recebimentos)
+    const allMovCaixaIds = [...new Set([...movCaixaIds, ...recMovCaixaIds])]
+    const allMovBancoIds = [...new Set([...movBancoIds, ...recMovBancoIds])]
+    if (allMovCaixaIds.length > 0) {
+      await client.query(`DELETE FROM tab_movimento_caixa WHERE id = ANY($1::int[])`, [allMovCaixaIds])
+    }
+    if (allMovBancoIds.length > 0) {
+      await client.query(`DELETE FROM tab_movimento_banco WHERE id = ANY($1::int[])`, [allMovBancoIds])
+    }
+    // Belt-and-suspenders: movimentos via titulo_receber_id (caso trigger tenha gerado)
+    if (tituloIds.length > 0) {
+      await client.query(`DELETE FROM tab_movimento_caixa WHERE titulo_receber_id = ANY($1::int[])`, [tituloIds])
+      await client.query(`DELETE FROM tab_movimento_banco WHERE titulo_receber_id = ANY($1::int[])`, [tituloIds])
+    }
+
+    // D. Deleta títulos
+    if (tituloIds.length > 0) {
+      await client.query(`DELETE FROM tab_titulo_receber WHERE id = ANY($1::int[])`, [tituloIds])
+    }
 
     await client.query('COMMIT')
 
     return NextResponse.json({
       sucesso: true,
-      mensagem: 'Recebimento estornado com sucesso'
+      mensagem: `${todosRecIds.length} recebimento(s) e ${tituloIds.length} título(s) estornados com sucesso`,
+      total_estornados: todosRecIds.length,
     })
   } catch (error) {
-    try {
-      await client.query('ROLLBACK')
-    } catch {
-      // Transaction já foi finalizada
-    }
+    try { await client.query('ROLLBACK') } catch { /* já finalizada */ }
     const errorMessage = error instanceof Error ? error.message : String(error)
     console.error('Erro ao estornar recebimento:', errorMessage)
-    return NextResponse.json({
-      erro: 'Erro ao estornar recebimento',
-      detalhes: errorMessage
-    }, { status: 500 })
+    return NextResponse.json({ erro: 'Erro ao estornar recebimento', detalhes: errorMessage }, { status: 500 })
   } finally {
     client.release()
   }

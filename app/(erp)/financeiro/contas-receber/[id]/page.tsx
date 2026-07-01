@@ -4,7 +4,11 @@ import { getDb } from '@/lib/db'
 import type { TituloReceber } from '@/types/cadastros.types'
 import TituloReceberFormPage from '@/components/financeiro/TituloReceberFormPage'
 
-export default async function EditarTituloReceberPage({ params }: { params: { id: string } }) {
+export default async function EditarTituloReceberPage({
+  params,
+}: {
+  params: { id: string }
+}) {
   const session = await requireSession()
   const db      = getDb(session.database_name)
 

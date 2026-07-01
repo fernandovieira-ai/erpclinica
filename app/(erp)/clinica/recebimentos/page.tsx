@@ -1,29 +1,29 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { format, parseISO, startOfDay, endOfDay, isToday } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { toast } from 'sonner'
 import {
   DollarSign, Calendar, User, Stethoscope, CreditCard,
-  Search, ChevronLeft, ChevronRight, RefreshCw, Undo2,
+  ChevronLeft, ChevronRight, RefreshCw, Undo2,
 } from 'lucide-react'
 import type { AgendamentoListItem } from '@/types/clinica.types'
 import RecebimentoModal from '@/components/clinica/RecebimentoModal'
 
 const STATUS_LABEL: Record<string, { label: string; cor: string }> = {
-  AGENDADO:   { label: 'Agendado',    cor: '#378ADD' },
-  CONFIRMADO: { label: 'Confirmado',  cor: '#0F6E56' },
-  AGUARDANDO: { label: 'Aguardando',  cor: '#EF9F27' },
-  ATENDIDO:   { label: 'Atendido',    cor: '#1D9E75' },
-  FALTOU:     { label: 'Faltou',      cor: '#E24B4A' },
-  CANCELADO:  { label: 'Cancelado',   cor: '#888780' },
+  AGENDADO:   { label: 'Agendado',   cor: '#378ADD' },
+  CONFIRMADO: { label: 'Confirmado', cor: '#0F6E56' },
+  AGUARDANDO: { label: 'Aguardando', cor: '#EF9F27' },
+  ATENDIDO:   { label: 'Atendido',   cor: '#1D9E75' },
+  FALTOU:     { label: 'Faltou',     cor: '#E24B4A' },
+  CANCELADO:  { label: 'Cancelado',  cor: '#888780' },
 }
 
 const STATUS_RECEBIMENTO: Record<string, { label: string; cor: string }> = {
-  PAGO:       { label: 'Pago',        cor: '#1D9E75' },
-  ESTORNADO:  { label: 'Estornado',   cor: '#E24B4A' },
-  PENDENTE:   { label: 'Pendente',    cor: '#EF9F27' },
+  PAGO:      { label: 'Pago',      cor: '#1D9E75' },
+  ESTORNADO: { label: 'Estornado', cor: '#E24B4A' },
+  PENDENTE:  { label: 'Pendente',  cor: '#EF9F27' },
 }
 
 function fmtValor(v: number | null | undefined) {
@@ -33,29 +33,19 @@ function fmtValor(v: number | null | undefined) {
 
 export default function RecebimentosPage() {
   const [agendamentos, setAgendamentos] = useState<AgendamentoListItem[]>([])
-  const [loading, setLoading] = useState(false)
-  const [dataHoje, setDataHoje] = useState(new Date())
-  const [modalOpen, setModalOpen] = useState(false)
-  const [agendamentoSel, setAgendamentoSel] = useState<AgendamentoListItem | null>(null)
+  const [loading, setLoading]           = useState(false)
+  const [dataHoje, setDataHoje]         = useState(new Date())
+  const [modalOpen, setModalOpen]       = useState(false)
+  const [agendamentosSel, setAgendamentosSel] = useState<AgendamentoListItem[]>([])
   const [filtroStatus, setFiltroStatus] = useState<string>('')
 
   const carregar = useCallback(async () => {
     setLoading(true)
     try {
       const inicio = format(startOfDay(dataHoje), 'yyyy-MM-dd')
-      const fim = format(endOfDay(dataHoje), 'yyyy-MM-dd')
-
-      const sp = new URLSearchParams({
-        inicio,
-        fim,
-      })
-
-      const res = await fetch(`/api/clinica/agendamentos?${sp}`)
-      if (!res.ok) {
-        toast.error('Erro ao carregar agendamentos')
-        return
-      }
-
+      const fim    = format(endOfDay(dataHoje),   'yyyy-MM-dd')
+      const res    = await fetch(`/api/clinica/agendamentos?inicio=${inicio}&fim=${fim}`)
+      if (!res.ok) { toast.error('Erro ao carregar agendamentos'); return }
       const data = await res.json()
       setAgendamentos(data.dados ?? [])
     } finally {
@@ -63,39 +53,59 @@ export default function RecebimentosPage() {
     }
   }, [dataHoje])
 
-  useEffect(() => {
-    carregar()
-  }, [carregar])
+  useEffect(() => { carregar() }, [carregar])
 
-  function abrirRecebimento(ag: AgendamentoListItem) {
-    setAgendamentoSel(ag)
+  function abrirRecebimento(ags: AgendamentoListItem[]) {
+    setAgendamentosSel(ags)
     setModalOpen(true)
   }
 
-  async function estornarRecebimento(ag: AgendamentoListItem) {
-    if (!ag.recebimento_id) return
+  async function estornarTudo(agPagos: AgendamentoListItem[]) {
+    if (!agPagos.length) return
 
-    const motivo = window.prompt('Motivo do estorno:')
+    const total = agPagos.length
+    const aviso = total > 1
+      ? `Este estorno irá reverter ${total} atendimento(s) deste paciente.\n\nMotivo do estorno:`
+      : 'Motivo do estorno:'
+
+    const motivo = window.prompt(aviso)
     if (!motivo) return
 
+    // Coleta um recebimento_id representante por lote único (backend agrupa pelo movimento/título)
+    const lotesUnicos = new Map<string, number>()
+    for (const ag of agPagos) {
+      if (!ag.recebimento_id) continue
+      const key = ag.movimento_caixa_id
+        ? `caixa-${ag.movimento_caixa_id}`
+        : ag.movimento_banco_id
+          ? `banco-${ag.movimento_banco_id}`
+          : ag.batch_agendamento_id
+            ? `batch-${ag.batch_agendamento_id}`
+            : `rec-${ag.recebimento_id}`
+      if (!lotesUnicos.has(key)) lotesUnicos.set(key, ag.recebimento_id)
+    }
+
     try {
-      const res = await fetch(`/api/clinica/recebimentos/${ag.recebimento_id}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ motivo_estorno: motivo }),
-      })
-
-      if (!res.ok) {
-        const error = await res.json()
-        toast.error(error.detalhes || error.erro || 'Erro ao estornar')
-        return
+      let totalEstornados = 0
+      for (const recebimentoId of lotesUnicos.values()) {
+        const res = await fetch(`/api/clinica/recebimentos/${recebimentoId}`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ motivo_estorno: motivo }),
+        })
+        if (!res.ok) {
+          const error = await res.json()
+          toast.error(error.detalhes || error.erro || 'Erro ao estornar')
+          carregar()
+          return
+        }
+        const data = await res.json()
+        totalEstornados += data.total_estornados ?? 1
       }
-
-      toast.success('Recebimento estornado com sucesso')
+      toast.success(`${totalEstornados} atendimento(s) estornado(s) com sucesso`)
       carregar()
-    } catch (error) {
+    } catch {
       toast.error('Erro ao estornar recebimento')
-      console.error(error)
     }
   }
 
@@ -103,12 +113,18 @@ export default function RecebimentosPage() {
     ? agendamentos.filter(ag => ag.status === filtroStatus)
     : agendamentos
 
-  const totalValor = agFiltrados.reduce((sum, ag) => {
-    // Se existe recebimento PAGO, usa o valor total do recebimento
-    // Caso contrário, usa o valor padrão do tipo de agendamento
-    const valor = ag.total_recebimento ? Number(ag.total_recebimento) : Number(ag.tipo_valor) || 0
-    return sum + valor
-  }, 0)
+  // Agrupa por paciente preservando a ordem do primeiro atendimento do dia
+  const grupos = useMemo(() => {
+    const map = new Map<number, AgendamentoListItem[]>()
+    for (const ag of agFiltrados) {
+      if (!map.has(ag.paciente_id)) map.set(ag.paciente_id, [])
+      map.get(ag.paciente_id)!.push(ag)
+    }
+    return Array.from(map.values())
+  }, [agFiltrados])
+
+  const totalValor = agFiltrados.reduce((sum, ag) =>
+    sum + Number(ag.total_recebimento ?? ag.tipo_valor ?? 0), 0)
 
   return (
     <>
@@ -127,7 +143,7 @@ export default function RecebimentosPage() {
       <div className="page-body">
         {/* Controles */}
         <div style={{ display: 'flex', gap: 12, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-          {/* Data navegação */}
+          {/* Navegação de data */}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button
               className="btn-ghost"
@@ -171,7 +187,6 @@ export default function RecebimentosPage() {
             ))}
           </select>
 
-          {/* Refresh */}
           <button
             className="btn-ghost"
             style={{ padding: '6px 8px' }}
@@ -182,7 +197,7 @@ export default function RecebimentosPage() {
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
 
-          {/* Total */}
+          {/* Total do dia */}
           <div style={{
             marginLeft: 'auto',
             padding: '6px 12px',
@@ -193,271 +208,207 @@ export default function RecebimentosPage() {
             alignItems: 'center',
             gap: 8,
           }}>
-            <span style={{ fontSize: 12, color: 'var(--texto-terciario)' }}>Total:</span>
+            <span style={{ fontSize: 12, color: 'var(--texto-terciario)' }}>Total do dia:</span>
             <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--cor-primaria)' }}>
               {fmtValor(totalValor)}
             </span>
           </div>
         </div>
 
-        {/* Listagem */}
-        <div className="card" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          {agFiltrados.length === 0 ? (
-            <div style={{
-              flex: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexDirection: 'column',
-              gap: 12,
-              color: 'var(--texto-terciario)',
-              minHeight: 300,
-            }}>
-              <Calendar size={48} style={{ opacity: 0.3 }} />
-              <div style={{ fontSize: 14 }}>Nenhum agendamento neste dia</div>
-            </div>
-          ) : (
-            <div style={{ overflow: 'auto', flex: 1 }}>
-              {agFiltrados.map((ag, idx) => {
-                const statusInfo = STATUS_LABEL[ag.status] || { label: ag.status, cor: '#999' }
-                const podePagar = ['AGENDADO', 'CONFIRMADO', 'AGUARDANDO', 'ATENDIDO'].includes(ag.status)
+        {/* Listagem agrupada por paciente */}
+        {grupos.length === 0 ? (
+          <div className="card" style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexDirection: 'column',
+            gap: 12,
+            color: 'var(--texto-terciario)',
+            minHeight: 300,
+          }}>
+            <Calendar size={48} style={{ opacity: 0.3 }} />
+            <div style={{ fontSize: 14 }}>Nenhum agendamento neste dia</div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {grupos.map(grupo => {
+              const paciente = grupo[0]
+              const pendentes = grupo.filter(ag =>
+                ag.status_recebimento !== 'PAGO' &&
+                ['AGENDADO', 'CONFIRMADO', 'AGUARDANDO', 'ATENDIDO'].includes(ag.status)
+              )
+              const totalGrupo = grupo.reduce((sum, ag) =>
+                sum + Number(ag.total_recebimento ?? ag.tipo_valor ?? 0), 0)
 
-                return (
-                  <div
-                    key={ag.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      padding: '12px 16px',
-                      borderBottom: idx < agFiltrados.length - 1 ? '0.5px solid var(--borda-suave)' : 'none',
-                      gap: 12,
-                      transition: 'background 0.2s',
-                    }}
-                    onMouseEnter={e => {
-                      (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'
-                    }}
-                    onMouseLeave={e => {
-                      (e.currentTarget as HTMLElement).style.background = 'transparent'
-                    }}
-                  >
-                    {/* Status */}
-                    <div style={{
-                      width: 4,
-                      height: 40,
-                      borderRadius: 2,
-                      background: statusInfo.cor,
-                      flexShrink: 0,
-                    }} />
+              // Agrupa os PAGO por lote (movimento ou título A Prazo)
+              const movimentosEstorno = new Map<string, AgendamentoListItem[]>()
+              for (const ag of grupo.filter(a => a.status_recebimento === 'PAGO')) {
+                const key = ag.movimento_caixa_id
+                  ? `caixa-${ag.movimento_caixa_id}`
+                  : ag.movimento_banco_id
+                    ? `banco-${ag.movimento_banco_id}`
+                    : ag.batch_agendamento_id
+                      ? `batch-${ag.batch_agendamento_id}`
+                      : `rec-${ag.recebimento_id}`
+                if (!movimentosEstorno.has(key)) movimentosEstorno.set(key, [])
+                movimentosEstorno.get(key)!.push(ag)
+              }
+              const lotesPagos = Array.from(movimentosEstorno.values())
 
-                    {/* Informações */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        marginBottom: 4,
-                      }}>
-                        <div style={{
-                          fontWeight: 600,
-                          fontSize: 13,
-                          color: 'var(--texto-principal)',
-                        }}>
-                          {format(parseISO(ag.data_hora_inicio), 'HH:mm')}
-                        </div>
-                        <span style={{
-                          fontSize: 13,
-                          fontWeight: 600,
-                          color: 'var(--texto-principal)',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}>
-                          {ag.paciente_nome}
-                        </span>
-                        {ag.paciente_celular && (
-                          <span style={{
-                            fontSize: 11,
-                            color: 'var(--texto-terciario)',
-                            marginLeft: 'auto',
-                          }}>
-                            {ag.paciente_celular}
-                          </span>
-                        )}
-                      </div>
+              return (
+                <div key={paciente.paciente_id} className="card" style={{ overflow: 'hidden', padding: 0 }}>
 
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        fontSize: 11,
-                        color: 'var(--texto-terciario)',
-                      }}>
-                        <Stethoscope size={12} />
-                        <span>{ag.profissional_nome}</span>
-                        {ag.tipo_descricao && (
-                          <>
-                            <span>·</span>
-                            <span>{ag.tipo_descricao}</span>
-                          </>
-                        )}
-                        {ag.categoria_descricao && (
-                          <>
-                            <span>·</span>
-                            <span>{ag.categoria_descricao}</span>
-                          </>
-                        )}
-                      </div>
+                  {/* Cabeçalho do paciente */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '11px 16px',
+                    background: 'var(--bg-card)',
+                    borderBottom: '0.5px solid var(--borda-suave)',
+                  }}>
+                    <User size={13} style={{ color: 'var(--texto-terciario)', flexShrink: 0 }} />
+                    <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--texto-principal)' }}>
+                      {paciente.paciente_nome}
+                    </span>
+                    {paciente.paciente_celular && (
+                      <span style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>
+                        {paciente.paciente_celular}
+                      </span>
+                    )}
+
+                    <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--cor-primaria)' }}>
+                        {fmtValor(totalGrupo)}
+                      </span>
+                      {lotesPagos.length > 0 && (
+                        <button
+                          onClick={() => estornarTudo(grupo.filter(a => a.status_recebimento === 'PAGO'))}
+                          style={{
+                            padding: '5px 12px',
+                            background: '#E24B4A',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: 5,
+                            cursor: 'pointer',
+                            fontSize: 12,
+                            fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 5,
+                          }}
+                        >
+                          <Undo2 size={13} />
+                          Estornar
+                        </button>
+                      )}
+                      {pendentes.length > 0 && (
+                        <button
+                          onClick={() => abrirRecebimento(pendentes)}
+                          style={{
+                            padding: '5px 12px',
+                            background: 'var(--cor-primaria)',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: 5,
+                            cursor: 'pointer',
+                            fontSize: 12,
+                            fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 5,
+                          }}
+                        >
+                          <CreditCard size={13} />
+                          {pendentes.length > 1 ? `Receber (${pendentes.length})` : 'Receber'}
+                        </button>
+                      )}
                     </div>
+                  </div>
 
-                    {/* Status Recebimento */}
-                    <div style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'flex-end',
-                      gap: 4,
-                      flexShrink: 0,
-                    }}>
-                      <div style={{
-                        fontSize: 14,
-                        fontWeight: 700,
-                        color: 'var(--cor-primaria)',
-                      }}>
-                        {fmtValor(ag.total_recebimento || ag.tipo_valor)}
-                      </div>
-                      <div style={{
-                        display: 'flex',
-                        gap: 4,
-                        flexDirection: 'column',
-                        alignItems: 'flex-end',
-                      }}>
-                        <div style={{
-                          fontSize: 11,
+                  {/* Linhas de atendimento */}
+                  {grupo.map((ag, idx) => {
+                    const statusInfo = STATUS_LABEL[ag.status] ?? { label: ag.status, cor: '#999' }
+                    const recInfo    = ag.status_recebimento ? STATUS_RECEBIMENTO[ag.status_recebimento] : null
+
+                    return (
+                      <div
+                        key={ag.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          padding: '8px 16px',
+                          borderBottom: idx < grupo.length - 1 ? '0.5px solid var(--borda-suave)' : 'none',
+                          fontSize: 12,
+                        }}
+                      >
+                        {/* Hora */}
+                        <span style={{ fontWeight: 700, color: 'var(--texto-principal)', minWidth: 38, flexShrink: 0 }}>
+                          {format(parseISO(ag.data_hora_inicio), 'HH:mm')}
+                        </span>
+
+                        {/* Profissional · Tipo · Categoria */}
+                        <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 5, color: 'var(--texto-terciario)' }}>
+                          <Stethoscope size={11} style={{ flexShrink: 0 }} />
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {ag.profissional_nome}
+                            {ag.tipo_descricao && ` · ${ag.tipo_descricao}`}
+                            {ag.categoria_descricao && ` · ${ag.categoria_descricao}`}
+                          </span>
+                        </div>
+
+                        {/* Valor */}
+                        <span style={{ fontWeight: 600, color: 'var(--cor-primaria)', flexShrink: 0 }}>
+                          {fmtValor(ag.total_recebimento ?? ag.tipo_valor)}
+                        </span>
+
+                        {/* Badge status agendamento */}
+                        <span style={{
+                          fontSize: 10,
                           fontWeight: 600,
                           color: statusInfo.cor,
                           background: statusInfo.cor + '20',
-                          padding: '2px 8px',
-                          borderRadius: 4,
+                          padding: '2px 6px',
+                          borderRadius: 3,
+                          flexShrink: 0,
                         }}>
                           {statusInfo.label}
-                        </div>
-                        {ag.status_recebimento && (
-                          <div style={{
+                        </span>
+
+                        {/* Badge status recebimento */}
+                        {recInfo && (
+                          <span style={{
                             fontSize: 10,
                             fontWeight: 600,
-                            color: STATUS_RECEBIMENTO[ag.status_recebimento]?.cor || '#999',
-                            background: (STATUS_RECEBIMENTO[ag.status_recebimento]?.cor || '#999') + '20',
-                            padding: '2px 8px',
-                            borderRadius: 4,
+                            color: recInfo.cor,
+                            background: recInfo.cor + '20',
+                            padding: '2px 6px',
+                            borderRadius: 3,
+                            flexShrink: 0,
                           }}>
-                            💰 {STATUS_RECEBIMENTO[ag.status_recebimento]?.label || ag.status_recebimento}
-                          </div>
+                            {recInfo.label}
+                          </span>
                         )}
-                      </div>
-                    </div>
 
-                    {/* Botões Receber/Estornar */}
-                    {ag.status_recebimento === 'PAGO' ? (
-                      <button
-                        onClick={() => estornarRecebimento(ag)}
-                        style={{
-                          padding: '8px 12px',
-                          background: '#E24B4A',
-                          color: '#fff',
-                          border: 'none',
-                          borderRadius: 6,
-                          cursor: 'pointer',
-                          fontSize: 12,
-                          fontWeight: 600,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          flexShrink: 0,
-                          transition: 'opacity 0.2s',
-                        }}
-                        onMouseEnter={e => {
-                          (e.currentTarget as HTMLElement).style.opacity = '0.9'
-                        }}
-                        onMouseLeave={e => {
-                          (e.currentTarget as HTMLElement).style.opacity = '1'
-                        }}
-                        title="Desfazer o recebimento"
-                      >
-                        <Undo2 size={14} />
-                        Estornar
-                      </button>
-                    ) : ag.status_recebimento === 'ESTORNADO' ? (
-                      <button
-                        onClick={() => abrirRecebimento(ag)}
-                        style={{
-                          padding: '8px 12px',
-                          background: 'var(--cor-primaria)',
-                          color: '#fff',
-                          border: 'none',
-                          borderRadius: 6,
-                          cursor: 'pointer',
-                          fontSize: 12,
-                          fontWeight: 600,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          flexShrink: 0,
-                          transition: 'opacity 0.2s',
-                        }}
-                        onMouseEnter={e => {
-                          (e.currentTarget as HTMLElement).style.opacity = '0.9'
-                        }}
-                        onMouseLeave={e => {
-                          (e.currentTarget as HTMLElement).style.opacity = '1'
-                        }}
-                        title="Receber novamente"
-                      >
-                        <CreditCard size={14} />
-                        Receber Novamente
-                      </button>
-                    ) : podePagar ? (
-                      <button
-                        onClick={() => abrirRecebimento(ag)}
-                        style={{
-                          padding: '8px 12px',
-                          background: 'var(--cor-primaria)',
-                          color: '#fff',
-                          border: 'none',
-                          borderRadius: 6,
-                          cursor: 'pointer',
-                          fontSize: 12,
-                          fontWeight: 600,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          flexShrink: 0,
-                          transition: 'opacity 0.2s',
-                        }}
-                        onMouseEnter={e => {
-                          (e.currentTarget as HTMLElement).style.opacity = '0.9'
-                        }}
-                        onMouseLeave={e => {
-                          (e.currentTarget as HTMLElement).style.opacity = '1'
-                        }}
-                      >
-                        <CreditCard size={14} />
-                        Receber
-                      </button>
-                    ) : null}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       <RecebimentoModal
         open={modalOpen}
         onClose={() => {
           setModalOpen(false)
-          setAgendamentoSel(null)
+          setAgendamentosSel([])
         }}
-        agendamento={agendamentoSel}
+        agendamento={null}
+        agendamentos={agendamentosSel}
         onRecebimentoSalvo={carregar}
       />
     </>

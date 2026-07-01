@@ -15,6 +15,8 @@ export function getDb(database: string): Pool {
       max:                     5,
       idleTimeoutMillis:       30_000,
       connectionTimeoutMillis: 5_000,
+      keepAlive:               true,
+      keepAliveInitialDelayMillis: 10_000,
     }))
     pools.get(database)!.on('error', (err) => {
       console.error(`[db:${database}]`, err.message)
@@ -34,6 +36,8 @@ export const dbControl = new Pool({
   max:                     3,
   idleTimeoutMillis:       30_000,
   connectionTimeoutMillis: 5_000,
+  keepAlive:               true,
+  keepAliveInitialDelayMillis: 10_000,
 })
 
 dbControl.on('error', (err) => {

@@ -10,17 +10,17 @@ export interface Pessoa {
   cor_raca:          string | null
   estado_civil:      string | null
   naturalidade:      string | null
+  profissao:         string | null
+  altura:            string | null  // NUMERIC retorna como string no pg (metros, ex: 1.75)
+  peso:              string | null  // NUMERIC retorna como string no pg (kg, ex: 85.50)
   pai_pessoa_id:       number | null
   pai_nome:            string | null
-  pai_profissao:       string | null
   pai_paciente:        boolean
   mae_pessoa_id:       number | null
   mae_nome:            string | null
-  mae_profissao:       string | null
   mae_paciente:        boolean
   conjuge_pessoa_id:   number | null
   conjuge_nome:        string | null
-  conjuge_profissao:   string | null
   conjuge_paciente:    boolean
   indicacao_pessoa_id: number | null
   indicacao_nome:      string | null
@@ -49,6 +49,7 @@ export interface Pessoa {
   email:             string | null
   email_nfe:         string | null
   limite_credito:    string   // NUMERIC retorna como string no pg
+  cod_tipo_cobranca: number | null
   banco_nome:        string | null
   banco_agencia:     string | null
   banco_conta:       string | null
@@ -107,6 +108,7 @@ export interface Empresa {
   csc_nfce:          string | null
   id_token_nfce:     string | null
   cert_validade:     string | null
+  cod_tipo_cobranca: number | null
   ativo:             boolean
   created_at:        string
   updated_at:        string

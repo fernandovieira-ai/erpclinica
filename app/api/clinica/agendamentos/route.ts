@@ -2,6 +2,20 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 import { agendamentoSchema } from '@/lib/validators/agendamento.schema'
+import type { Pool } from 'pg'
+
+const _tableCache = new Map<string, boolean>()
+async function tabelaExiste(db: Pool, dbName: string, tableName: string): Promise<boolean> {
+  const key = `${dbName}:${tableName}`
+  if (_tableCache.has(key)) return _tableCache.get(key)!
+  const { rows } = await db.query(
+    `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1) AS existe`,
+    [tableName],
+  )
+  const existe = rows[0]?.existe === true
+  _tableCache.set(key, existe)
+  return existe
+}
 
 // GET /api/clinica/agendamentos?inicio=YYYY-MM-DD&fim=YYYY-MM-DD&profissional_id=&status=
 export async function GET(req: NextRequest) {
@@ -39,24 +53,16 @@ export async function GET(req: NextRequest) {
 
   const where = conds.join(' AND ')
 
-  // Verificar se a tabela recebimento existe
-  const { rows: tableCheck } = await db.query(
-    `SELECT EXISTS (
-      SELECT 1 FROM information_schema.tables
-      WHERE table_name = 'tab_recebimento_consulta'
-    ) as existe`
-  )
-
-  const temTabelaRecebimento = tableCheck[0]?.existe
+  const temTabelaRecebimento = await tabelaExiste(db, session.database_name, 'tab_recebimento_consulta')
 
   const selectRecebimento = temTabelaRecebimento
-    ? `, rc.id AS recebimento_id, rc.status_recebimento, rc.total_recebimento`
-    : `, NULL::INT AS recebimento_id, NULL::VARCHAR AS status_recebimento, NULL::NUMERIC AS total_recebimento`
+    ? `, rc.id AS recebimento_id, rc.status_recebimento, rc.total_recebimento, rc.movimento_caixa_id, rc.movimento_banco_id, rc.batch_agendamento_id`
+    : `, NULL::INT AS recebimento_id, NULL::VARCHAR AS status_recebimento, NULL::NUMERIC AS total_recebimento, NULL::INT AS movimento_caixa_id, NULL::INT AS movimento_banco_id, NULL::INT AS batch_agendamento_id`
 
   // Usa subconsulta para evitar múltiplas linhas com LEFT JOIN filtrado
   const joinRecebimento = temTabelaRecebimento
     ? `LEFT JOIN (
-        SELECT agendamento_id, id, status_recebimento, total_recebimento
+        SELECT agendamento_id, id, status_recebimento, total_recebimento, movimento_caixa_id, movimento_banco_id, batch_agendamento_id
         FROM tab_recebimento_consulta
         WHERE status_recebimento = 'PAGO'
       ) rc ON rc.agendamento_id = a.id`
@@ -70,7 +76,8 @@ export async function GET(req: NextRequest) {
        pro.id   AS profissional_id, pro.nome AS profissional_nome,
        tp.id    AS tipo_id,         tp.descricao AS tipo_descricao,
        tp.cor   AS tipo_cor,        tp.duracao_min AS tipo_duracao_min,
-       tp.valor AS tipo_valor,
+       COALESCE(atc.valor, tp.valor) AS tipo_valor,
+       atc.valor_prazo AS tipo_valor_prazo,
        esp.id   AS especialidade_id, esp.descricao AS especialidade_descricao,
        esp.cor  AS especialidade_cor,
        cat.id   AS categoria_id,    cat.descricao AS categoria_descricao
@@ -79,6 +86,7 @@ export async function GET(req: NextRequest) {
        JOIN tab_pessoa pac  ON pac.id = a.paciente_id
        JOIN tab_pessoa pro  ON pro.id = a.profissional_id
        LEFT JOIN tab_agendamento_tipo tp  ON tp.id = a.tipo_id
+       LEFT JOIN tab_agendamento_tipo_categoria atc ON atc.tipo_id = a.tipo_id AND atc.categoria_id = a.categoria_id
        LEFT JOIN tab_especialidade    esp ON esp.id = a.especialidade_id
        LEFT JOIN tab_categoria        cat ON cat.id = a.categoria_id
        ${joinRecebimento}
