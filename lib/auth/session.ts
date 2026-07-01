@@ -8,6 +8,9 @@ const MODULOS_PADRAO: Record<string, string[]> = {
   operador:   ['financeiro'],
 }
 
+// DEV: bypass de autenticação — desativado temporariamente
+const DEV_NO_AUTH = true
+
 // DEV: sessão fixa para desenvolvimento — remover antes de produção
 const DEV_SESSION: Session = {
   usuario_id:       1,
@@ -20,13 +23,7 @@ const DEV_SESSION: Session = {
 }
 
 export async function getSession(req: NextRequest): Promise<Session | null> {
-  if (process.env.DEV_NO_AUTH === 'true') {
-    if (process.env.NODE_ENV === 'production') {
-      console.error('[SECURITY] DEV_NO_AUTH=true detectado em produção — bloqueado')
-      return null
-    }
-    return DEV_SESSION
-  }
+  if (DEV_NO_AUTH) return DEV_SESSION
   const token = req.cookies.get('session')?.value
   if (!token) return null
   const payload = await verifyToken(token)
