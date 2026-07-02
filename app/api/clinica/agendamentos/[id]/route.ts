@@ -13,6 +13,7 @@ export async function GET(req: NextRequest, { params }: Params) {
   const { rows } = await db.query(
     `SELECT
        a.id, a.empresa_id, a.data_hora_inicio, a.data_hora_fim, a.status, a.motivo, a.observacao,
+       a.horario_chegada, a.horario_inicio_atendimento,
        a.created_by, a.created_at, a.updated_at,
        pac.id   AS paciente_id,    pac.nome  AS paciente_nome,
        pac.celular AS paciente_celular, pac.cpf_cnpj AS paciente_cpf,
@@ -96,7 +97,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
 const STATUS_AGENDAMENTO = ['AGENDADO', 'CONFIRMADO', 'AGUARDANDO', 'ATENDIDO', 'FALTOU', 'CANCELADO'] as const
 
-// PATCH — atualizar só o status
+// PATCH — atualizar só o status (grava timestamps de chegada/atendimento automaticamente)
 export async function PATCH(req: NextRequest, { params }: Params) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
@@ -107,8 +108,21 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
   const db = getDb(session.database_name)
 
+  // Timestamps automáticos conforme transição de status
+  let extraSql = ''
+  if (status === 'AGUARDANDO') {
+    // Preserva horário original se o paciente foi desmarcado e remarcado
+    extraSql = ', horario_chegada = COALESCE(horario_chegada, NOW())'
+  } else if (status === 'AGENDADO' || status === 'CONFIRMADO') {
+    // Desfazer check-in limpa o horário de chegada
+    extraSql = ', horario_chegada = NULL'
+  } else if (status === 'ATENDIDO') {
+    // Registra o momento em que o atendimento começou
+    extraSql = ', horario_inicio_atendimento = COALESCE(horario_inicio_atendimento, NOW())'
+  }
+
   const { rowCount } = await db.query(
-    `UPDATE tab_agendamento SET status=$1 WHERE id=$2 AND empresa_id=$3`,
+    `UPDATE tab_agendamento SET status=$1${extraSql} WHERE id=$2 AND empresa_id=$3`,
     [status, params.id, session.empresa_id_ativa],
   )
 

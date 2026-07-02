@@ -1,5 +1,6 @@
 import { requireSession } from '@/lib/auth/server-session'
 import { getDb } from '@/lib/db'
+import SalaEsperaWidget from '@/components/clinica/SalaEsperaWidget'
 
 function formatBRL(value: number): string {
   return new Intl.NumberFormat('pt-BR', {
@@ -99,6 +100,11 @@ export default async function DashboardPage() {
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Sala de espera */}
+        <div style={{ marginTop: 20, maxWidth: 560 }}>
+          <SalaEsperaWidget />
         </div>
       </div>
     </>

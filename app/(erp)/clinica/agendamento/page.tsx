@@ -10,6 +10,7 @@ import {
   addMonths, subMonths, startOfMonth, endOfMonth,
   eachDayOfInterval, isSameDay, parseISO, isToday,
   setHours, setMinutes, addDays, isSameMonth, startOfDay,
+  differenceInMinutes,
 } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { toast } from 'sonner'
@@ -96,6 +97,23 @@ export default function AgendamentoPage() {
   const [pacienteDados, setPacienteDados] = useState<any>(null)
   const [agendamentoAtual, setAgendamentoAtual] = useState<AgendamentoListItem | null>(null)
   const [agendamentosAtuais, setAgendamentosAtuais] = useState<AgendamentoListItem[]>([])
+
+  // Relógio ao vivo para calcular tempo de espera em tempo real
+  const [agora, setAgora] = useState(() => new Date())
+  useEffect(() => {
+    const id = setInterval(() => setAgora(new Date()), 30_000)
+    return () => clearInterval(id)
+  }, [])
+
+  function formatarTempoEspera(horario: string | null | undefined): string {
+    if (!horario) return ''
+    const min = differenceInMinutes(agora, parseISO(horario))
+    if (min < 1) return '< 1 min'
+    if (min < 60) return `${min} min`
+    const h = Math.floor(min / 60)
+    const m = min % 60
+    return m === 0 ? `${h}h` : `${h}h ${m}min`
+  }
 
   const periodo = useMemo(() => {
     if (view === 'dia') return { ini: selectedDay, fim: selectedDay }
@@ -643,7 +661,9 @@ export default function AgendamentoPage() {
                               abrirModalPaciente(ag, e)
                             }
                           }}
-                          title={ag.status === 'AGUARDANDO' ? 'Paciente aguardando — clique para desfazer' : 'Marcar chegada do paciente'}
+                          title={ag.status === 'AGUARDANDO' && ag.horario_chegada
+                            ? `Chegou às ${format(parseISO(ag.horario_chegada), 'HH:mm')} — clique para desfazer`
+                            : 'Marcar chegada do paciente'}
                           style={{
                             flexShrink: 0,
                             display: 'flex', alignItems: 'center', gap: 4,
@@ -658,7 +678,11 @@ export default function AgendamentoPage() {
                           }}
                         >
                           <UserCheck size={12} />
-                          {ag.status === 'AGUARDANDO' ? 'Aguardando' : 'Chegou?'}
+                          {ag.status === 'AGUARDANDO'
+                            ? ag.horario_chegada
+                              ? `${format(parseISO(ag.horario_chegada), 'HH:mm')} · ${formatarTempoEspera(ag.horario_chegada)}`
+                              : 'Aguardando'
+                            : 'Chegou?'}
                         </button>
                       )}
 
@@ -1268,7 +1292,9 @@ export default function AgendamentoPage() {
                       abrirModalPaciente(ag, e)
                     }
                   }}
-                  title={ag.status === 'AGUARDANDO' ? 'Paciente aguardando — clique para desfazer' : 'Marcar chegada do paciente'}
+                  title={ag.status === 'AGUARDANDO' && ag.horario_chegada
+                    ? `Chegou às ${format(parseISO(ag.horario_chegada), 'HH:mm')} — clique para desfazer`
+                    : 'Marcar chegada do paciente'}
                   style={{
                     flexShrink: 0,
                     display: 'flex', alignItems: 'center', gap: 4,
@@ -1283,7 +1309,11 @@ export default function AgendamentoPage() {
                   }}
                 >
                   <UserCheck size={12} />
-                  {ag.status === 'AGUARDANDO' ? 'Aguardando' : 'Chegou?'}
+                  {ag.status === 'AGUARDANDO'
+                    ? ag.horario_chegada
+                      ? `${format(parseISO(ag.horario_chegada), 'HH:mm')} · ${formatarTempoEspera(ag.horario_chegada)}`
+                      : 'Aguardando'
+                    : 'Chegou?'}
                 </button>
               )}
 

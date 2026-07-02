@@ -12,6 +12,7 @@ import {
   BarChart3, Activity,
   FileOutput, FileInput, FileUp, FileDown,
   ListTree, MinusCircle, PlusCircle, CalendarClock,
+  Timer,
 } from 'lucide-react'
 import { useState } from 'react'
 import type { Session } from '@/types/session'
@@ -31,6 +32,7 @@ const NAV: NavItem[] = [
     label: 'Clínica', icon: <Stethoscope size={16} />,
     children: [
       { label: 'Agendamento',          href: '/clinica/agendamento',                   icon: <CalendarDays size={14} /> },
+      { label: 'Sala de Espera',       href: '/clinica/sala-espera',                    icon: <Timer size={14} /> },
       { label: 'Recebimentos',         href: '/clinica/recebimentos',                   icon: <CreditCard size={14} /> },
       { label: 'Profissionais',         href: '/cadastro/pessoas?papel=profissional',   icon: <UserCog size={14} /> },
       { label: 'Pacientes',             href: '/cadastro/pessoas?papel=paciente',       icon: <HeartPulse size={14} /> },

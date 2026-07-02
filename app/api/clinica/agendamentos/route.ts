@@ -71,6 +71,7 @@ export async function GET(req: NextRequest) {
   const { rows } = await db.query(
     `SELECT
        a.id, a.data_hora_inicio, a.data_hora_fim, a.status, a.motivo, a.observacao,
+       a.horario_chegada, a.horario_inicio_atendimento,
        pac.id   AS paciente_id,    pac.nome  AS paciente_nome,
        pac.celular AS paciente_celular, pac.cpf_cnpj AS paciente_cpf,
        pro.id   AS profissional_id, pro.nome AS profissional_nome,

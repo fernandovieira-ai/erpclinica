@@ -55,14 +55,16 @@ export interface Agendamento {
   especialidade_cor:     string | null
   data_hora_inicio:      string   // ISO string
   data_hora_fim:         string
-  status:                StatusAgendamento
-  motivo:                string | null
-  observacao:            string | null
-  categoria_id:          number | null
-  categoria_descricao:   string | null
-  created_by:            string | null
-  created_at:            string
-  updated_at:            string
+  status:                       StatusAgendamento
+  motivo:                       string | null
+  observacao:                   string | null
+  categoria_id:                 number | null
+  categoria_descricao:          string | null
+  horario_chegada:              string | null
+  horario_inicio_atendimento:   string | null
+  created_by:                   string | null
+  created_at:                   string
+  updated_at:                   string
 }
 
 export type AgendamentoListItem = Pick<
@@ -73,6 +75,7 @@ export type AgendamentoListItem = Pick<
   | 'especialidade_id' | 'especialidade_descricao'
   | 'data_hora_inicio' | 'data_hora_fim' | 'status' | 'motivo' | 'observacao'
   | 'categoria_id' | 'categoria_descricao'
+  | 'horario_chegada' | 'horario_inicio_atendimento'
 > & {
   tipo_valor?: number | null
   tipo_valor_prazo?: number | null
