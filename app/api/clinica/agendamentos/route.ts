@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
   const inicio         = sp.get('inicio') || ''
   const fim            = sp.get('fim')    || ''
   const profissional_id = sp.get('profissional_id') || ''
+  const paciente_id    = sp.get('paciente_id') || ''
   const status         = sp.get('status') || ''
 
   const db = getDb(session.database_name)
@@ -45,6 +46,10 @@ export async function GET(req: NextRequest) {
   if (profissional_id) {
     conds.push(`a.profissional_id = $${pi++}`)
     params.push(Number(profissional_id))
+  }
+  if (paciente_id) {
+    conds.push(`a.paciente_id = $${pi++}`)
+    params.push(Number(paciente_id))
   }
   if (status) {
     conds.push(`a.status = $${pi++}`)

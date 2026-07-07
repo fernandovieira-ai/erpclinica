@@ -126,6 +126,30 @@ export interface TipoCategoriaValorItem {
   valor_prazo:  number | null
 }
 
+export interface Prontuario {
+  id:                      number
+  empresa_id:              number
+  agendamento_id:          number
+  paciente_id:             number
+  profissional_id:         number
+  queixas:                 string | null
+  hda:                     string | null
+  antecedentes_familiares: string | null
+  antecedentes_pessoais:   string | null
+  habitos:                 string | null
+  alergias:                string | null
+  exame_fisico:            string | null
+  peso:                    number | null
+  pressao:                 string | null
+  exames:                  string | null
+  diagnostico:             string | null
+  medicacao:               string | null
+  outras_condutas:         string | null
+  created_by:              string | null
+  created_at:              string
+  updated_at:              string
+}
+
 export interface ProfissionalListItem {
   id:              number
   nome:            string

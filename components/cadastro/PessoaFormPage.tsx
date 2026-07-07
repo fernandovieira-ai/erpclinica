@@ -9,6 +9,7 @@ import { Save, Trash2, ArrowLeft, Search, Plus, X, Camera, User, RefreshCw, Tras
 import { pessoaSchema, type PessoaInput } from '@/lib/validators/pessoa.schema'
 import type { Pessoa } from '@/types/cadastros.types'
 import MoneyInput from '@/components/ui/MoneyInput'
+import HistoricoClinico from '@/components/clinica/HistoricoClinico'
 
 interface AgendaDia {
   id?:           number
@@ -460,14 +461,15 @@ function mascaraCpfCnpj(valor: string, pj: boolean): string {
     .replace(/\.(\d{3})(\d{1,2})$/, '.$1-$2')
 }
 
-const ABAS_PESSOA = ['Principal', 'Financeiro', 'Fiscal / Obs', 'Agenda'] as const
+const ABAS_PESSOA = ['Principal', 'Financeiro', 'Fiscal / Obs', 'Agenda', 'Consultas'] as const
+type AbaPessoa = typeof ABAS_PESSOA[number]
 
 export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
   const router  = useRouter()
   const [saving,       setSaving]      = useState(false)
   const [deleting,     setDeleting]    = useState(false)
   const [excluding,    setExcluding]   = useState(false)
-  const [aba,          setAba]         = useState<'Principal' | 'Financeiro' | 'Fiscal / Obs' | 'Agenda'>('Principal')
+  const [aba,          setAba]         = useState<AbaPessoa>('Principal')
   const [buscandoCep,  setBuscandoCep]  = useState(false)
   const [buscandoCnpj, setBuscandoCnpj] = useState(false)
 
@@ -784,7 +786,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
       const json   = await res.json()
       if (!res.ok) { toast.error(json.erro?.formErrors?.[0] ?? json.erro ?? 'Erro ao salvar'); return }
       toast.success(pessoa ? 'Pessoa atualizada!' : 'Pessoa cadastrada!')
-      if (!pessoa) router.push(`/cadastro/pessoas/${json.id}`)
+      if (!pessoa) router.push(`/cadastro/pessoas/${json.id}${papelInicial ? `?papel=${papelInicial}` : ''}`)
       else router.refresh()
     } finally { setSaving(false) }
   }
@@ -798,7 +800,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
         body: JSON.stringify({ ativo: false }),
       })
       toast.success('Pessoa desativada')
-      router.push('/cadastro/pessoas')
+      router.push(listaHref)
     } finally { setDeleting(false) }
   }
 
@@ -809,12 +811,21 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
       const res = await fetch(`/api/cadastro/pessoas/${pessoa.id}`, { method: 'DELETE' })
       if (!res.ok) { toast.error('Erro ao excluir — verifique se não há vínculos'); return }
       toast.success('Pessoa excluída')
-      router.push('/cadastro/pessoas')
+      router.push(listaHref)
     } finally { setExcluding(false) }
   }
 
   const tipoPessoa = tipoPessoaWatched
   const pj = tipoPessoa === 'J'
+  const listaHref = papelInicial ? `/cadastro/pessoas?papel=${papelInicial}` : '/cadastro/pessoas'
+  const novoHref  = papelInicial ? `/cadastro/pessoas/novo?papel=${papelInicial}` : '/cadastro/pessoas/novo'
+  const indProfissional = !!watch('ind_profissional')
+  const indPaciente     = !!watch('ind_paciente')
+
+  useEffect(() => {
+    if (aba === 'Agenda' && !indProfissional) setAba('Principal')
+    if (aba === 'Consultas' && !indPaciente) setAba('Principal')
+  }, [aba, indProfissional, indPaciente])
 
   return (
     <form onSubmit={handleSubmit(onSubmit, (erros) => {
@@ -833,7 +844,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
         borderBottom: '1px solid var(--borda-media)',
         position: 'sticky', top: 0, zIndex: 20,
       }}>
-        <button type="button" onClick={() => router.push('/cadastro/pessoas')}
+        <button type="button" onClick={() => router.push(listaHref)}
           style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
             background: 'none', border: '1px solid var(--borda-media)', borderRadius: 3,
             fontSize: 12, cursor: 'pointer', color: 'var(--texto-secundario)' }}>
@@ -842,7 +853,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
 
         <div style={{ width: 1, height: 18, backgroundColor: 'var(--borda-media)', margin: '0 4px' }} />
 
-        <button type="button" onClick={() => router.push('/cadastro/pessoas/novo')}
+        <button type="button" onClick={() => router.push(novoHref)}
           style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
             background: 'none', border: '1px solid var(--borda-media)', borderRadius: 3,
             fontSize: 12, cursor: 'pointer', color: 'var(--texto-secundario)' }}>
@@ -891,7 +902,11 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
         paddingLeft: 12,
         overflowX: 'auto',
       }}>
-        {ABAS_PESSOA.map(t => {
+        {ABAS_PESSOA.filter(t => {
+          if (t === 'Agenda')    return indProfissional
+          if (t === 'Consultas') return indPaciente
+          return true
+        }).map(t => {
           const ativa = aba === t
           return (
             <button
@@ -1759,6 +1774,18 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
               </Secao>
             )}
           </>
+        )}
+
+        {aba === 'Consultas' && (
+          <Secao titulo="Histórico Clínico">
+            {!pessoa?.id ? (
+              <div style={{ padding: '12px 4px', fontSize: 12, color: 'var(--texto-secundario)' }}>
+                Salve o cadastro primeiro para ver o histórico de consultas.
+              </div>
+            ) : (
+              <HistoricoClinico pacienteId={pessoa.id} />
+            )}
+          </Secao>
         )}
 
       </div>

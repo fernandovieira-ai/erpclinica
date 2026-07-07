@@ -4,7 +4,12 @@ import { getDb } from '@/lib/db'
 import type { Pessoa } from '@/types/cadastros.types'
 import PessoaFormPage from '@/components/cadastro/PessoaFormPage'
 
-export default async function EditarPessoaPage({ params }: { params: { id: string } }) {
+interface Props {
+  params: { id: string }
+  searchParams: { papel?: string }
+}
+
+export default async function EditarPessoaPage({ params, searchParams }: Props) {
   const session = await requireSession()
 
   const db = getDb(session.database_name)
@@ -29,5 +34,5 @@ export default async function EditarPessoaPage({ params }: { params: { id: strin
 
   if (!rows.length) redirect('/cadastro/pessoas')
 
-  return <PessoaFormPage pessoa={rows[0]} />
+  return <PessoaFormPage pessoa={rows[0]} papelInicial={searchParams.papel} />
 }

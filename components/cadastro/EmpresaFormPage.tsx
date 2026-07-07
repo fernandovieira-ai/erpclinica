@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Save, Trash2, ArrowLeft, Search, Plus, X } from 'lucide-react'
+import { Save, Trash2, ArrowLeft, Search, Plus, X, Eye, EyeOff } from 'lucide-react'
 import { empresaSchema, type EmpresaInput } from '@/lib/validators/empresa.schema'
 import type { Empresa } from '@/types/cadastros.types'
 
@@ -16,9 +16,9 @@ const CRTS    = [{ v: '1', l: '1 - Simples Nacional' }, { v: '2', l: '2 - Simple
 
 // ── Primitivos de UI ──────────────────────────────────────────────────────────
 
-const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
-  function Input({ style, onBlur, onFocus, onChange, type, ...props }, ref) {
-    const isText = type !== 'email' && type !== 'number' && type !== 'date'
+const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement> & { preserveCase?: boolean }>(
+  function Input({ style, onBlur, onFocus, onChange, type, preserveCase, ...props }, ref) {
+    const isText = !preserveCase && type !== 'email' && type !== 'number' && type !== 'date'
     return (
       <input
         ref={ref}
@@ -117,6 +117,7 @@ function mascaraCnpj(v: string) {
 const ABAS = [
   'Principal',
   'Faturamento',
+  'Integração',
 ] as const
 type Aba = typeof ABAS[number]
 
@@ -132,12 +133,14 @@ export default function EmpresaFormPage({ empresa }: Props) {
   const [buscandoCnpj, setBuscandoCnpj] = useState(false)
   const [displayCnpj,  setDisplayCnpj]  = useState('')
   const [tiposCobranca, setTiposCobranca] = useState<{ cod_tipo_cobranca: number; des_tipo_cobranca: string }[]>([])
+  const [mostrarVoaToken, setMostrarVoaToken] = useState(false)
 
   const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<EmpresaInput>({
     resolver: zodResolver(empresaSchema),
     defaultValues: {
       ativo: true, regime_tributario: 'SN', crt: '1', ambiente_nfe: '2',
       serie_nfe: '001', prox_num_nfe: 1, serie_nfce: '001', prox_num_nfce: 1,
+      voa_ambiente: 'desenvolvimento',
     },
   })
 
@@ -179,6 +182,8 @@ export default function EmpresaFormPage({ empresa }: Props) {
       csc_nfce:          empresa.csc_nfce ?? '',
       id_token_nfce:     empresa.id_token_nfce ?? '',
       cod_tipo_cobranca: empresa.cod_tipo_cobranca ?? null,
+      voa_auth_token:    empresa.voa_auth_token ?? '',
+      voa_ambiente:      (empresa.voa_ambiente ?? 'desenvolvimento') as 'desenvolvimento' | 'producao',
       ativo:             empresa.ativo,
     })
   }, [empresa, reset])
@@ -552,7 +557,53 @@ export default function EmpresaFormPage({ empresa }: Props) {
           </>
         )}
 
-        {aba !== 'Principal' && aba !== 'Faturamento' && (
+        {aba === 'Integração' && (
+          <>
+            <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginBottom: 4 }}>
+              Configuração da integração com o assistente de prontuário Voa. O token não fica fixo no
+              código — cada empresa tem o seu, permitindo múltiplas empresas no futuro.
+            </div>
+
+            <Row label="Ambiente:">
+              <Select {...register('voa_ambiente')} style={{ width: 220 }}>
+                <option value="desenvolvimento">Desenvolvimento (Auth Token direto)</option>
+                <option value="producao">Produção (Bearer Token por consulta)</option>
+              </Select>
+            </Row>
+
+            <Row label="Voa Auth Token:">
+              <div style={{ position: 'relative', flex: 1, maxWidth: 420 }}>
+                <Input
+                  {...register('voa_auth_token')}
+                  type={mostrarVoaToken ? 'text' : 'password'}
+                  preserveCase
+                  autoComplete="off"
+                  placeholder="sk_user_..."
+                  style={{ fontFamily: 'var(--fonte-mono)', paddingRight: 30 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setMostrarVoaToken(v => !v)}
+                  title={mostrarVoaToken ? 'Ocultar token' : 'Mostrar token'}
+                  style={{
+                    position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    display: 'flex', color: 'var(--texto-terciario)', padding: 2,
+                  }}
+                >
+                  {mostrarVoaToken ? <EyeOff size={13} /> : <Eye size={13} />}
+                </button>
+              </div>
+            </Row>
+
+            <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginTop: 2 }}>
+              Solicitar o token a integration@voahealth.com. Sem token configurado, o botão
+              "Gravar com Voa" no prontuário do paciente fica desabilitado para esta empresa.
+            </div>
+          </>
+        )}
+
+        {aba !== 'Principal' && aba !== 'Faturamento' && aba !== 'Integração' && (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--texto-terciario)', fontSize: 13 }}>
             Aba <strong>{aba}</strong> ainda não implementada.
           </div>

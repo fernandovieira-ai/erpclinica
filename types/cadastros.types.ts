@@ -109,6 +109,8 @@ export interface Empresa {
   id_token_nfce:     string | null
   cert_validade:     string | null
   cod_tipo_cobranca: number | null
+  voa_auth_token:    string | null
+  voa_ambiente:      string
   ativo:             boolean
   created_at:        string
   updated_at:        string

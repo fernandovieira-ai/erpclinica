@@ -17,6 +17,7 @@ export default async function EditarEmpresaPage({ params }: { params: { id: stri
             serie_nfce, prox_num_nfce, csc_nfce, id_token_nfce,
             TO_CHAR(cert_validade, 'YYYY-MM-DD') AS cert_validade,
             cod_tipo_cobranca,
+            voa_auth_token, voa_ambiente,
             ativo, created_at, updated_at
      FROM tab_empresa
      WHERE id = $1`,

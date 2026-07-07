@@ -18,6 +18,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
             serie_nfce, prox_num_nfce, csc_nfce, id_token_nfce,
             TO_CHAR(cert_validade, 'YYYY-MM-DD') AS cert_validade,
             cod_tipo_cobranca,
+            voa_auth_token, voa_ambiente,
             ativo, created_at, updated_at
      FROM tab_empresa
      WHERE id = $1`,
@@ -62,8 +63,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
        ambiente_nfe=$19, serie_nfe=$20, prox_num_nfe=$21,
        serie_nfce=$22, prox_num_nfce=$23, csc_nfce=$24, id_token_nfce=$25,
        cod_tipo_cobranca=$26,
-       ativo=$27, updated_at=NOW()
-     WHERE id = $28`,
+       voa_auth_token=$27, voa_ambiente=$28,
+       ativo=$29, updated_at=NOW()
+     WHERE id = $30`,
     [
       up(d.razao_social), up(d.nome_fantasia), up(d.cnpj), up(d.ie), up(d.im),
       d.regime_tributario, d.crt,
@@ -73,6 +75,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       d.ambiente_nfe, d.serie_nfe, d.prox_num_nfe,
       d.serie_nfce, d.prox_num_nfce, d.csc_nfce ?? null, d.id_token_nfce ?? null,
       d.cod_tipo_cobranca ?? null,
+      d.voa_auth_token || null, d.voa_ambiente,
       d.ativo,
       params.id,
     ],

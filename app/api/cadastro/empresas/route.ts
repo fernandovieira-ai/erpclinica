@@ -69,10 +69,11 @@ export async function POST(req: NextRequest) {
        telefone, email, email_nfe,
        ambiente_nfe, serie_nfe, prox_num_nfe,
        serie_nfce, prox_num_nfce, csc_nfce, id_token_nfce,
+       voa_auth_token, voa_ambiente,
        ativo
      ) VALUES (
        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
-       $16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26
+       $16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28
      ) RETURNING id`,
     [
       up(d.razao_social), up(d.nome_fantasia), up(d.cnpj), up(d.ie), up(d.im),
@@ -82,6 +83,7 @@ export async function POST(req: NextRequest) {
       d.telefone ?? null, d.email || null, d.email_nfe || null,
       d.ambiente_nfe, d.serie_nfe, d.prox_num_nfe,
       d.serie_nfce, d.prox_num_nfce, d.csc_nfce ?? null, d.id_token_nfce ?? null,
+      d.voa_auth_token || null, d.voa_ambiente,
       d.ativo,
     ],
   )

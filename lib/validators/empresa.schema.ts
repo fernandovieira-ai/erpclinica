@@ -38,6 +38,9 @@ export const empresaSchema = z.object({
   cert_validade:      z.string().optional().nullable(),
   // Faturamento
   cod_tipo_cobranca:  z.number().int().optional().nullable(),
+  // Integração
+  voa_auth_token:     z.string().max(120).optional().nullable(),
+  voa_ambiente:       z.enum(['desenvolvimento', 'producao']).default('desenvolvimento'),
   // Status
   ativo:              z.boolean().default(true),
 })

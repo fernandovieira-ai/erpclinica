@@ -213,7 +213,7 @@ function PessoasPageInner() {
                     <td>
                       <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
                         <button
-                          onClick={() => router.push(`/cadastro/pessoas/${p.id}`)}
+                          onClick={() => router.push(`/cadastro/pessoas/${p.id}${papel ? `?papel=${papel}` : ''}`)}
                           className="btn-ghost"
                           title="Editar"
                           style={{ padding: '5px 8px' }}

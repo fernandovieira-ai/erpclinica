@@ -283,6 +283,7 @@
   /* --- Stat cards --- */
 
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  .spin { animation: spin 1s linear infinite; }
 
   .stat-card { background-color: var(--bg-card); border: 0.5px solid var(--borda-suave); border-radius: var(--radius-lg); padding: 16px; }
   .stat-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--texto-terciario); margin-bottom: 6px; }
