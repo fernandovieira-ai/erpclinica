@@ -8,8 +8,10 @@ import {
 import { ptBR } from 'date-fns/locale'
 import {
   Clock, Users, RefreshCw, Stethoscope,
-  CalendarDays, UserCheck, AlertTriangle, CheckCircle2, Timer,
+  CalendarDays, UserCheck, AlertTriangle, CheckCircle2, Timer, ClipboardList,
 } from 'lucide-react'
+import { toast } from 'sonner'
+import PacienteCheckInFormModal from '@/components/clinica/PacienteCheckInFormModal'
 import type { AgendamentoListItem, ProfissionalListItem } from '@/types/clinica.types'
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -73,6 +75,11 @@ export default function SalaEsperaPage() {
   const [countdown, setCountdown]         = useState(30)
   const [agora, setAgora]                 = useState(() => new Date())
 
+  const [modalPacienteOpen,   setModalPacienteOpen]   = useState(false)
+  const [pacienteDados,       setPacienteDados]       = useState<any>(null)
+  const [agendamentoAtual,    setAgendamentoAtual]    = useState<AgendamentoListItem | null>(null)
+  const [agendamentosAtuais,  setAgendamentosAtuais]  = useState<AgendamentoListItem[]>([])
+
   // Relógio ao vivo para o tempo de espera
   useEffect(() => {
     const id = setInterval(() => setAgora(new Date()), 30_000)
@@ -91,13 +98,12 @@ export default function SalaEsperaPage() {
       const data = await res.json()
 
       const sorted: AgendamentoListItem[] = [...(data.dados ?? [])].sort((a, b) => {
-        const ta = a.horario_chegada
-          ? new Date(a.horario_chegada).getTime()
-          : new Date(a.data_hora_inicio).getTime()
-        const tb = b.horario_chegada
-          ? new Date(b.horario_chegada).getTime()
-          : new Date(b.data_hora_inicio).getTime()
-        return ta - tb
+        const agA = new Date(a.data_hora_inicio).getTime()
+        const agB = new Date(b.data_hora_inicio).getTime()
+        if (agA !== agB) return agA - agB
+        const chA = a.horario_chegada ? new Date(a.horario_chegada).getTime() : Infinity
+        const chB = b.horario_chegada ? new Date(b.horario_chegada).getTime() : Infinity
+        return chA - chB
       })
 
       setAgendamentos(sorted)
@@ -123,6 +129,32 @@ export default function SalaEsperaPage() {
   function refreshManual() {
     setCountdown(30)
     carregar()
+  }
+
+  async function abrirAtendimento(ag: AgendamentoListItem) {
+    try {
+      const res = await fetch(`/api/cadastro/pessoas/${ag.paciente_id}`)
+      if (!res.ok) { toast.error('Erro ao carregar dados do paciente'); return }
+      const data    = await res.json()
+      const diaAg   = format(parseISO(ag.data_hora_inicio), 'yyyy-MM-dd')
+      const todosNoDia = agendamentos.filter(a =>
+        a.paciente_id === ag.paciente_id &&
+        format(parseISO(a.data_hora_inicio), 'yyyy-MM-dd') === diaAg
+      ).sort((a, b) => new Date(a.data_hora_inicio).getTime() - new Date(b.data_hora_inicio).getTime())
+      setPacienteDados(data)
+      setAgendamentoAtual(ag)
+      setAgendamentosAtuais(todosNoDia.length > 1 ? todosNoDia : [])
+      setModalPacienteOpen(true)
+    } catch {
+      toast.error('Erro ao carregar dados do paciente')
+    }
+  }
+
+  function fecharModalPaciente() {
+    setModalPacienteOpen(false)
+    setPacienteDados(null)
+    setAgendamentoAtual(null)
+    setAgendamentosAtuais([])
   }
 
   // Carrega profissionais uma vez
@@ -361,19 +393,19 @@ export default function SalaEsperaPage() {
                     border: `0.5px solid var(--borda-suave)`,
                     borderLeft: `4px solid ${ls.border}`,
                     borderRadius: 12,
-                    padding: '14px 18px',
+                    padding: '9px 16px',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 14,
+                    gap: 12,
                   }}
                 >
                   {/* Badge posição */}
                   <div style={{
-                    width: 38, height: 38, borderRadius: '50%', flexShrink: 0,
+                    width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
                     background: posSt ? posSt.bg : 'var(--bg-hover)',
                     boxShadow: posSt ? posSt.shadow : 'none',
                     color: posSt ? '#fff' : 'var(--texto-terciario)',
-                    fontWeight: 800, fontSize: 16,
+                    fontWeight: 800, fontSize: 13,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}>
                     {idx + 1}
@@ -381,9 +413,9 @@ export default function SalaEsperaPage() {
 
                   {/* Avatar iniciais */}
                   <div style={{
-                    width: 48, height: 48, borderRadius: '50%', flexShrink: 0,
+                    width: 38, height: 38, borderRadius: '50%', flexShrink: 0,
                     background: avColor, color: '#fff',
-                    fontWeight: 700, fontSize: 17,
+                    fontWeight: 700, fontSize: 14,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     letterSpacing: 1,
                     boxShadow: `0 2px 8px ${avColor}50`,
@@ -394,9 +426,9 @@ export default function SalaEsperaPage() {
                   {/* Informações principais */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     {/* Nome + tipo */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 5 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
                       <span style={{
-                        fontSize: 17, fontWeight: 700, color: 'var(--texto-principal)',
+                        fontSize: 14, fontWeight: 700, color: 'var(--texto-principal)',
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                         maxWidth: '28ch',
                       }}>
@@ -472,20 +504,39 @@ export default function SalaEsperaPage() {
                     display: 'flex', flexDirection: 'column',
                     alignItems: 'center', justifyContent: 'center',
                     background: ls.bg, color: ls.text,
-                    padding: '10px 16px', borderRadius: 10,
-                    flexShrink: 0, gap: 3, minWidth: 88, textAlign: 'center',
+                    padding: '7px 12px', borderRadius: 10,
+                    flexShrink: 0, gap: 2, minWidth: 72, textAlign: 'center',
                   }}>
-                    <Clock size={15} />
-                    <span style={{ fontSize: 20, fontWeight: 800, lineHeight: 1.1, letterSpacing: -0.5 }}>
+                    <Clock size={13} />
+                    <span style={{ fontSize: 16, fontWeight: 800, lineHeight: 1.1, letterSpacing: -0.5 }}>
                       {chegada ? fmtWait(waitMins) : '—'}
                     </span>
                     <span style={{
-                      fontSize: 9, fontWeight: 700,
+                      fontSize: 8, fontWeight: 700,
                       opacity: 0.75, textTransform: 'uppercase', letterSpacing: 0.5,
                     }}>
                       {ls.label}
                     </span>
                   </div>
+
+                  {/* Botão Atendimento */}
+                  <button
+                    type="button"
+                    onClick={() => abrirAtendimento(ag)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      fontSize: 12, fontWeight: 700, color: '#fff',
+                      background: 'var(--cor-primaria)',
+                      padding: '9px 14px', borderRadius: 8,
+                      border: 'none', cursor: 'pointer', flexShrink: 0,
+                      whiteSpace: 'nowrap',
+                      transition: 'opacity 0.15s',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.opacity = '0.85' }}
+                    onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
+                  >
+                    <ClipboardList size={14} /> Atendimento
+                  </button>
                 </div>
               )
             })}
@@ -504,6 +555,16 @@ export default function SalaEsperaPage() {
           </Link>
         </div>
       </div>
+
+      <PacienteCheckInFormModal
+        open={modalPacienteOpen}
+        paciente={pacienteDados}
+        agendamento={agendamentoAtual}
+        agendamentos={agendamentosAtuais}
+        onClose={fecharModalPaciente}
+        onSaved={carregar}
+        ocultarRecebimento
+      />
     </>
   )
 }

@@ -51,9 +51,12 @@ export default function SalaEsperaWidget() {
       if (!res.ok) return
       const data   = await res.json()
       const sorted: AgendamentoListItem[] = [...(data.dados ?? [])].sort((a, b) => {
-        const ta = a.horario_chegada ? +new Date(a.horario_chegada) : +new Date(a.data_hora_inicio)
-        const tb = b.horario_chegada ? +new Date(b.horario_chegada) : +new Date(b.data_hora_inicio)
-        return ta - tb
+        const agA = +new Date(a.data_hora_inicio)
+        const agB = +new Date(b.data_hora_inicio)
+        if (agA !== agB) return agA - agB
+        const chA = a.horario_chegada ? +new Date(a.horario_chegada) : Infinity
+        const chB = b.horario_chegada ? +new Date(b.horario_chegada) : Infinity
+        return chA - chB
       })
       setLista(sorted)
       setAgora(new Date())

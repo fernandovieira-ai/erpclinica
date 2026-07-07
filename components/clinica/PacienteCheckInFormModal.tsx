@@ -60,6 +60,7 @@ interface Props {
   agendamentos?: AgendamentoListItem[]
   onClose: () => void
   onSaved?: () => void
+  ocultarRecebimento?: boolean
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -496,7 +497,7 @@ function BuscarPessoa({
   )
 }
 
-export default function PacienteCheckInFormModal({ open, paciente, agendamento, agendamentos, onClose, onSaved }: Props) {
+export default function PacienteCheckInFormModal({ open, paciente, agendamento, agendamentos, onClose, onSaved, ocultarRecebimento }: Props) {
   const { register, watch, setValue, handleSubmit, reset } = useForm({
     defaultValues: {
       tipo_pessoa: 'F',
@@ -1075,6 +1076,7 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
                   </div>
                 )}
                 {(() => {
+                  if (ocultarRecebimento) return null
                   const algumPodeReceber = listaAgs.some(
                     ag => !pagosIds.has(ag.id) && !['CANCELADO', 'FALTOU'].includes(ag.status)
                   )
@@ -1200,6 +1202,7 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
         </form>
 
         {(() => {
+          if (ocultarRecebimento) return null
           const listaAgsAll = (agendamentos && agendamentos.length > 0) ? agendamentos : agendamento ? [agendamento] : []
           const pendingAgs = listaAgsAll.filter(ag => !pagosIds.has(ag.id) && !['CANCELADO', 'FALTOU'].includes(ag.status))
           if (pendingAgs.length === 0) return null
