@@ -17,7 +17,7 @@ async function tabelaExiste(db: Pool, dbName: string, tableName: string): Promis
   return existe
 }
 
-// GET /api/clinica/agendamentos?inicio=YYYY-MM-DD&fim=YYYY-MM-DD&profissional_id=&status=
+// GET /api/clinica/agendamentos?inicio=YYYY-MM-DD&fim=YYYY-MM-DD&profissional_id=&status=&order=asc|desc&limit=
 export async function GET(req: NextRequest) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
@@ -28,6 +28,8 @@ export async function GET(req: NextRequest) {
   const profissional_id = sp.get('profissional_id') || ''
   const paciente_id    = sp.get('paciente_id') || ''
   const status         = sp.get('status') || ''
+  const order          = sp.get('order') === 'desc' ? 'DESC' : 'ASC'
+  const limit          = Math.min(Math.max(Number(sp.get('limit')) || 500, 1), 500)
 
   const db = getDb(session.database_name)
 
@@ -97,8 +99,8 @@ export async function GET(req: NextRequest) {
        LEFT JOIN tab_categoria        cat ON cat.id = a.categoria_id
        ${joinRecebimento}
      WHERE ${where}
-     ORDER BY a.data_hora_inicio
-     LIMIT 500`,
+     ORDER BY a.data_hora_inicio ${order}
+     LIMIT ${limit}`,
     params,
   )
 

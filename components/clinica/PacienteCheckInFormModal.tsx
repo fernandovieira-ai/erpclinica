@@ -4,10 +4,11 @@ import { forwardRef, useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { X, Save, Camera, Search, RefreshCw, User, DollarSign, CheckCircle2 } from 'lucide-react'
+import { X, Save, Camera, Search, RefreshCw, User, DollarSign, CheckCircle2, FileText, Stethoscope } from 'lucide-react'
 import RecebimentoModal from '@/components/clinica/RecebimentoModal'
+import HistoricoClinico from '@/components/clinica/HistoricoClinico'
 import { toast } from 'sonner'
-import type { AgendamentoListItem } from '@/types/clinica.types'
+import type { AgendamentoListItem, Prontuario } from '@/types/clinica.types'
 
 interface Pessoa {
   id: number
@@ -519,6 +520,11 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
   const [recModalOpen, setRecModalOpen] = useState(false)
   const [pagosIds,     setPagosIds]     = useState<Set<number>>(new Set())
 
+  const [ultimoAtendimento, setUltimoAtendimento] = useState<AgendamentoListItem | null>(null)
+  const [ultimoProntuario,  setUltimoProntuario]  = useState<Prontuario | null>(null)
+  const [carregandoUltimo,  setCarregandoUltimo]  = useState(false)
+  const [historicoOpen,     setHistoricoOpen]     = useState(false)
+
   useEffect(() => {
     if (open && paciente) {
       setCpfStatus(null)
@@ -568,6 +574,30 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
       })
     }
   }, [open, paciente, reset])
+
+  useEffect(() => { if (!open) setHistoricoOpen(false) }, [open])
+
+  useEffect(() => {
+    if (!open || !paciente) { setUltimoAtendimento(null); setUltimoProntuario(null); return }
+    setCarregandoUltimo(true)
+    fetch(`/api/clinica/agendamentos?${new URLSearchParams({
+      paciente_id: String(paciente.id), status: 'ATENDIDO', order: 'desc', limit: '1',
+    })}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(async d => {
+        const ultimo: AgendamentoListItem | null = d?.dados?.[0] ?? null
+        setUltimoAtendimento(ultimo)
+        if (ultimo) {
+          const resPr = await fetch(`/api/clinica/prontuarios?${new URLSearchParams({ agendamento_id: String(ultimo.id) })}`)
+          const dPr   = resPr.ok ? await resPr.json() : null
+          setUltimoProntuario(dPr?.dados?.[0] ?? null)
+        } else {
+          setUltimoProntuario(null)
+        }
+      })
+      .catch(() => {})
+      .finally(() => setCarregandoUltimo(false))
+  }, [open, paciente?.id])
 
   async function buscarCep() {
     const cep = watch('cep')?.replace(/\D/g, '')
@@ -1172,6 +1202,74 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
             )
           })()}
 
+          {/* ══ ÚLTIMO ATENDIMENTO ══════════════════════════════════ */}
+          {(carregandoUltimo || ultimoAtendimento) && (
+            <Secao titulo="Último Atendimento">
+              {carregandoUltimo ? (
+                <div style={{ fontSize: 12, color: 'var(--texto-terciario)' }}>Carregando...</div>
+              ) : ultimoAtendimento && (() => {
+                const dt = parseISO(ultimoAtendimento.data_hora_inicio)
+                const resumoClinico = ultimoProntuario?.diagnostico || ultimoProntuario?.queixas
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                    <div style={{ minWidth: 78, flexShrink: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--texto-principal)' }}>
+                        {format(dt, 'dd/MM/yyyy')}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--texto-terciario)', fontFamily: 'var(--fonte-mono)' }}>
+                        {format(dt, 'HH:mm')}
+                      </div>
+                    </div>
+
+                    <div style={{ flex: 1, minWidth: 200 }}>
+                      <div style={{
+                        fontSize: 12.5, fontWeight: 600, color: 'var(--texto-principal)',
+                        display: 'flex', alignItems: 'center', gap: 4,
+                      }}>
+                        <Stethoscope size={12} style={{ opacity: 0.65, flexShrink: 0 }} />
+                        {ultimoAtendimento.profissional_nome}
+                        {ultimoAtendimento.tipo_descricao && (
+                          <span style={{ fontWeight: 400, color: 'var(--texto-secundario)' }}>
+                            {' '}· {ultimoAtendimento.tipo_descricao}
+                          </span>
+                        )}
+                      </div>
+                      {resumoClinico ? (
+                        <div style={{
+                          fontSize: 11.5, color: 'var(--texto-secundario)', marginTop: 3,
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
+                          {resumoClinico}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 11.5, color: 'var(--texto-terciario)', fontStyle: 'italic', marginTop: 3 }}>
+                          Prontuário não preenchido
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setHistoricoOpen(true)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
+                        fontSize: 12, fontWeight: 700, color: 'var(--cor-primaria)',
+                        background: 'var(--cor-primaria-light)',
+                        padding: '7px 14px', borderRadius: 6,
+                        border: '1px solid var(--cor-primaria)', cursor: 'pointer',
+                        whiteSpace: 'nowrap', transition: 'opacity 0.15s',
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.opacity = '0.8' }}
+                      onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
+                    >
+                      <FileText size={13} /> Ver histórico clínico
+                    </button>
+                  </div>
+                )
+              })()}
+            </Secao>
+          )}
+
           {/* Botões */}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 }}>
             <button
@@ -1216,6 +1314,53 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
             />
           )
         })()}
+
+        {historicoOpen && (
+          <div style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(0,0,0,0.55)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1100, padding: 16,
+          }}>
+            <div style={{
+              backgroundColor: 'var(--bg-card)', borderRadius: 6,
+              maxWidth: 820, width: '100%', maxHeight: '90vh',
+              overflow: 'hidden', display: 'flex', flexDirection: 'column',
+              boxShadow: '0 20px 25px -5px rgba(0,0,0,0.25)',
+            }}>
+              <div style={{
+                background: 'var(--cor-primaria)', color: 'white',
+                padding: '12px 16px', flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <FileText size={16} />
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2 }}>Histórico Clínico</div>
+                    <div style={{ fontSize: 11, opacity: 0.82 }}>{watch('nome')}</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setHistoricoOpen(false)}
+                  style={{
+                    background: 'rgba(255,255,255,0.18)', border: 'none', cursor: 'pointer',
+                    padding: '6px 8px', borderRadius: 4, color: 'white',
+                    display: 'flex', alignItems: 'center', flexShrink: 0,
+                    transition: 'background 0.15s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.3)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.18)' }}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+                <HistoricoClinico pacienteId={paciente.id} />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
