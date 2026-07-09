@@ -150,7 +150,8 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
   const [editandoId,  setEditandoId]  = useState<number | null>(null)
   const [form,        setForm]        = useState<FormState>(CAMPOS_VAZIOS)
   const [salvando,    setSalvando]    = useState(false)
-  const [voaAtivoId,  setVoaAtivoId]  = useState<number | null>(null)
+  const [voaAtivoId,   setVoaAtivoId]   = useState<number | null>(null)
+  const [voaMontadoId, setVoaMontadoId] = useState<number | null>(null)
   const [receitaAtivaId, setReceitaAtivaId] = useState<number | null>(null)
 
   const carregar = useCallback(async () => {
@@ -194,6 +195,22 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
   function cancelarEdicao() {
     setEditandoId(null)
     setVoaAtivoId(null)
+  }
+
+  function abrirVoa(agId: number) {
+    // Se era um agendamento diferente que estava montado, desmonta primeiro
+    // (React processa o setVoaMontadoId→null num render, depois o novo agId no próximo)
+    if (voaMontadoId !== null && voaMontadoId !== agId) {
+      setVoaMontadoId(null)
+      setVoaAtivoId(null)
+      setTimeout(() => {
+        setVoaMontadoId(agId)
+        setVoaAtivoId(agId)
+      }, 50) // aguarda React desmontar o anterior antes de montar o novo
+    } else {
+      setVoaMontadoId(agId)
+      setVoaAtivoId(agId)
+    }
   }
 
   function aplicarDadosVoa(dados: Record<string, string>) {
@@ -439,18 +456,22 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
                       </>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {voaAtivoId === ag.id ? (
-                          <VoaPluginView
-                            agendamentoId={ag.id}
-                            doctorId={ag.profissional_id}
-                            patientId={pacienteId}
-                            onFechar={() => setVoaAtivoId(null)}
-                            onDadosExtraidos={aplicarDadosVoa}
-                          />
-                        ) : (
+                        {/* Mantido montado após primeira abertura — só visibility muda, evita re-init do SDK */}
+                        {voaMontadoId === ag.id && (
+                          <div style={{ display: voaAtivoId === ag.id ? 'block' : 'none' }}>
+                            <VoaPluginView
+                              agendamentoId={ag.id}
+                              doctorId={ag.profissional_id}
+                              patientId={pacienteId}
+                              onFechar={() => setVoaAtivoId(null)}
+                              onDadosExtraidos={aplicarDadosVoa}
+                            />
+                          </div>
+                        )}
+                        {voaAtivoId !== ag.id && (
                           <button
                             type="button"
-                            onClick={() => setVoaAtivoId(ag.id)}
+                            onClick={() => abrirVoa(ag.id)}
                             style={{
                               display: 'flex', alignItems: 'center', gap: 7, width: 'fit-content',
                               padding: '9px 18px', fontSize: 13.5, fontWeight: 700,
@@ -459,7 +480,8 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
                               boxShadow: `0 2px 6px ${VOA_COR}55`,
                             }}
                           >
-                            <Mic size={16} /> Gravar com Voa
+                            <Mic size={16} />
+                            {voaMontadoId === ag.id ? 'Retomar Voa' : 'Gravar com Voa'}
                           </button>
                         )}
 
