@@ -50,9 +50,9 @@ export async function POST(req: NextRequest) {
       { status: 503 },
     )
   }
-  if (!ag.crm) {
+  if (!ag.crm || !ag.crm_uf) {
     return NextResponse.json(
-      { erro: `CRM não cadastrado para ${ag.profissional_nome}. Cadastre em Cadastros → Pessoas → aba Principal.` },
+      { erro: `CRM não cadastrado (ou sem UF) para ${ag.profissional_nome}. Cadastre em Cadastros → Pessoas → aba Principal.` },
       { status: 400 },
     )
   }
@@ -71,6 +71,12 @@ export async function POST(req: NextRequest) {
   if (!ag.paciente_cpf) {
     return NextResponse.json(
       { erro: 'Paciente sem CPF cadastrado — obrigatório para emitir receita digital (exigência da Anvisa).' },
+      { status: 400 },
+    )
+  }
+  if (!ag.paciente_nascimento) {
+    return NextResponse.json(
+      { erro: `Data de nascimento não cadastrada para ${ag.paciente_nome}. A Memed exige essa informação do paciente para emitir receita.` },
       { status: 400 },
     )
   }
@@ -102,13 +108,13 @@ export async function POST(req: NextRequest) {
     await db.query(
       `INSERT INTO tab_memed_prescritor (empresa_id, profissional_id, external_id, memed_usuario_id, ultimo_status, ambiente)
        VALUES ($1,$2,$3,$4,$5,$6)
-       ON CONFLICT (profissional_id) DO UPDATE SET
+       ON CONFLICT (empresa_id, profissional_id) DO UPDATE SET
          memed_usuario_id = EXCLUDED.memed_usuario_id,
          ultimo_status     = EXCLUDED.ultimo_status,
          ambiente          = EXCLUDED.ambiente`,
       [
         session.empresa_id_ativa, ag.profissional_id, `PROF-${ag.profissional_id}`,
-        prescritor.external_id ?? null, prescritor.status ?? null, ag.memed_ambiente,
+        prescritor.memedId, prescritor.status ?? null, ag.memed_ambiente,
       ],
     )
 

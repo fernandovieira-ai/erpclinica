@@ -69,10 +69,11 @@ async function salvarHistorico(dadosEvento: unknown) {
   if (!ctx) return
   try {
     const dados  = (dadosEvento ?? {}) as PrescricaoImpressaPayload
+    // Hífen simples, não travessão — o banco é LATIN1 e travessão (U+2014) quebra o INSERT.
     const resumo = Array.isArray(dados.medicamentos)
-      ? dados.medicamentos.map(m => [m.nome, m.posologia].filter(Boolean).join(' — ')).filter(Boolean).join('; ')
+      ? dados.medicamentos.map(m => [m.nome, m.posologia].filter(Boolean).join(' - ')).filter(Boolean).join('; ')
       : null
-    await fetch('/api/clinica/receitas', {
+    const res = await fetch('/api/clinica/receitas', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -81,6 +82,7 @@ async function salvarHistorico(dadosEvento: unknown) {
         medicamentos:        resumo,
       }),
     })
+    if (!res.ok) throw new Error('Falha ao salvar receita no histórico')
     toast.success('Receita emitida e registrada no histórico')
     ctx.onEmitida?.()
   } catch {
@@ -102,15 +104,37 @@ function registrarListenersUmaVez() {
   })
 }
 
-function carregarScript(token: string): Promise<void> {
+// Registra o listener de core:moduleInit dentro do próprio script.onload, sem nenhum
+// await entre o script terminar de carregar e o listener ser registrado — um gap ali
+// (ex: script.onload resolve uma Promise, e só *depois* registramos o listener em outro
+// tick) arriscaria perder o evento pra sempre se a Memed disparar core:moduleInit durante
+// a própria execução do script. Com timeout de segurança: se o evento nunca vier (SDK
+// mudou de comportamento, bloqueio de rede parcial etc.), falha explicitamente em vez de
+// travar em "carregando" para sempre — e libera scriptCarregando pra um retry de verdade.
+function carregarScriptEAguardarInit(token: string): Promise<void> {
   if (scriptCarregando) return scriptCarregando
   scriptCarregando = new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      scriptCarregando = null
+      reject(new Error('A Memed não respondeu a tempo. Tente novamente.'))
+    }, 20_000)
     const script = document.createElement('script')
     script.src = SCRIPT_SRC
     script.setAttribute('data-token', token)
     script.async = true
-    script.onload = () => resolve()
-    script.onerror = () => { scriptCarregando = null; reject(new Error('Falha ao carregar o script da Memed')) }
+    script.onload = () => {
+      window.MdSinapsePrescricao?.event.add('core:moduleInit', (module: { name: string }) => {
+        if (module.name !== 'plataforma.prescricao') return
+        clearTimeout(timeout)
+        hubPronto = true
+        resolve()
+      })
+    }
+    script.onerror = () => {
+      clearTimeout(timeout)
+      scriptCarregando = null
+      reject(new Error('Falha ao carregar o script da Memed'))
+    }
     document.body.appendChild(script)
   })
   return scriptCarregando
@@ -142,7 +166,11 @@ export default function MemedPrescricao({ agendamentoId, profissionalId, onFecha
     let cancelado = false
 
     async function abrirComPaciente(paciente: PacienteMemed) {
-      if (!window.MdHub) return
+      if (cancelado) return // já desmontou (ex: usuário trocou de consulta rápido) — não mexe no contexto global
+      if (!window.MdHub) {
+        setStatus('error'); setErro('Módulo da Memed indisponível — tente novamente.')
+        return
+      }
       registrarListenersUmaVez()
       contextoAtivo = {
         agendamentoId,
@@ -153,8 +181,9 @@ export default function MemedPrescricao({ agendamentoId, profissionalId, onFecha
         // command.send devolve um thenable próprio do SDK da Memed (nem sempre implementa
         // .catch) — Promise.resolve normaliza pra uma Promise de verdade antes de encadear.
         await Promise.resolve(window.MdHub.command.send('plataforma.prescricao', 'setPaciente', { ...paciente }))
+        if (cancelado) return // desmontou enquanto o setPaciente estava em voo — não reabre o módulo
         window.MdHub.module.show('plataforma.prescricao')
-        if (!cancelado) setStatus('aberta')
+        setStatus('aberta')
       } catch {
         if (!cancelado) { setStatus('error'); setErro('Falha ao configurar o paciente na Memed') }
       }
@@ -184,16 +213,7 @@ export default function MemedPrescricao({ agendamentoId, profissionalId, onFecha
         }
 
         hubProfissionalId = profissionalId
-        await carregarScript(data.token)
-        if (cancelado) return
-
-        await new Promise<void>(resolve => {
-          window.MdSinapsePrescricao?.event.add('core:moduleInit', (module: { name: string }) => {
-            if (module.name !== 'plataforma.prescricao') return
-            hubPronto = true
-            resolve()
-          })
-        })
+        await carregarScriptEAguardarInit(data.token)
         if (cancelado) return
         await abrirComPaciente(data.paciente)
       } catch (e) {

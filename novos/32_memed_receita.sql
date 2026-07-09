@@ -38,7 +38,9 @@ CREATE TABLE IF NOT EXISTS tab_memed_prescritor (
   ambiente          VARCHAR(20)  NOT NULL DEFAULT 'homologacao',
   created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
   updated_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  UNIQUE (profissional_id)
+  -- (empresa_id, profissional_id) e nao so profissional_id: um profissional pode atender
+  -- em mais de uma empresa (banco) e cada uma tem seu proprio cadastro/token na Memed.
+  UNIQUE (empresa_id, profissional_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_memed_prescritor_empresa ON tab_memed_prescritor(empresa_id);

@@ -573,7 +573,14 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
     }
   }, [open, paciente, reset])
 
-  useEffect(() => { if (open) setAba('Cadastro') }, [open])
+  // O modal não desmonta quando fecha (só retorna null), então o estado de aba
+  // persiste entre aberturas — resetar no fechamento evita mostrar por um frame
+  // a aba anterior (e o HistoricoClinico chegar a montar/buscar dados à toa) antes
+  // de um useEffect corrigir depois da abertura já ter renderizado.
+  function fecharModal() {
+    setAba('Cadastro')
+    onClose()
+  }
 
   async function buscarCep() {
     const cep = watch('cep')?.replace(/\D/g, '')
@@ -621,7 +628,7 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
       if (res.ok) {
         toast.success('Atendimento finalizado!')
         onSaved?.()
-        onClose()
+        fecharModal()
       } else {
         toast.error('Erro ao finalizar atendimento')
       }
@@ -654,7 +661,7 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
       if (res.ok) {
         toast.success('Dados atualizados!')
         onSaved?.()
-        onClose()
+        fecharModal()
       } else {
         toast.error('Erro ao salvar')
       }
@@ -747,7 +754,7 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
           {/* Close */}
           <button
             type="button"
-            onClick={onClose}
+            onClick={fecharModal}
             style={{
               background: 'rgba(255,255,255,0.18)', border: 'none', cursor: 'pointer',
               padding: '6px 8px', borderRadius: 4, color: 'white',
@@ -1229,7 +1236,7 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 }}>
             <button
               type="button"
-              onClick={onClose}
+              onClick={fecharModal}
               style={{
                 padding: '4px 14px', borderRadius: 3, border: '1px solid var(--borda-media)',
                 background: 'none', color: 'var(--texto-principal)',
@@ -1286,7 +1293,7 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button
                 type="button"
-                onClick={onClose}
+                onClick={fecharModal}
                 style={{
                   padding: '4px 14px', borderRadius: 3, border: '1px solid var(--borda-media)',
                   background: 'none', color: 'var(--texto-principal)',

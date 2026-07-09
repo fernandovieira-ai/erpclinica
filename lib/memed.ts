@@ -24,6 +24,9 @@ export interface CadastrarPrescritorInput {
 }
 
 export interface MemedUsuarioAttributes {
+  // id interno do usuario na Memed (json.data.id) - diferente do external_id (o nosso,
+  // ex: "PROF-4"), guardado separado pra nao confundir os dois em tab_memed_prescritor.
+  memedId:    string
   token:      string
   status?:    string
   nome?:      string
@@ -88,7 +91,7 @@ export async function cadastrarPrescritor(
     `/sinapse-prescricao/usuarios?${authQuery(cred)}`,
     { method: 'POST', body: JSON.stringify(body) },
   )
-  return json.data.attributes
+  return { ...json.data.attributes, memedId: json.data.id }
 }
 
 export async function obterPrescritor(
@@ -98,7 +101,7 @@ export async function obterPrescritor(
     `/sinapse-prescricao/usuarios/${identificador}?${authQuery(cred)}`,
     { method: 'GET' },
   )
-  return json.data.attributes
+  return { ...json.data.attributes, memedId: json.data.id }
 }
 
 // Tenta buscar o prescritor pelo external_id; se nao existir (404), cadastra.

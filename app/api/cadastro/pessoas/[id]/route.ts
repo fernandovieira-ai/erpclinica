@@ -92,7 +92,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       d.mae_pessoa_id ?? null, up(d.mae_nome), d.mae_paciente ?? false,
       d.conjuge_pessoa_id ?? null, up(d.conjuge_nome), d.conjuge_paciente ?? false,
       d.indicacao_pessoa_id ?? null, up(d.indicacao_nome), d.indicacao_fone ?? null, up(d.indicacao_ligacao),
-      up(d.profissao), d.altura ?? null, d.peso ?? null, d.crm ?? null, up(d.crm_uf),
+      up(d.profissao), d.altura ?? null, d.peso ?? null, up(d.crm), up(d.crm_uf),
       params.id,
     ],
   )

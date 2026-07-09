@@ -293,7 +293,16 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
                 {/* Cabeçalho */}
                 <button
                   type="button"
-                  onClick={() => setAbertoId(aberto ? null : ag.id)}
+                  onClick={() => {
+                    // Ao recolher, fecha também os painéis de Voa/Memed dessa consulta —
+                    // senão reabrir o card remonta o MemedPrescricao sozinho, sem clique
+                    // do usuário, reautenticando na Memed sem necessidade.
+                    if (aberto) {
+                      if (voaAtivoId === ag.id) setVoaAtivoId(null)
+                      if (receitaAtivaId === ag.id) setReceitaAtivaId(null)
+                    }
+                    setAbertoId(aberto ? null : ag.id)
+                  }}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 10, width: '100%',
                     padding: '10px 12px', background: 'none', border: 'none', cursor: 'pointer',
