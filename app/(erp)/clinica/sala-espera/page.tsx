@@ -555,7 +555,7 @@ export default function SalaEsperaPage() {
           marginTop: 16, textAlign: 'center',
           fontSize: 11, color: 'var(--texto-terciario)',
         }}>
-          Última atualização: {format(ultimaAt, 'HH:mm:ss')}
+          Última atualização: <span suppressHydrationWarning>{format(ultimaAt, 'HH:mm:ss')}</span>
           {' · '}
           <Link href="/clinica/agendamento" style={{ color: 'var(--cor-primaria)', textDecoration: 'none' }}>
             Ir para agenda

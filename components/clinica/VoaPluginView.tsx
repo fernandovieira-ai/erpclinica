@@ -59,8 +59,8 @@ const VOA_COR = '#7C3AED'
 const SCRIPT_SRC = 'https://integration.voa.health/plugin.js'
 let scriptPromise: Promise<void> | null = null
 let ultimoUnmountMs = 0
-const MIN_DELAY_REINIT = 1000 // ms mínimos entre unmount e próximo init (servidor precisa fechar sessão anterior)
-const INIT_TIMEOUT_MS  = 15000 // timeout para o init() — evita ficar preso em "conectando..."
+const INIT_TIMEOUT_MS   = 10000 // timeout para o init() — evita preso em "conectando..."
+const READY_TIMEOUT_MS  = 12000 // se ready não vier após mount(), exibe container mesmo assim (auth error do Voa)
 
 function carregarScript(): Promise<void> {
   if (window.VoaPlugin) return Promise.resolve()
@@ -87,10 +87,11 @@ interface Props {
 }
 
 export default function VoaPluginView({ agendamentoId, doctorId, patientId, onFechar, onDadosExtraidos }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [status, setStatus] = useState<Status>('loading')
-  const [erro,   setErro]   = useState<string | null>(null)
-  const [tentativa, setTentativa] = useState(0)
+  const containerRef   = useRef<HTMLDivElement>(null)
+  const [status,       setStatus]       = useState<Status>('loading')
+  const [erro,         setErro]         = useState<string | null>(null)
+  const [tentativa,    setTentativa]    = useState(0)
+  const [showContainer, setShowContainer] = useState(false)
 
   // Ref para não reiniciar o plugin a cada re-render do formulário (o callback muda de
   // identidade a cada keystroke do pai, mas isso não deve remontar o widget da Voa).
@@ -103,13 +104,9 @@ export default function VoaPluginView({ agendamentoId, doctorId, patientId, onFe
 
     async function iniciar() {
       setStatus('loading')
+      setShowContainer(false)
       setErro(null)
       try {
-        // Aguarda o SDK da Voa terminar o unmount anterior antes de reinicializar
-        const elapsed = Date.now() - ultimoUnmountMs
-        if (elapsed < MIN_DELAY_REINIT) {
-          await new Promise(r => setTimeout(r, MIN_DELAY_REINIT - elapsed))
-        }
         if (cancelado) return
 
         const res  = await fetch('/api/voa/token', {
@@ -129,13 +126,12 @@ export default function VoaPluginView({ agendamentoId, doctorId, patientId, onFe
         // Registra listener antes do init para não perder o evento ready
         handler = (message) => {
           if (!message || typeof message.eventName !== 'string') return
-          // LOG TEMPORÁRIO — descobrir todos os eventos e payloads do SDK Voa
           console.log('[Voa event]', message.eventName, message.eventData)
           switch (message.eventName) {
             case 'voa.plugin.error.auth':
               setStatus('error'); setErro('Sessão da Voa expirou ou o token é inválido.'); break
             case 'voa.plugin.ready':
-              setStatus('ready'); break
+              setStatus('ready'); setShowContainer(true); break
             case 'voa.plugin.closed':
               setStatus('closed'); break
             case 'voa.plugin.ehr.structured_output': {
@@ -175,6 +171,13 @@ export default function VoaPluginView({ agendamentoId, doctorId, patientId, onFe
             structuredOutputSchema: PRONTUARIO_SCHEMA,
           },
         })
+
+        // Fallback: se ready não vier (ex: auth error silencioso), exibe
+        // o container após READY_TIMEOUT_MS para revelar a UI interna do Voa
+        setTimeout(() => {
+          if (!cancelado) setShowContainer(true)
+        }, READY_TIMEOUT_MS)
+
       } catch (e) {
         if (cancelado) return
         setStatus('error')
@@ -188,7 +191,6 @@ export default function VoaPluginView({ agendamentoId, doctorId, patientId, onFe
       cancelado = true
       if (handler) window.VoaPlugin?.instance?.removeMessageListener(handler)
       window.VoaPlugin?.instance?.unmount()
-      ultimoUnmountMs = Date.now()
     }
   }, [agendamentoId, doctorId, patientId, tentativa])
 
@@ -246,7 +248,7 @@ export default function VoaPluginView({ agendamentoId, doctorId, patientId, onFe
         </div>
       )}
 
-      <div ref={containerRef} style={{ width: '100%', height: status === 'ready' ? 560 : 0 }} />
+      <div ref={containerRef} style={{ width: '100%', height: (status === 'ready' || showContainer) ? 'auto' : 0, minHeight: (status === 'ready' || showContainer) ? 400 : 0 }} />
 
       {status === 'ready' && (
         <div style={{
