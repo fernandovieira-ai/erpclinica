@@ -29,6 +29,8 @@ export interface Pessoa {
   foto:              string | null
   rg_ie:             string | null
   im:                string | null
+  crm:               string | null
+  crm_uf:            string | null
   ind_cliente:       boolean
   ind_fornecedor:    boolean
   ind_banco:         boolean
@@ -111,6 +113,9 @@ export interface Empresa {
   cod_tipo_cobranca: number | null
   voa_auth_token:    string | null
   voa_ambiente:      string
+  memed_api_key:                  string | null
+  memed_ambiente:                 string
+  memed_secret_key_configured:    boolean
   ativo:             boolean
   created_at:        string
   updated_at:        string
@@ -666,6 +671,41 @@ export type MovimentoCaixaListItem = Pick<
 
 export interface MovimentoCaixaListResponse {
   dados:  MovimentoCaixaListItem[]
+  total:  number
+  page:   number
+  limit:  number
+  pages:  number
+}
+
+// ─── Usuário ──────────────────────────────────────────────────────────────────
+
+export interface UsuarioEmpresaVinculo {
+  id:           number
+  razao_social: string
+}
+
+export interface Usuario {
+  id:                number
+  nome:              string
+  email:             string
+  perfil:            'admin' | 'financeiro' | 'operador'
+  trocar_senha:      boolean
+  ultimo_acesso:     string | null
+  ativo:             boolean
+  created_at:        string
+  updated_at:        string
+  empresas:          UsuarioEmpresaVinculo[]
+  profissional_id:   number | null
+  profissional_nome: string | null
+}
+
+export type UsuarioListItem = Pick<
+  Usuario,
+  'id' | 'nome' | 'email' | 'perfil' | 'ultimo_acesso' | 'ativo' | 'empresas' | 'profissional_id' | 'profissional_nome'
+>
+
+export interface UsuarioListResponse {
+  dados:  UsuarioListItem[]
   total:  number
   page:   number
   limit:  number

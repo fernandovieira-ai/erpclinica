@@ -29,7 +29,7 @@ interface Props {
 
 const STATUS_OPTIONS = [
   { value: 'AGENDADO',   label: 'Agendado',   color: '#3B82F6' },
-  { value: 'CONFIRMADO', label: 'Confirmado', color: '#10B981' },
+  { value: 'CONFIRMADO', label: 'Confirmado', color: '#7E57C2' },
   { value: 'AGUARDANDO', label: 'Aguardando', color: '#F59E0B' },
   { value: 'ATENDIDO',   label: 'Atendido',   color: '#6366F1' },
   { value: 'FALTOU',     label: 'Faltou',     color: '#EF4444' },

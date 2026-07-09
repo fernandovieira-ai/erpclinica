@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
     modulos:          modulos ?? [],
     nome:             payload.nome,
     email:            payload.email,
+    profissional_id:  payload.profissional_id,
   }
 
   const token = await signToken(session)

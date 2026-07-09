@@ -13,5 +13,6 @@ export async function GET(req: NextRequest) {
     empresa_id_ativa: session.empresa_id_ativa,
     database_name:    session.database_name,
     modulos:          session.modulos,
+    profissional_id:  session.profissional_id,
   })
 }

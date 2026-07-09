@@ -134,6 +134,7 @@ export default function EmpresaFormPage({ empresa }: Props) {
   const [displayCnpj,  setDisplayCnpj]  = useState('')
   const [tiposCobranca, setTiposCobranca] = useState<{ cod_tipo_cobranca: number; des_tipo_cobranca: string }[]>([])
   const [mostrarVoaToken, setMostrarVoaToken] = useState(false)
+  const [mostrarMemedSecret, setMostrarMemedSecret] = useState(false)
 
   const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<EmpresaInput>({
     resolver: zodResolver(empresaSchema),
@@ -141,6 +142,7 @@ export default function EmpresaFormPage({ empresa }: Props) {
       ativo: true, regime_tributario: 'SN', crt: '1', ambiente_nfe: '2',
       serie_nfe: '001', prox_num_nfe: 1, serie_nfce: '001', prox_num_nfce: 1,
       voa_ambiente: 'desenvolvimento',
+      memed_ambiente: 'homologacao',
     },
   })
 
@@ -184,6 +186,9 @@ export default function EmpresaFormPage({ empresa }: Props) {
       cod_tipo_cobranca: empresa.cod_tipo_cobranca ?? null,
       voa_auth_token:    empresa.voa_auth_token ?? '',
       voa_ambiente:      (empresa.voa_ambiente ?? 'desenvolvimento') as 'desenvolvimento' | 'producao',
+      memed_api_key:     empresa.memed_api_key ?? '',
+      memed_secret_key:  '', // nunca vem do GET — vazio no PATCH mantém o valor atual
+      memed_ambiente:    (empresa.memed_ambiente ?? 'homologacao') as 'homologacao' | 'producao',
       ativo:             empresa.ativo,
     })
   }, [empresa, reset])
@@ -599,6 +604,61 @@ export default function EmpresaFormPage({ empresa }: Props) {
             <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginTop: 2 }}>
               Solicitar o token a integration@voahealth.com. Sem token configurado, o botão
               "Gravar com Voa" no prontuário do paciente fica desabilitado para esta empresa.
+            </div>
+
+            <div style={{ height: 1, backgroundColor: 'var(--borda-suave)', margin: '16px 0' }} />
+
+            <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginBottom: 4 }}>
+              Configuração da integração Memed (prescrição digital). Cada empresa tem a própria
+              conta na Memed — sem credenciais configuradas, o botão "Emitir Receita" no
+              prontuário fica indisponível para esta empresa.
+            </div>
+
+            <Row label="Ambiente:">
+              <Select {...register('memed_ambiente')} style={{ width: 220 }}>
+                <option value="homologacao">Homologação (testes)</option>
+                <option value="producao">Produção</option>
+              </Select>
+            </Row>
+
+            <Row label="Memed API Key:">
+              <Input
+                {...register('memed_api_key')}
+                preserveCase
+                autoComplete="off"
+                placeholder="api-key da Memed"
+                style={{ fontFamily: 'var(--fonte-mono)', maxWidth: 420 }}
+              />
+            </Row>
+
+            <Row label="Memed Secret Key:">
+              <div style={{ position: 'relative', flex: 1, maxWidth: 420 }}>
+                <Input
+                  {...register('memed_secret_key')}
+                  type={mostrarMemedSecret ? 'text' : 'password'}
+                  preserveCase
+                  autoComplete="off"
+                  placeholder={empresa?.memed_secret_key_configured ? '•••••••• (configurado — deixe em branco para manter)' : 'secret-key da Memed'}
+                  style={{ fontFamily: 'var(--fonte-mono)', paddingRight: 30 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setMostrarMemedSecret(v => !v)}
+                  title={mostrarMemedSecret ? 'Ocultar secret' : 'Mostrar secret'}
+                  style={{
+                    position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    display: 'flex', color: 'var(--texto-terciario)', padding: 2,
+                  }}
+                >
+                  {mostrarMemedSecret ? <EyeOff size={13} /> : <Eye size={13} />}
+                </button>
+              </div>
+            </Row>
+
+            <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginTop: 2 }}>
+              Solicitar as chaves em doc.memed.com.br/integracao-rapida. A secret key nunca é
+              devolvida pelo sistema depois de salva — só um indicador de que já está configurada.
             </div>
           </>
         )}

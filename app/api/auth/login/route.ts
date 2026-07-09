@@ -44,9 +44,9 @@ export async function POST(req: NextRequest) {
 
   // 2. Autentica usuário no banco do cliente
   const { rows: users } = await db.query<{
-    id: number; nome: string; email: string; senha_hash: string; perfil: string; ativo: boolean
+    id: number; nome: string; email: string; senha_hash: string; perfil: string; ativo: boolean; profissional_id: number | null
   }>(
-    `SELECT id, nome, email, senha_hash, perfil, ativo
+    `SELECT id, nome, email, senha_hash, perfil, ativo, profissional_id
      FROM tab_usuario WHERE email = $1 AND ativo = true LIMIT 1`,
     [email],
   )
@@ -87,6 +87,7 @@ export async function POST(req: NextRequest) {
       modulos:          emp.modulos ?? [],
       nome:             usuario.nome,
       email:            usuario.email,
+      profissional_id:  usuario.profissional_id,
     }
     const token = await signToken(session)
     const res   = NextResponse.json({ status: 'ok', redir: '/dashboard' })
@@ -102,6 +103,7 @@ export async function POST(req: NextRequest) {
     email:         usuario.email,
     perfil:        usuario.perfil as Session['perfil'],
     modulos:       null,
+    profissional_id: usuario.profissional_id,
   }
   const selectToken = await signToken(selectPayload, '10m')
   const res = NextResponse.json({ status: 'select_empresa', empresas })

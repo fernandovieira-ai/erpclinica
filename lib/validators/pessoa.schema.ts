@@ -38,6 +38,8 @@ export const pessoaSchema = z.object({
 
   rg_ie:              z.string().max(30).optional().nullable(),
   im:                 z.string().max(20).optional().nullable(),
+  crm:                z.string().max(20).optional().nullable(),
+  crm_uf:             z.string().max(2).optional().nullable(),
 
   // Papéis
   ind_cliente:        z.boolean().default(false),

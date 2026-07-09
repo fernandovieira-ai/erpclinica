@@ -19,6 +19,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
             TO_CHAR(cert_validade, 'YYYY-MM-DD') AS cert_validade,
             cod_tipo_cobranca,
             voa_auth_token, voa_ambiente,
+            memed_api_key, memed_ambiente,
+            (memed_secret_key IS NOT NULL) AS memed_secret_key_configured,
             ativo, created_at, updated_at
      FROM tab_empresa
      WHERE id = $1`,
@@ -64,8 +66,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
        serie_nfce=$22, prox_num_nfce=$23, csc_nfce=$24, id_token_nfce=$25,
        cod_tipo_cobranca=$26,
        voa_auth_token=$27, voa_ambiente=$28,
-       ativo=$29, updated_at=NOW()
-     WHERE id = $30`,
+       memed_api_key=$29, memed_ambiente=$30,
+       memed_secret_key=COALESCE(NULLIF($31, ''), memed_secret_key),
+       ativo=$32, updated_at=NOW()
+     WHERE id = $33`,
     [
       up(d.razao_social), up(d.nome_fantasia), up(d.cnpj), up(d.ie), up(d.im),
       d.regime_tributario, d.crt,
@@ -76,6 +80,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       d.serie_nfce, d.prox_num_nfce, d.csc_nfce ?? null, d.id_token_nfce ?? null,
       d.cod_tipo_cobranca ?? null,
       d.voa_auth_token || null, d.voa_ambiente,
+      d.memed_api_key || null, d.memed_ambiente,
+      d.memed_secret_key || '',
       d.ativo,
       params.id,
     ],

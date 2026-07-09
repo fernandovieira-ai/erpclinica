@@ -18,7 +18,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
             mae_pessoa_id, mae_nome, mae_paciente,
             conjuge_pessoa_id, conjuge_nome, conjuge_paciente,
             indicacao_pessoa_id, indicacao_nome, indicacao_fone, indicacao_ligacao,
-            rg_ie, im,
+            rg_ie, im, crm, crm_uf,
             ind_cliente, ind_fornecedor, ind_banco, ind_transportador, ind_paciente, ind_profissional,
             cep, logradouro, numero, complemento, bairro, cidade, uf, cod_ibge,
             telefone, celular, whatsapp, email, email_nfe,
@@ -72,9 +72,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
        mae_pessoa_id=$44, mae_nome=$45, mae_paciente=$46,
        conjuge_pessoa_id=$47, conjuge_nome=$48, conjuge_paciente=$49,
        indicacao_pessoa_id=$50, indicacao_nome=$51, indicacao_fone=$52, indicacao_ligacao=$53,
-       profissao=$54, altura=$55, peso=$56,
+       profissao=$54, altura=$55, peso=$56, crm=$57, crm_uf=$58,
        updated_at=NOW()
-     WHERE id = $57`,
+     WHERE id = $59`,
     [
       d.tipo_pessoa, up(d.nome), up(d.nome_fantasia),
       d.cpf_cnpj ?? null, d.data_nascimento || null, up(d.rg_ie), up(d.im),
@@ -92,7 +92,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       d.mae_pessoa_id ?? null, up(d.mae_nome), d.mae_paciente ?? false,
       d.conjuge_pessoa_id ?? null, up(d.conjuge_nome), d.conjuge_paciente ?? false,
       d.indicacao_pessoa_id ?? null, up(d.indicacao_nome), d.indicacao_fone ?? null, up(d.indicacao_ligacao),
-      up(d.profissao), d.altura ?? null, d.peso ?? null,
+      up(d.profissao), d.altura ?? null, d.peso ?? null, d.crm ?? null, up(d.crm_uf),
       params.id,
     ],
   )

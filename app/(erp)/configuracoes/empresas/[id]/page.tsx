@@ -18,6 +18,8 @@ export default async function EditarEmpresaPage({ params }: { params: { id: stri
             TO_CHAR(cert_validade, 'YYYY-MM-DD') AS cert_validade,
             cod_tipo_cobranca,
             voa_auth_token, voa_ambiente,
+            memed_api_key, memed_ambiente,
+            (memed_secret_key IS NOT NULL) AS memed_secret_key_configured,
             ativo, created_at, updated_at
      FROM tab_empresa
      WHERE id = $1`,

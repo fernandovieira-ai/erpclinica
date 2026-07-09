@@ -248,3 +248,40 @@ SET client_encoding = 'LATIN1';
 | `23_add_aprazo_tipo_pagamento.sql` | Adiciona `'a_prazo'` ao CHECK de `tab_condicao_pagamento.tipo_pagamento` | A Prazo funcionar (sem isso: constraint violation) |
 
 Todo migration começa com `SET client_encoding = 'LATIN1';`
+
+---
+
+## 8. Migrations criando tabela nova: SEMPRE fazer GRANT para a role do tenant
+
+**Armadilha real que já aconteceu em produção:** toda migration roda com o usuário admin (`user_dba`), que é o *owner* de qualquer tabela que cria. Owner nunca é bloqueado por permissão, então testar localmente com `user_dba` **nunca revela** um problema de GRANT — o bug só aparece em produção, onde a aplicação conecta com uma role de aplicação de baixo privilégio (mesmo nome do database, ex: role `hiitcor` para o database `hiitcor`).
+
+Se a migration cria uma tabela nova (`CREATE TABLE`) e não concede acesso a essa role, a API quebra em produção com **500 sem corpo de erro** (Next.js esconde a exceção em produção) mesmo a tabela existindo, com colunas certas, e a mesma query funcionando perfeitamente via `user_dba`. Só aparece checando `information_schema.role_table_grants` — outras tabelas antigas têm grant, a nova não.
+
+**Toda migration que faz `CREATE TABLE` deve terminar com um GRANT dinâmico** (a role de app tem o mesmo nome do database):
+
+```sql
+DO $$
+DECLARE
+  app_role text := current_database();
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = app_role) THEN
+    EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON nome_da_tabela_nova TO %I', app_role);
+  END IF;
+END $$;
+```
+
+`ALTER TABLE ... ADD COLUMN` em tabela já existente **não precisa disso** — os grants de tabela já cobrem colunas novas automaticamente.
+
+## 9. Prontuário clínico + integração Voa (referência rápida)
+
+- **`tab_prontuario`**: 1:1 com `tab_agendamento` (`UNIQUE(agendamento_id)`), upsert via `ON CONFLICT (agendamento_id) DO UPDATE` em `POST /api/clinica/prontuarios`. Campos clínicos (queixas, HDA, antecedentes, exame físico, diagnóstico, medicação etc.) **não** passam pela regra de maiúsculo da seção 2 — é texto narrativo do profissional, preserva o case original.
+- **Consultas do paciente**: `GET /api/clinica/agendamentos?paciente_id=X&status=ATENDIDO` (rota já aceitava `profissional_id`, ganhou o filtro `paciente_id` também). UI em `components/clinica/HistoricoClinico.tsx` — timeline expansível dentro da aba "Consultas" do cadastro de pessoas (só aparece se `ind_paciente`; aba "Agenda" só aparece se `ind_profissional`).
+- **Integração Voa** (assistente de gravação/IA): configuração fica em `tab_empresa.voa_auth_token` + `voa_ambiente` (`desenvolvimento`/`producao`), editável na aba "Integração" do cadastro de empresa — nunca fixar token em env var, cada empresa tem o seu.
+  - `POST /api/voa/token` gera o token: em modo `desenvolvimento` devolve o Auth Token bruto direto (documentado pela própria Voa); em `producao` tentaria trocar por Bearer Token via `/integration/identify/`, mas essa troca **não passou na validação** nos testes (401 em `/auth/validate-integration-token/`) — pendência a confirmar com `integration@voahealth.com` antes de usar produção de verdade.
+  - `VoaPlugin` (script `https://integration.voa.health/plugin.js`) expõe `window.VoaPlugin` como **classe**, não singleton pronto — usar sempre `VoaPlugin.instance.init(...)` e `VoaPlugin.instance.mount(...)`, nunca `VoaPlugin.init(...)` direto (o próprio exemplo da doc oficial da Voa tem esse bug).
+  - Preenchimento automático do prontuário usa `structuredOutputSchema` no `mount()` (JSON Schema com um `description` por campo) — a Voa dispara `voa.plugin.ehr.structured_output` com os valores extraídos quando o profissional clica em "Preencher prontuário" dentro do próprio widget da Voa. Ver `components/clinica/VoaPluginView.tsx`.
+  - Callback passado para dentro do `VoaPluginView` (`onDadosExtraidos`) deve ir num `useRef`, nunca direto na dependency array do `useEffect` de mount — senão o widget remonta a cada re-render do formulário pai (cada tecla digitada).
+
+## 10. `novos/` nunca entra no build do Next
+
+`tsconfig.json` tem `"exclude": ["node_modules", "novos"]`. A pasta `novos/` é só rascunho/referência (migrations `.sql`, scaffolds de integrações futuras tipo Memed) — nunca importada pelo app real. Sem esse exclude, qualquer `.tsx` incompleto lá dentro (import quebrado, código de exemplo) quebra o `next build` de produção mesmo sem nunca ter sido usado.

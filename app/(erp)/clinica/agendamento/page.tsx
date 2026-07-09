@@ -49,7 +49,7 @@ const HORAS = Array.from({ length: 28 }, (_, i) => {
 
 const STATUS_COLOR: Record<string, string> = {
   AGENDADO:   '#378ADD',
-  CONFIRMADO: '#0F6E56',
+  CONFIRMADO: '#7E57C2',
   AGUARDANDO: '#EF9F27',
   ATENDIDO:   '#1D9E75',
   FALTOU:     '#E24B4A',
@@ -206,6 +206,13 @@ export default function AgendamentoPage() {
     fetch('/api/clinica/profissionais').then(r => r.json()).then(d => {
       setProfissionais(d.dados ?? [])
     })
+  }, [])
+
+  // Se o usuário logado está vinculado a um profissional, pré-seleciona o filtro
+  useEffect(() => {
+    fetch('/api/auth/me').then(r => r.json()).then(d => {
+      if (d.profissional_id) setProfFiltro(d.profissional_id)
+    }).catch(() => {})
   }, [])
 
   useEffect(() => { carregar() }, [carregar])

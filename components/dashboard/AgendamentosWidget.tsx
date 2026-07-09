@@ -39,7 +39,7 @@ type StatusKey = 'AGENDADO' | 'CONFIRMADO' | 'AGUARDANDO' | 'ATENDIDO' | 'FALTOU
 
 const STATUS_CFG: Record<StatusKey, { label: string; cor: string; bg: string }> = {
   AGUARDANDO: { label: 'Em Espera',  cor: '#D97706', bg: '#FEF3C7' },
-  CONFIRMADO: { label: 'Confirmado', cor: '#0F6E56', bg: '#E1F5EE' },
+  CONFIRMADO: { label: 'Confirmado', cor: '#7E57C2', bg: '#EDE7F6' },
   AGENDADO:   { label: 'Agendado',   cor: '#378ADD', bg: '#EBF4FF' },
   ATENDIDO:   { label: 'Atendido',   cor: '#1D9E75', bg: '#DCFCE7' },
   FALTOU:     { label: 'Faltou',     cor: '#E24B4A', bg: '#FEE2E2' },

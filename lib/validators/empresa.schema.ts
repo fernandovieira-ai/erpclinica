@@ -41,6 +41,10 @@ export const empresaSchema = z.object({
   // Integração
   voa_auth_token:     z.string().max(120).optional().nullable(),
   voa_ambiente:       z.enum(['desenvolvimento', 'producao']).default('desenvolvimento'),
+  memed_api_key:      z.string().max(120).optional().nullable(),
+  // Vazio = manter o secret atual (nunca é devolvido pelo GET, ver rota de empresas)
+  memed_secret_key:   z.string().max(120).optional().nullable(),
+  memed_ambiente:     z.enum(['homologacao', 'producao']).default('homologacao'),
   // Status
   ativo:              z.boolean().default(true),
 })

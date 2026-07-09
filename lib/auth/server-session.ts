@@ -12,6 +12,7 @@ const DEV_SESSION: Session = {
   modulos:          ['cadastros', 'financeiro', 'fiscal', 'contabil', 'relatorios', 'config', 'ia'],
   nome:             'Dev',
   email:            'dev@dev.local',
+  profissional_id:  null,
 }
 
 // Uso em Server Components — redireciona para /login se não autenticado

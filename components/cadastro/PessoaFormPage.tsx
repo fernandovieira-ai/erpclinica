@@ -650,6 +650,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
       mae_pessoa_id: null, mae_nome: '', mae_paciente: false,
       conjuge_pessoa_id: null, conjuge_nome: '', conjuge_paciente: false,
       indicacao_pessoa_id: null, indicacao_nome: '', indicacao_fone: '', indicacao_ligacao: '',
+      crm: '', crm_uf: '',
       ind_cliente: false, ind_fornecedor: false,
       ind_banco: false, ind_transportador: false,
       ind_paciente: papelInicial === 'paciente', ind_profissional: papelInicial === 'profissional',
@@ -691,6 +692,8 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
       indicacao_ligacao: pessoa.indicacao_ligacao ?? '',
       rg_ie:             pessoa.rg_ie ?? '',
       im:                pessoa.im ?? '',
+      crm:               pessoa.crm ?? '',
+      crm_uf:            pessoa.crm_uf ?? '',
       ind_cliente:       pessoa.ind_cliente,
       ind_fornecedor:    pessoa.ind_fornecedor,
       ind_banco:         pessoa.ind_banco,
@@ -1015,6 +1018,15 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
               {pj && (
                 <FormRow label="I.M.:">
                   <Input {...register('im')} />
+                </FormRow>
+              )}
+              {indProfissional && (
+                <FormRow label="CRM:">
+                  <Input {...register('crm')} style={{ width: 100, fontFamily: 'var(--fonte-mono)' }} />
+                  <Select {...register('crm_uf')} style={{ width: 90 }}>
+                    <option value="">UF</option>
+                    {UFS.map(u => <option key={u.sigla} value={u.sigla}>{u.sigla}</option>)}
+                  </Select>
                 </FormRow>
               )}
             </div>

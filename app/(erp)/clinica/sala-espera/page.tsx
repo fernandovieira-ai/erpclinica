@@ -165,6 +165,13 @@ export default function SalaEsperaPage() {
       .catch(() => {})
   }, [])
 
+  // Se o usuário logado está vinculado a um profissional, pré-seleciona o filtro
+  useEffect(() => {
+    fetch('/api/auth/me').then(r => r.json()).then(d => {
+      if (d.profissional_id) setProfFiltro(d.profissional_id)
+    }).catch(() => {})
+  }, [])
+
   // Estatísticas resumidas
   const stats = useMemo(() => {
     if (!agendamentos.length) return null

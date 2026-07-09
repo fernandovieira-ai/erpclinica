@@ -5,13 +5,15 @@ import { toast } from 'sonner'
 import {
   ChevronDown, ChevronUp, Pencil, Save, X, FileText, Stethoscope, Users, User,
   Activity, AlertTriangle, ClipboardList, Scale, HeartPulse, FlaskConical, Pill, ListChecks, Mic,
+  FileSignature, ExternalLink,
 } from 'lucide-react'
-import type { AgendamentoListItem, Prontuario } from '@/types/clinica.types'
+import type { AgendamentoListItem, Prontuario, ReceitaMedica } from '@/types/clinica.types'
 import VoaPluginView from './VoaPluginView'
+import MemedPrescricao from './MemedPrescricao'
 
 const STATUS_COLOR: Record<string, string> = {
   AGENDADO:   '#378ADD',
-  CONFIRMADO: '#0F6E56',
+  CONFIRMADO: '#7E57C2',
   AGUARDANDO: '#EF9F27',
   ATENDIDO:   '#1D9E75',
   FALTOU:     '#E24B4A',
@@ -27,7 +29,8 @@ const STATUS_LABEL: Record<string, string> = {
   CANCELADO:  'Cancelado',
 }
 
-const VOA_COR = '#7C3AED'
+const VOA_COR   = '#7C3AED'
+const MEMED_COR = '#059669'
 
 type FormState = {
   queixas:                 string
@@ -130,36 +133,53 @@ function CampoEdit({ label, value, onChange, area = true, placeholder }: {
   )
 }
 
-export default function HistoricoClinico({ pacienteId }: { pacienteId: number }) {
+interface Props {
+  pacienteId:       number
+  // Agendamento em atendimento no momento (ex: aberto pela sala de espera), ainda não
+  // necessariamente ATENDIDO — fixado na timeline mesmo sem histórico prévio, pra permitir
+  // preencher prontuário/emitir receita da consulta em andamento.
+  agendamentoAtual?: AgendamentoListItem | null
+}
+
+export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }: Props) {
   const [consultas,   setConsultas]   = useState<AgendamentoListItem[]>([])
   const [prontuarios, setProntuarios] = useState<Record<number, Prontuario>>({})
+  const [receitas,    setReceitas]    = useState<Record<number, ReceitaMedica[]>>({})
   const [loading,     setLoading]     = useState(true)
-  const [abertoId,    setAbertoId]    = useState<number | null>(null)
+  const [abertoId,    setAbertoId]    = useState<number | null>(agendamentoAtual?.id ?? null)
   const [editandoId,  setEditandoId]  = useState<number | null>(null)
   const [form,        setForm]        = useState<FormState>(CAMPOS_VAZIOS)
   const [salvando,    setSalvando]    = useState(false)
   const [voaAtivoId,  setVoaAtivoId]  = useState<number | null>(null)
+  const [receitaAtivaId, setReceitaAtivaId] = useState<number | null>(null)
 
   const carregar = useCallback(async () => {
     setLoading(true)
     try {
-      const [resAg, resPr] = await Promise.all([
+      const [resAg, resPr, resRe] = await Promise.all([
         fetch(`/api/clinica/agendamentos?${new URLSearchParams({ paciente_id: String(pacienteId), status: 'ATENDIDO' })}`),
         fetch(`/api/clinica/prontuarios?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
+        fetch(`/api/clinica/receitas?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
       ])
       const dataAg = await resAg.json()
       const dataPr = await resPr.json()
-      const lista: AgendamentoListItem[] = [...(dataAg.dados ?? [])].sort(
-        (a, b) => +new Date(b.data_hora_inicio) - +new Date(a.data_hora_inicio),
-      )
+      const dataRe = await resRe.json()
+      const lista: AgendamentoListItem[] = [...(dataAg.dados ?? [])]
+      if (agendamentoAtual && !lista.some(a => a.id === agendamentoAtual.id)) lista.push(agendamentoAtual)
+      lista.sort((a, b) => +new Date(b.data_hora_inicio) - +new Date(a.data_hora_inicio))
       const mapa: Record<number, Prontuario> = {}
       for (const p of (dataPr.dados ?? []) as Prontuario[]) mapa[p.agendamento_id] = p
+      const mapaReceitas: Record<number, ReceitaMedica[]> = {}
+      for (const r of (dataRe.dados ?? []) as ReceitaMedica[]) {
+        (mapaReceitas[r.agendamento_id] ??= []).push(r)
+      }
       setConsultas(lista)
       setProntuarios(mapa)
+      setReceitas(mapaReceitas)
     } finally {
       setLoading(false)
     }
-  }, [pacienteId])
+  }, [pacienteId, agendamentoAtual])
 
   useEffect(() => { carregar() }, [carregar])
 
@@ -168,6 +188,7 @@ export default function HistoricoClinico({ pacienteId }: { pacienteId: number })
     setEditandoId(ag.id)
     setAbertoId(ag.id)
     setVoaAtivoId(null)
+    setReceitaAtivaId(null)
   }
 
   function cancelarEdicao() {
@@ -345,18 +366,76 @@ export default function HistoricoClinico({ pacienteId }: { pacienteId: number })
                           </div>
                         )}
 
-                        <button
-                          type="button"
-                          onClick={() => iniciarEdicao(ag)}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: 4, marginTop: 10,
-                            padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
-                            background: 'none', border: '1px solid var(--borda-media)', borderRadius: 4,
-                            cursor: 'pointer', color: 'var(--cor-primaria)',
-                          }}
-                        >
-                          <Pencil size={12} /> {prontuario ? 'Editar prontuário' : 'Preencher prontuário'}
-                        </button>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                          <button
+                            type="button"
+                            onClick={() => iniciarEdicao(ag)}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 4,
+                              padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
+                              background: 'none', border: '1px solid var(--borda-media)', borderRadius: 4,
+                              cursor: 'pointer', color: 'var(--cor-primaria)',
+                            }}
+                          >
+                            <Pencil size={12} /> {prontuario ? 'Editar prontuário' : 'Preencher prontuário'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setReceitaAtivaId(receitaAtivaId === ag.id ? null : ag.id)}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 4,
+                              padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
+                              background: 'none', border: `1px solid ${MEMED_COR}`, borderRadius: 4,
+                              cursor: 'pointer', color: MEMED_COR,
+                            }}
+                          >
+                            <FileSignature size={12} /> Emitir Receita
+                          </button>
+                        </div>
+
+                        {receitaAtivaId === ag.id && (
+                          <div style={{ marginTop: 8 }}>
+                            <MemedPrescricao
+                              agendamentoId={ag.id}
+                              profissionalId={ag.profissional_id}
+                              onFechar={() => setReceitaAtivaId(null)}
+                              onEmitida={carregar}
+                            />
+                          </div>
+                        )}
+
+                        {!!receitas[ag.id]?.length && (
+                          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--texto-terciario)' }}>
+                              Receitas emitidas
+                            </div>
+                            {receitas[ag.id].map(r => (
+                              <div key={r.id} style={{
+                                display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+                                backgroundColor: 'var(--bg-input)', borderRadius: 5, fontSize: 12,
+                              }}>
+                                <FileSignature size={13} style={{ color: MEMED_COR, flexShrink: 0 }} />
+                                <span style={{ color: 'var(--texto-terciario)', fontFamily: 'var(--fonte-mono)', fontSize: 11 }}>
+                                  {new Date(r.created_at).toLocaleDateString('pt-BR')}
+                                </span>
+                                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--texto-principal)' }}>
+                                  {r.medicamentos || 'Receita emitida'}
+                                </span>
+                                {r.url_receita && (
+                                  <a
+                                    href={r.url_receita}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{ display: 'flex', alignItems: 'center', gap: 3, color: 'var(--cor-primaria)', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}
+                                  >
+                                    Ver/reimprimir <ExternalLink size={11} />
+                                  </a>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

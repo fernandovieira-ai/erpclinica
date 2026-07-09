@@ -150,6 +150,19 @@ export interface Prontuario {
   updated_at:              string
 }
 
+export interface ReceitaMedica {
+  id:                   number
+  empresa_id:           number
+  agendamento_id:       number
+  paciente_id:          number
+  profissional_id:      number
+  memed_prescricao_id:  string | null
+  url_receita:          string | null
+  medicamentos:         string | null
+  created_by:           string | null
+  created_at:           string
+}
+
 export interface ProfissionalListItem {
   id:              number
   nome:            string
