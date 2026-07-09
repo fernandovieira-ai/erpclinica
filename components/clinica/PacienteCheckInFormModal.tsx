@@ -519,6 +519,7 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
   const [cpfStatus,    setCpfStatus]    = useState<'valido' | 'invalido' | null>(null)
   const [recModalOpen, setRecModalOpen] = useState(false)
   const [pagosIds,     setPagosIds]     = useState<Set<number>>(new Set())
+  const [finalizando,  setFinalizando]  = useState(false)
 
   const [aba, setAba] = useState<'Cadastro' | 'Histórico Clínico'>('Cadastro')
 
@@ -606,6 +607,29 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
     setPagosIds(prev => new Set([...prev, ...pending.map(ag => ag.id)]))
     setRecModalOpen(false)
     onSaved?.()
+  }
+
+  async function finalizarAtendimento() {
+    if (!agendamento) return
+    setFinalizando(true)
+    try {
+      const res = await fetch(`/api/clinica/agendamentos/${agendamento.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'ATENDIDO' }),
+      })
+      if (res.ok) {
+        toast.success('Atendimento finalizado!')
+        onSaved?.()
+        onClose()
+      } else {
+        toast.error('Erro ao finalizar atendimento')
+      }
+    } catch {
+      toast.error('Erro ao finalizar atendimento')
+    } finally {
+      setFinalizando(false)
+    }
   }
 
   async function onSubmit(data: any) {
@@ -1226,6 +1250,29 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
             >
               <Save size={12} /> {saving ? 'Salvando...' : 'Salvar'}
             </button>
+            {agendamento && agendamento.status !== 'ATENDIDO' && (
+              <button
+                type="button"
+                disabled={finalizando}
+                onClick={finalizarAtendimento}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '6px 18px', borderRadius: 6,
+                  background: finalizando ? '#15a073' : 'linear-gradient(135deg,#1D9E75,#15a073)',
+                  color: '#fff', border: 'none',
+                  fontSize: 12, fontWeight: 700, cursor: finalizando ? 'not-allowed' : 'pointer',
+                  opacity: finalizando ? 0.75 : 1,
+                  boxShadow: '0 2px 8px rgba(29,158,117,0.35)',
+                  transition: 'opacity 0.15s, transform 0.1s',
+                  letterSpacing: '0.02em',
+                }}
+                onMouseEnter={e => { if (!finalizando) e.currentTarget.style.opacity = '0.88' }}
+                onMouseLeave={e => { if (!finalizando) e.currentTarget.style.opacity = '1' }}
+              >
+                <CheckCircle2 size={14} />
+                {finalizando ? 'Finalizando...' : 'Finalizar Atendimento'}
+              </button>
+            )}
           </div>
 
         </form>
@@ -1236,7 +1283,7 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
         {aba === 'Histórico Clínico' && (
           <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
             <HistoricoClinico pacienteId={paciente.id} agendamentoAtual={agendamento ?? null} />
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button
                 type="button"
                 onClick={onClose}
@@ -1248,6 +1295,29 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
               >
                 Fechar
               </button>
+              {agendamento && agendamento.status !== 'ATENDIDO' && (
+                <button
+                  type="button"
+                  disabled={finalizando}
+                  onClick={finalizarAtendimento}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '6px 18px', borderRadius: 6,
+                    background: finalizando ? '#15a073' : 'linear-gradient(135deg,#1D9E75,#15a073)',
+                    color: '#fff', border: 'none',
+                    fontSize: 12, fontWeight: 700, cursor: finalizando ? 'not-allowed' : 'pointer',
+                    opacity: finalizando ? 0.75 : 1,
+                    boxShadow: '0 2px 8px rgba(29,158,117,0.35)',
+                    transition: 'opacity 0.15s',
+                    letterSpacing: '0.02em',
+                  }}
+                  onMouseEnter={e => { if (!finalizando) e.currentTarget.style.opacity = '0.88' }}
+                  onMouseLeave={e => { if (!finalizando) e.currentTarget.style.opacity = '1' }}
+                >
+                  <CheckCircle2 size={14} />
+                  {finalizando ? 'Finalizando...' : 'Finalizar Atendimento'}
+                </button>
+              )}
             </div>
           </div>
         )}
