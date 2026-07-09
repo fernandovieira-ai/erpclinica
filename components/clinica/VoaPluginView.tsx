@@ -129,6 +129,8 @@ export default function VoaPluginView({ agendamentoId, doctorId, patientId, onFe
         // Registra listener antes do init para não perder o evento ready
         handler = (message) => {
           if (!message || typeof message.eventName !== 'string') return
+          // LOG TEMPORÁRIO — descobrir todos os eventos e payloads do SDK Voa
+          console.log('[Voa event]', message.eventName, message.eventData)
           switch (message.eventName) {
             case 'voa.plugin.error.auth':
               setStatus('error'); setErro('Sessão da Voa expirou ou o token é inválido.'); break
