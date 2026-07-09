@@ -59,7 +59,8 @@ const VOA_COR = '#7C3AED'
 const SCRIPT_SRC = 'https://integration.voa.health/plugin.js'
 let scriptPromise: Promise<void> | null = null
 let ultimoUnmountMs = 0
-const MIN_DELAY_REINIT = 400 // ms mínimos entre unmount e próximo init
+const MIN_DELAY_REINIT = 1000 // ms mínimos entre unmount e próximo init (servidor precisa fechar sessão anterior)
+const INIT_TIMEOUT_MS  = 15000 // timeout para o init() — evita ficar preso em "conectando..."
 
 function carregarScript(): Promise<void> {
   if (window.VoaPlugin) return Promise.resolve()
@@ -125,10 +126,7 @@ export default function VoaPluginView({ agendamentoId, doctorId, patientId, onFe
           throw new Error('Plugin da Voa indisponível')
         }
 
-        // Init primeiro — só registra o listener depois para evitar acúmulo
-        await window.VoaPlugin.instance.init({ token: data.token })
-        if (cancelado) return
-
+        // Registra listener antes do init para não perder o evento ready
         handler = (message) => {
           if (!message || typeof message.eventName !== 'string') return
           switch (message.eventName) {
@@ -152,6 +150,16 @@ export default function VoaPluginView({ agendamentoId, doctorId, patientId, onFe
           }
         }
         window.VoaPlugin.instance.addMessageListener(handler)
+
+        // Init com timeout — evita ficar preso em "conectando..." se o servidor
+        // ainda não fechou a sessão anterior com o mesmo consultationId
+        await Promise.race([
+          window.VoaPlugin.instance.init({ token: data.token }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Timeout ao conectar com a Voa. Tente novamente.')), INIT_TIMEOUT_MS)
+          ),
+        ])
+        if (cancelado) return
 
         window.VoaPlugin.instance.mount({
           doctorId:       String(doctorId),
