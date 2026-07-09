@@ -58,6 +58,8 @@ declare global {
 const VOA_COR = '#7C3AED'
 const SCRIPT_SRC = 'https://integration.voa.health/plugin.js'
 let scriptPromise: Promise<void> | null = null
+let ultimoUnmountMs = 0
+const MIN_DELAY_REINIT = 400 // ms mínimos entre unmount e próximo init
 
 function carregarScript(): Promise<void> {
   if (window.VoaPlugin) return Promise.resolve()
@@ -102,6 +104,13 @@ export default function VoaPluginView({ agendamentoId, doctorId, patientId, onFe
       setStatus('loading')
       setErro(null)
       try {
+        // Aguarda o SDK da Voa terminar o unmount anterior antes de reinicializar
+        const elapsed = Date.now() - ultimoUnmountMs
+        if (elapsed < MIN_DELAY_REINIT) {
+          await new Promise(r => setTimeout(r, MIN_DELAY_REINIT - elapsed))
+        }
+        if (cancelado) return
+
         const res  = await fetch('/api/voa/token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -115,6 +124,10 @@ export default function VoaPluginView({ agendamentoId, doctorId, patientId, onFe
         if (cancelado || !window.VoaPlugin || !containerRef.current) {
           throw new Error('Plugin da Voa indisponível')
         }
+
+        // Init primeiro — só registra o listener depois para evitar acúmulo
+        await window.VoaPlugin.instance.init({ token: data.token })
+        if (cancelado) return
 
         handler = (message) => {
           if (!message || typeof message.eventName !== 'string') return
@@ -139,9 +152,6 @@ export default function VoaPluginView({ agendamentoId, doctorId, patientId, onFe
           }
         }
         window.VoaPlugin.instance.addMessageListener(handler)
-
-        await window.VoaPlugin.instance.init({ token: data.token })
-        if (cancelado) return
 
         window.VoaPlugin.instance.mount({
           doctorId:       String(doctorId),
@@ -168,6 +178,7 @@ export default function VoaPluginView({ agendamentoId, doctorId, patientId, onFe
       cancelado = true
       if (handler) window.VoaPlugin?.instance?.removeMessageListener(handler)
       window.VoaPlugin?.instance?.unmount()
+      ultimoUnmountMs = Date.now()
     }
   }, [agendamentoId, doctorId, patientId, tentativa])
 
