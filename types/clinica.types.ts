@@ -163,6 +163,30 @@ export interface ReceitaMedica {
   created_at:           string
 }
 
+export interface ReceitaSistemaItem {
+  id:                 number
+  receita_id:         number
+  medicamento_nome:   string
+  codigo_produto:     string | null
+  apresentacao:       string | null
+  forma_farmaceutica: string | null
+  via_administracao:  string | null
+  posologia:          string
+  duracao:            string | null
+  quantidade:         string | null
+  ordem:              number
+}
+
+export interface ReceitaSistemaRegistro {
+  id:             number
+  agendamento_id: number
+  paciente_id:    number
+  observacoes:    string | null
+  created_by:     string | null
+  created_at:     string
+  itens:          ReceitaSistemaItem[]
+}
+
 export interface ProfissionalListItem {
   id:              number
   nome:            string

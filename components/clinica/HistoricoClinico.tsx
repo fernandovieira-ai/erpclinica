@@ -5,11 +5,13 @@ import { toast } from 'sonner'
 import {
   ChevronDown, ChevronUp, Pencil, Save, X, FileText, Stethoscope, Users, User,
   Activity, AlertTriangle, ClipboardList, Scale, HeartPulse, FlaskConical, Pill, ListChecks, Mic,
-  FileSignature, ExternalLink,
+  FileSignature, ExternalLink, Printer, Loader2,
 } from 'lucide-react'
-import type { AgendamentoListItem, Prontuario, ReceitaMedica } from '@/types/clinica.types'
+import type { AgendamentoListItem, Prontuario, ReceitaMedica, ReceitaSistemaRegistro } from '@/types/clinica.types'
 import VoaPluginView from './VoaPluginView'
 import MemedPrescricao from './MemedPrescricao'
+import ReceitaSistema from './ReceitaSistema'
+import { gerarHtmlReceita, type DadosPrescritor } from './receitaSistemaPrint'
 
 const STATUS_COLOR: Record<string, string> = {
   AGENDADO:   '#378ADD',
@@ -29,8 +31,9 @@ const STATUS_LABEL: Record<string, string> = {
   CANCELADO:  'Cancelado',
 }
 
-const VOA_COR   = '#7C3AED'
-const MEMED_COR = '#059669'
+const VOA_COR    = '#7C3AED'
+const MEMED_COR  = '#059669'
+const SISTEMA_COR = '#1E7FC3'
 
 type FormState = {
   queixas:                 string
@@ -145,6 +148,8 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
   const [consultas,   setConsultas]   = useState<AgendamentoListItem[]>([])
   const [prontuarios, setProntuarios] = useState<Record<number, Prontuario>>({})
   const [receitas,    setReceitas]    = useState<Record<number, ReceitaMedica[]>>({})
+  const [receitasSistema, setReceitasSistema] = useState<Record<number, ReceitaSistemaRegistro[]>>({})
+  const [reimprimindoId, setReimprimindoId] = useState<number | null>(null)
   const [loading,     setLoading]     = useState(true)
   const [abertoId,    setAbertoId]    = useState<number | null>(agendamentoAtual?.id ?? null)
   const [editandoId,  setEditandoId]  = useState<number | null>(null)
@@ -153,18 +158,21 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
   const [voaAtivoId,   setVoaAtivoId]   = useState<number | null>(null)
   const [voaMontadoId, setVoaMontadoId] = useState<number | null>(null)
   const [receitaAtivaId, setReceitaAtivaId] = useState<number | null>(null)
+  const [receitaSistemaId, setReceitaSistemaId] = useState<number | null>(null)
 
   const carregar = useCallback(async () => {
     setLoading(true)
     try {
-      const [resAg, resPr, resRe] = await Promise.all([
+      const [resAg, resPr, resRe, resRs] = await Promise.all([
         fetch(`/api/clinica/agendamentos?${new URLSearchParams({ paciente_id: String(pacienteId), status: 'ATENDIDO' })}`),
         fetch(`/api/clinica/prontuarios?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
         fetch(`/api/clinica/receitas?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
+        fetch(`/api/clinica/receitas-sistema?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
       ])
       const dataAg = await resAg.json()
       const dataPr = await resPr.json()
       const dataRe = await resRe.json()
+      const dataRs = await resRs.json()
       const lista: AgendamentoListItem[] = [...(dataAg.dados ?? [])]
       if (agendamentoAtual && !lista.some(a => a.id === agendamentoAtual.id)) lista.push(agendamentoAtual)
       lista.sort((a, b) => +new Date(b.data_hora_inicio) - +new Date(a.data_hora_inicio))
@@ -174,9 +182,14 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
       for (const r of (dataRe.dados ?? []) as ReceitaMedica[]) {
         (mapaReceitas[r.agendamento_id] ??= []).push(r)
       }
+      const mapaReceitasSistema: Record<number, ReceitaSistemaRegistro[]> = {}
+      for (const r of (dataRs.dados ?? []) as ReceitaSistemaRegistro[]) {
+        (mapaReceitasSistema[r.agendamento_id] ??= []).push(r)
+      }
       setConsultas(lista)
       setProntuarios(mapa)
       setReceitas(mapaReceitas)
+      setReceitasSistema(mapaReceitasSistema)
     } finally {
       setLoading(false)
     }
@@ -246,6 +259,29 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
       toast.success('Prontuário salvo!')
     } finally {
       setSalvando(false)
+    }
+  }
+
+  async function reimprimirReceitaSistema(reg: ReceitaSistemaRegistro, ag: AgendamentoListItem) {
+    setReimprimindoId(reg.id)
+    try {
+      const res = await fetch(`/api/clinica/receitas-sistema?dados=true&agendamento_id=${reg.agendamento_id}`)
+      const d = await res.json()
+      const dados: DadosPrescritor | null = d.dados ?? null
+      const itens = reg.itens.map(it => ({
+        nome:         it.medicamento_nome,
+        apresentacao: it.apresentacao,
+        posologia:    it.posologia,
+        duracao:      it.duracao,
+        quantidade:   it.quantidade,
+      }))
+      const html = gerarHtmlReceita(itens, reg.observacoes, dados, ag.paciente_nome, ag.profissional_nome)
+      const win = window.open('', '_blank', 'width=820,height=1050')
+      if (win) { win.document.write(html); win.document.close() }
+    } catch {
+      toast.error('Erro ao gerar receita para impressão')
+    } finally {
+      setReimprimindoId(null)
     }
   }
 
@@ -418,6 +454,19 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
                           >
                             <FileSignature size={12} /> Emitir Receita
                           </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setReceitaSistemaId(ag.id)}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 4,
+                              padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
+                              background: 'none', border: '1px solid #1E7FC3', borderRadius: 4,
+                              cursor: 'pointer', color: '#1E7FC3',
+                            }}
+                          >
+                            <FileText size={12} /> Emitir Receita Sistema
+                          </button>
                         </div>
 
                         {receitaAtivaId === ag.id && (
@@ -429,6 +478,16 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
                               onEmitida={carregar}
                             />
                           </div>
+                        )}
+
+                        {receitaSistemaId === ag.id && (
+                          <ReceitaSistema
+                            agendamentoId={ag.id}
+                            pacienteNome={ag.paciente_nome}
+                            profissionalNome={ag.profissional_nome}
+                            onFechar={() => setReceitaSistemaId(null)}
+                            onEmitida={() => { setReceitaSistemaId(null); carregar() }}
+                          />
                         )}
 
                         {!!receitas[ag.id]?.length && (
@@ -458,6 +517,44 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
                                     Ver/reimprimir <ExternalLink size={11} />
                                   </a>
                                 )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {!!receitasSistema[ag.id]?.length && (
+                          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--texto-terciario)' }}>
+                              Receitas do sistema emitidas
+                            </div>
+                            {receitasSistema[ag.id].map(r => (
+                              <div key={r.id} style={{
+                                display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+                                backgroundColor: 'var(--bg-input)', borderRadius: 5, fontSize: 12,
+                              }}>
+                                <FileText size={13} style={{ color: SISTEMA_COR, flexShrink: 0 }} />
+                                <span style={{ color: 'var(--texto-terciario)', fontFamily: 'var(--fonte-mono)', fontSize: 11 }}>
+                                  {new Date(r.created_at).toLocaleDateString('pt-BR')}
+                                </span>
+                                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--texto-principal)' }}>
+                                  {r.itens.map(it => it.medicamento_nome).join(', ') || 'Receita emitida'}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => reimprimirReceitaSistema(r, ag)}
+                                  disabled={reimprimindoId === r.id}
+                                  style={{
+                                    display: 'flex', alignItems: 'center', gap: 3,
+                                    background: 'none', border: 'none', cursor: 'pointer',
+                                    color: SISTEMA_COR, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
+                                    padding: 0, opacity: reimprimindoId === r.id ? 0.6 : 1,
+                                  }}
+                                >
+                                  {reimprimindoId === r.id
+                                    ? <Loader2 size={11} />
+                                    : <Printer size={11} />}
+                                  Ver/reimprimir
+                                </button>
                               </div>
                             ))}
                           </div>
