@@ -117,14 +117,19 @@ export async function POST(req: NextRequest) {
         const digits    = cpfCnpj.replace(/\D/g, '')
         const formatted = (digits.length === 11 || digits.length === 14) ? formatarCpfCnpj(digits) : cpfCnpj
         try {
-          const { rows: existentes } = await db.query<{ id: number; nome: string; cpf_cnpj: string; celular: string }>(
-            `SELECT id, nome, cpf_cnpj, celular FROM tab_pessoa
+          const { rows: existentes } = await db.query<{ id: number; nome: string; cpf_cnpj: string; celular: string; ind_paciente: boolean }>(
+            `SELECT id, nome, cpf_cnpj, celular, ind_paciente FROM tab_pessoa
              WHERE empresa_id = $1 AND (cpf_cnpj = $2 OR cpf_cnpj = $3) LIMIT 1`,
             [session.empresa_id_ativa, digits, formatted],
           )
           if (existentes.length > 0) {
+            const encontrada = existentes[0]
+            // Pessoa já existe (ex: cliente/fornecedor) mas ainda não é paciente — marca agora
+            if (!encontrada.ind_paciente) {
+              await db.query(`UPDATE tab_pessoa SET ind_paciente = true WHERE id = $1`, [encontrada.id])
+            }
             return NextResponse.json(
-              { erro: 'CPF já cadastrado', paciente_existente: existentes[0] },
+              { erro: 'CPF já cadastrado', paciente_existente: encontrada },
               { status: 409 },
             )
           }

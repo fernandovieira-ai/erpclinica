@@ -45,6 +45,8 @@ export const empresaSchema = z.object({
   // Vazio = manter o secret atual (nunca é devolvido pelo GET, ver rota de empresas)
   memed_secret_key:   z.string().max(120).optional().nullable(),
   memed_ambiente:     z.enum(['homologacao', 'producao']).default('homologacao'),
+  // Logo (data URL base64, redimensionada no cliente antes do envio)
+  logo_base64:        z.string().max(700_000, 'Imagem muito grande').startsWith('data:image/').optional().nullable(),
   // Status
   ativo:              z.boolean().default(true),
 })

@@ -285,3 +285,20 @@ END $$;
 ## 10. `novos/` nunca entra no build do Next
 
 `tsconfig.json` tem `"exclude": ["node_modules", "novos"]`. A pasta `novos/` é só rascunho/referência (migrations `.sql`, scaffolds de integrações futuras tipo Memed) — nunca importada pelo app real. Sem esse exclude, qualquer `.tsx` incompleto lá dentro (import quebrado, código de exemplo) quebra o `next build` de produção mesmo sem nunca ter sido usado.
+
+---
+
+## 11. PENDÊNCIA — login em produção 500 (PG_USER sem acesso a `saas_control`)
+
+> **AJUSTAR QUANDO SOLICITADO.** Buscar por "PENDÊNCIA" neste arquivo para achar rápido.
+
+Diagnosticado em 2026-07-10 (Railway, `erpclinica-production-5963`). POST `/api/auth/login` dava 500 sem log.
+
+**Causa raiz confirmada por teste direto de conexão:** em produção, `PG_USER`/`PG_PASSWORD` estão configurados com credenciais **do tenant** (`hiitcor`), que só têm `pg_hba.conf` liberado para o database `hiitcor`. `dbControl` ([lib/db/index.ts:29](lib/db/index.ts#L29)) conecta sempre no database `saas_control` (compartilhado, tem `tab_instancia`) — com a role `hiitcor` isso falha com `no pg_hba.conf entry for host ..., user "hiitcor", database "saas_control"`. Local funciona porque `.env.local` usa `PG_USER=user_dba` (admin, acesso a tudo).
+
+**Ação pendente:** trocar `PG_USER`/`PG_PASSWORD` no Railway para as credenciais do usuário admin (`user_dba`), ou liberar a role `hiitcor` no `pg_hba.conf` para o database `saas_control` também.
+
+**Relacionado, ainda pendente de decisão do usuário:**
+- [middleware.ts:5](middleware.ts#L5) tem `DEV_NO_AUTH = true` hardcoded (não lê mais env var) desde commit `6e86bf8` (2026-07-01) — desativa autenticação do ERP em produção para todas as rotas exceto `/admin`. Perguntar antes de reverter.
+- `JWT_SECRET` de produção foi colado em texto puro nesta conversa — considerar comprometido; rotacionar com `openssl rand -hex 64` quando o login estiver resolvido (invalida sessões ativas).
+- [app/api/auth/login/route.ts](app/api/auth/login/route.ts) já ganhou `try/catch` com `console.error('[login] erro interno:', err)` — manter esse padrão de log ao mexer nessa rota, senão erros voltam a ser 500 mudo.

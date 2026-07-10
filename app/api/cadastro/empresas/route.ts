@@ -71,10 +71,11 @@ export async function POST(req: NextRequest) {
        serie_nfce, prox_num_nfce, csc_nfce, id_token_nfce,
        voa_auth_token, voa_ambiente,
        memed_api_key, memed_secret_key, memed_ambiente,
+       logo_base64,
        ativo
      ) VALUES (
        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
-       $16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31
+       $16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32
      ) RETURNING id`,
     [
       up(d.razao_social), up(d.nome_fantasia), up(d.cnpj), up(d.ie), up(d.im),
@@ -86,6 +87,7 @@ export async function POST(req: NextRequest) {
       d.serie_nfce, d.prox_num_nfce, d.csc_nfce ?? null, d.id_token_nfce ?? null,
       d.voa_auth_token || null, d.voa_ambiente,
       d.memed_api_key || null, d.memed_secret_key || null, d.memed_ambiente,
+      d.logo_base64 || null,
       d.ativo,
     ],
   )

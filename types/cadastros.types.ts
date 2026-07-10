@@ -116,6 +116,7 @@ export interface Empresa {
   memed_api_key:                  string | null
   memed_ambiente:                 string
   memed_secret_key_configured:    boolean
+  logo_base64:       string | null
   ativo:             boolean
   created_at:        string
   updated_at:        string

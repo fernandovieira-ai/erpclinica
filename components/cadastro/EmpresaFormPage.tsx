@@ -1,11 +1,11 @@
 'use client'
 
-import { forwardRef, useEffect, useState } from 'react'
+import { forwardRef, useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Save, Trash2, ArrowLeft, Search, Plus, X, Eye, EyeOff } from 'lucide-react'
+import { Save, Trash2, ArrowLeft, Search, Plus, X, Eye, EyeOff, Upload, Image as ImageIcon } from 'lucide-react'
 import { empresaSchema, type EmpresaInput } from '@/lib/validators/empresa.schema'
 import type { Empresa } from '@/types/cadastros.types'
 
@@ -113,6 +113,36 @@ function mascaraCnpj(v: string) {
     .replace(/(\d{4})(\d)/, '$1-$2')
 }
 
+// Redimensiona a imagem no cliente (canvas) antes de gerar o data URL — mantém
+// o registro leve no banco e a exibição no dashboard nítida sem depender de upload de arquivo.
+function redimensionarImagem(file: File, maxDim: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error)
+    reader.onload = () => {
+      const img = new Image()
+      img.onerror = () => reject(new Error('Falha ao carregar imagem'))
+      img.onload = () => {
+        let { width, height } = img
+        if (width > maxDim || height > maxDim) {
+          const ratio = Math.min(maxDim / width, maxDim / height)
+          width = Math.round(width * ratio)
+          height = Math.round(height * ratio)
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        if (!ctx) { reject(new Error('Canvas indisponível')); return }
+        ctx.drawImage(img, 0, 0, width, height)
+        resolve(canvas.toDataURL('image/png'))
+      }
+      img.src = reader.result as string
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
 // ── Abas disponíveis ─────────────────────────────────────────────────────────
 const ABAS = [
   'Principal',
@@ -135,6 +165,9 @@ export default function EmpresaFormPage({ empresa }: Props) {
   const [tiposCobranca, setTiposCobranca] = useState<{ cod_tipo_cobranca: number; des_tipo_cobranca: string }[]>([])
   const [mostrarVoaToken, setMostrarVoaToken] = useState(false)
   const [mostrarMemedSecret, setMostrarMemedSecret] = useState(false)
+  const [logoPreview, setLogoPreview] = useState<string | null>(null)
+  const [processandoLogo, setProcessandoLogo] = useState(false)
+  const logoInputRef = useRef<HTMLInputElement>(null)
 
   const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<EmpresaInput>({
     resolver: zodResolver(empresaSchema),
@@ -189,9 +222,34 @@ export default function EmpresaFormPage({ empresa }: Props) {
       memed_api_key:     empresa.memed_api_key ?? '',
       memed_secret_key:  '', // nunca vem do GET — vazio no PATCH mantém o valor atual
       memed_ambiente:    (empresa.memed_ambiente ?? 'homologacao') as 'homologacao' | 'producao',
+      logo_base64:       empresa.logo_base64 ?? null,
       ativo:             empresa.ativo,
     })
+    setLogoPreview(empresa.logo_base64 ?? null)
   }, [empresa, reset])
+
+  async function handleLogoFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('image/')) { toast.error('Selecione um arquivo de imagem'); return }
+    if (file.size > 5 * 1024 * 1024) { toast.error('Imagem muito grande (máx. 5MB)'); return }
+    setProcessandoLogo(true)
+    try {
+      const dataUrl = await redimensionarImagem(file, 320)
+      setValue('logo_base64', dataUrl, { shouldDirty: true })
+      setLogoPreview(dataUrl)
+    } catch {
+      toast.error('Erro ao processar imagem')
+    } finally {
+      setProcessandoLogo(false)
+      e.target.value = ''
+    }
+  }
+
+  function removerLogo() {
+    setValue('logo_base64', null, { shouldDirty: true })
+    setLogoPreview(null)
+  }
 
   async function buscarCep() {
     const cep = watch('cep')?.replace(/\D/g, '')
@@ -415,6 +473,44 @@ export default function EmpresaFormPage({ empresa }: Props) {
             {/* Nome Fantasia */}
             <Row label="Nome Fantasia:">
               <Input {...register('nome_fantasia')} />
+            </Row>
+
+            {/* Logo da empresa */}
+            <Row label="Logo:">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 56, height: 56, borderRadius: 8, overflow: 'hidden', flexShrink: 0,
+                  border: '1px solid var(--borda-media)', backgroundColor: 'var(--bg-page)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  {logoPreview
+                    ? <img src={logoPreview} alt="Logo da empresa" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                    : <ImageIcon size={20} color="var(--texto-terciario)" />}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button type="button" onClick={() => logoInputRef.current?.click()} disabled={processandoLogo}
+                      style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
+                        background: 'none', border: '1px solid var(--borda-media)', borderRadius: 3,
+                        fontSize: 12, cursor: processandoLogo ? 'not-allowed' : 'pointer', color: 'var(--texto-secundario)' }}>
+                      <Upload size={12} /> {processandoLogo ? 'Processando...' : (logoPreview ? 'Trocar' : 'Escolher imagem')}
+                    </button>
+                    {logoPreview && (
+                      <button type="button" onClick={removerLogo}
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
+                          background: 'none', border: '1px solid var(--cor-erro)', borderRadius: 3,
+                          fontSize: 12, cursor: 'pointer', color: 'var(--cor-erro)' }}>
+                        <X size={12} /> Remover
+                      </button>
+                    )}
+                    <input ref={logoInputRef} type="file" accept="image/png,image/jpeg,image/webp"
+                      onChange={handleLogoFile} style={{ display: 'none' }} />
+                  </div>
+                  <span style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>
+                    PNG, JPG ou WEBP — exibida no dashboard ao lado do nome da empresa
+                  </span>
+                </div>
+              </div>
             </Row>
 
             {/* IE | IM */}
