@@ -7,13 +7,13 @@
    ================================================================ */
 
 :root {
-  --cor-primaria:        #0F6E56;
-  --cor-primaria-hover:  #085041;
-  --cor-primaria-light:  #E1F5EE;
-  --cor-primaria-text:   #085041;
+  --cor-primaria:        #12857A;
+  --cor-primaria-hover:  #0E6A62;
+  --cor-primaria-light:  #EDF5F3;
+  --cor-primaria-text:   #0B3A35;
 
-  --cor-sucesso:         #1D9E75;
-  --cor-sucesso-bg:      #E1F5EE;
+  --cor-sucesso:         var(--cor-primaria);
+  --cor-sucesso-bg:      var(--cor-primaria-light);
   --cor-erro:            #E24B4A;
   --cor-erro-bg:         #FCEBEB;
   --cor-aviso:           #EF9F27;
@@ -27,7 +27,7 @@
   --bg-hover:            #F1F0EC;
   --bg-sidebar:          #FFFFFF;
 
-  --sidebar-bg:          #14532d;
+  --sidebar-bg:          #0B3A35;
   --sidebar-fg:          #ffffff;
   --sidebar-muted:       rgba(255,255,255,0.55);
   --sidebar-hover:       rgba(255,255,255,0.08);

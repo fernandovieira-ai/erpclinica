@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="96" viewBox="0 0 400 96">
+
+<rect width="80" height="80" x="0" y="8" rx="22" fill="#12857A"></rect>
+<rect x="33.75" y="25.5" width="12.5" height="45" rx="6.25" fill="#FFFFFF"></rect>
+<rect x="17.5" y="41.75" width="45" height="12.5" rx="6.25" fill="#FFFFFF" opacity="0.55"></rect>
+<text x="100" y="66" font-size="46" letter-spacing="-1" fill="#FFFFFF">Vita<tspan fill="#7ECBBF">RF</tspan></text>
+</svg>

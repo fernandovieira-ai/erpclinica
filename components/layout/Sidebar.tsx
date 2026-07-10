@@ -134,7 +134,7 @@ export default function Sidebar({ session }: Props) {
     <aside className="sidebar">
       {/* Logo */}
       <div className="sidebar-logo">
-        DigitalRF Financeiro
+        <img src="/brand/logo-horizontal-branca.svg" alt="VitaRF" height={28} style={{ display: 'block' }} />
       </div>
 
       {/* Nav */}
