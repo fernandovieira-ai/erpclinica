@@ -72,10 +72,12 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
   const { valores } = body.data
 
-  await db.query('BEGIN')
+  const client = await db.connect()
   try {
+    await client.query('BEGIN')
+
     // Remove vínculos que não foram enviados (limpeza de zeros/removidos)
-    await db.query(
+    await client.query(
       `DELETE FROM tab_agendamento_tipo_categoria WHERE tipo_id = $1`,
       [tipoId],
     )
@@ -83,7 +85,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     // Insere apenas os que têm ao menos um valor > 0
     for (const v of valores) {
       if (v.valor > 0 || (v.valor_prazo ?? 0) > 0) {
-        await db.query(
+        await client.query(
           `INSERT INTO tab_agendamento_tipo_categoria (empresa_id, tipo_id, categoria_id, valor, valor_prazo)
            VALUES ($1, $2, $3, $4, $5)`,
           [session.empresa_id_ativa, tipoId, v.categoria_id, v.valor, v.valor_prazo ?? null],
@@ -91,11 +93,13 @@ export async function PUT(req: NextRequest, { params }: Params) {
       }
     }
 
-    await db.query('COMMIT')
+    await client.query('COMMIT')
   } catch (err) {
-    await db.query('ROLLBACK')
+    await client.query('ROLLBACK').catch(() => {})
     console.error('Erro ao salvar valores por categoria:', err)
     return NextResponse.json({ erro: 'Erro interno ao salvar' }, { status: 500 })
+  } finally {
+    client.release()
   }
 
   return NextResponse.json({ ok: true })

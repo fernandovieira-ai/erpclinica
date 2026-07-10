@@ -72,7 +72,13 @@ export default function AgendamentosWidget() {
   const carregar = useCallback(async () => {
     try {
       const res = await fetch('/api/dashboard/agendamentos')
-      if (!res.ok) return
+      if (!res.ok) {
+        // Sessão expirada ou erro transitório: recarrega a página para
+        // renovar a sessão (via requireSession) em vez de ficar travado
+        // exibindo dados desatualizados indefinidamente.
+        window.location.reload()
+        return
+      }
       setData(await res.json())
       setUpdate(new Date())
     } finally {
@@ -83,7 +89,18 @@ export default function AgendamentosWidget() {
   useEffect(() => {
     carregar()
     const id = setInterval(carregar, 60_000)
-    return () => clearInterval(id)
+
+    const aoFocar = () => {
+      if (document.visibilityState === 'visible') carregar()
+    }
+    document.addEventListener('visibilitychange', aoFocar)
+    window.addEventListener('focus', aoFocar)
+
+    return () => {
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', aoFocar)
+      window.removeEventListener('focus', aoFocar)
+    }
   }, [carregar])
 
   if (loading) {
