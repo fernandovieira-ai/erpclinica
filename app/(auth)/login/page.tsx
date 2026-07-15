@@ -1,7 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { Eye, EyeOff } from 'lucide-react'
+
+const STORAGE_KEY = 'login_dados_salvos'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -11,6 +14,22 @@ export default function LoginPage() {
   const [senha, setSenha] = useState('')
   const [erro,  setErro]  = useState('')
   const [loading, setLoading] = useState(false)
+  const [mostrarSenha, setMostrarSenha] = useState(false)
+  const [salvarDados, setSalvarDados] = useState(false)
+
+  useEffect(() => {
+    const salvo = localStorage.getItem(STORAGE_KEY)
+    if (salvo) {
+      try {
+        const { slug: s, email: e } = JSON.parse(salvo)
+        setSlug(s ?? '')
+        setEmail(e ?? '')
+        setSalvarDados(true)
+      } catch {
+        localStorage.removeItem(STORAGE_KEY)
+      }
+    }
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -28,6 +47,12 @@ export default function LoginPage() {
       if (!res.ok) {
         setErro(data.erro ?? 'Erro ao fazer login')
         return
+      }
+
+      if (salvarDados) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ slug, email }))
+      } else {
+        localStorage.removeItem(STORAGE_KEY)
       }
 
       if (data.status === 'ok') {
@@ -54,10 +79,8 @@ export default function LoginPage() {
 
           {/* Logo */}
           <div style={{ textAlign: 'center', marginBottom: 28 }}>
-            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--cor-primaria)' }}>
-              DigitalRF Financeiro
-            </div>
-            <div style={{ fontSize: 13, color: 'var(--texto-terciario)', marginTop: 4 }}>
+            <img src="/brand/logo-horizontal.svg" alt="VitaRF" height={36} style={{ display: 'inline-block' }} />
+            <div style={{ fontSize: 13, color: 'var(--texto-terciario)', marginTop: 8 }}>
               Acesse sua conta
             </div>
           </div>
@@ -91,15 +114,44 @@ export default function LoginPage() {
 
             <div>
               <label className="field-label">Senha</label>
-              <input
-                className="input-field"
-                type="password"
-                placeholder="••••••••"
-                value={senha}
-                onChange={e => setSenha(e.target.value)}
-                required
-              />
+              <div style={{ position: 'relative' }}>
+                <input
+                  className="input-field"
+                  type={mostrarSenha ? 'text' : 'password'}
+                  placeholder="••••••••"
+                  value={senha}
+                  onChange={e => setSenha(e.target.value)}
+                  required
+                  style={{ paddingRight: 36 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setMostrarSenha(v => !v)}
+                  aria-label={mostrarSenha ? 'Ocultar senha' : 'Mostrar senha'}
+                  style={{
+                    position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: 'none', border: 'none', padding: 4, cursor: 'pointer',
+                    color: 'var(--texto-terciario)',
+                  }}
+                >
+                  {mostrarSenha ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
             </div>
+
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              fontSize: 13, color: 'var(--texto-secundario)', cursor: 'pointer', userSelect: 'none',
+            }}>
+              <input
+                type="checkbox"
+                checked={salvarDados}
+                onChange={e => setSalvarDados(e.target.checked)}
+                style={{ width: 14, height: 14, accentColor: 'var(--cor-primaria)', cursor: 'pointer' }}
+              />
+              Salvar dados de acesso
+            </label>
 
             {erro && (
               <div style={{
@@ -127,7 +179,7 @@ export default function LoginPage() {
       </div>
 
       <div style={{ textAlign: 'center', marginTop: 16, fontSize: 12, color: 'var(--texto-terciario)' }}>
-        DigitalRF © {new Date().getFullYear()}
+        VitaRF © {new Date().getFullYear()}
       </div>
     </div>
   )
