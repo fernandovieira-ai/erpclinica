@@ -32,11 +32,11 @@ const Select = forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HTMLSele
   },
 )
 
-function Row({ label, children, error }: { label: string; children: React.ReactNode; error?: string }) {
+function Row({ label, children, error, labelWidth = 160 }: { label: string; children: React.ReactNode; error?: string; labelWidth?: number }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', alignItems: 'start', gap: '2px 6px', minHeight: 24 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: `${labelWidth}px 1fr`, alignItems: 'start', gap: '2px 6px', minHeight: 24 }}>
       <label style={{ textAlign: 'right', fontSize: 12, color: 'var(--texto-secundario)', whiteSpace: 'nowrap', paddingRight: 2, paddingTop: 4 }}>{label}</label>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>{children}</div>
         {error && <span style={{ fontSize: 11, color: 'var(--cor-erro)' }}>{error}</span>}
       </div>
@@ -46,6 +46,25 @@ function Row({ label, children, error }: { label: string; children: React.ReactN
 
 function Sep() {
   return <div style={{ height: 1, backgroundColor: 'var(--borda-suave)', margin: '4px 0' }} />
+}
+
+function TituloColuna({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--cor-primaria)', paddingBottom: 6, marginBottom: 4, borderBottom: '1px solid var(--borda-suave)' }}>
+      {children}
+    </div>
+  )
+}
+
+function RowValor({ label, value, color }: { label: string; value: number; color?: string }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', alignItems: 'center', gap: '2px 6px', minHeight: 24 }}>
+      <label style={{ textAlign: 'right', fontSize: 12, color: 'var(--texto-secundario)', whiteSpace: 'nowrap', paddingRight: 2 }}>{label}</label>
+      <span style={{ padding: '3px 6px', fontSize: 12, fontFamily: 'var(--fonte-mono)', fontWeight: 700, textAlign: 'right', color: color ?? 'var(--texto-principal)' }}>
+        {value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+      </span>
+    </div>
+  )
 }
 
 // ── Modal picker genérico ─────────────────────────────────────────────────────
@@ -121,7 +140,7 @@ type ContaBancoItem   = { id: number; mnemonico: string; banco_nome: string | nu
 
 type PickerKey = 'pessoa' | 'tipo_despesa' | 'tipo_cobranca' | 'centro_custo' | 'conta_banco' | 'conta_banco_liq'
 
-const ABAS = ['Dados', 'Valores', 'Complemento'] as const
+const ABAS = ['Dados', 'Complemento'] as const
 type Aba = typeof ABAS[number]
 
 // ── Componente principal ──────────────────────────────────────────────────────
@@ -209,13 +228,13 @@ export default function TituloPagarFormPage({ titulo }: Props) {
   async function liquidar() {
     const destino = watch('destino_liquidacao')
     if (!destino) {
-      toast.error('Selecione o destino de liquidação (Caixa ou Banco) na aba Valores.')
-      setAba('Valores')
+      toast.error('Selecione o destino de liquidação (Caixa ou Banco).')
+      setAba('Dados')
       return
     }
     if (destino === 'B' && !watch('conta_banco_liq_id')) {
-      toast.error('Selecione a conta bancária de liquidação na aba Valores.')
-      setAba('Valores')
+      toast.error('Selecione a conta bancária de liquidação.')
+      setAba('Dados')
       return
     }
     if (!watch('data_liquidacao')) setValue('data_liquidacao', today)
@@ -248,23 +267,24 @@ export default function TituloPagarFormPage({ titulo }: Props) {
     } finally { setDeleting(false) }
   }
 
-  function LookupField({ label, nome, onOpen, onClear, error, disabled }: {
-    label:     string
-    nome:      string
-    onOpen:    () => void
-    onClear:   () => void
-    error?:    string
-    disabled?: boolean
+  function LookupField({ label, nome, onOpen, onClear, error, disabled, labelWidth }: {
+    label:       string
+    nome:        string
+    onOpen:      () => void
+    onClear:     () => void
+    error?:      string
+    disabled?:   boolean
+    labelWidth?: number
   }) {
     return (
-      <Row label={label} error={error}>
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
+      <Row label={label} error={error} labelWidth={labelWidth}>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
           <input readOnly value={nome} onClick={disabled ? undefined : onOpen}
             placeholder={disabled ? '' : 'Clique para selecionar...'}
-            style={{ flex: 1, padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: nome ? 'var(--texto-principal)' : 'var(--texto-terciario)', border: error ? '1px solid var(--cor-erro)' : '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, cursor: disabled ? 'default' : 'pointer', outline: 'none', opacity: disabled ? 0.65 : 1 }}
+            style={{ flex: 1, minWidth: 0, padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: nome ? 'var(--texto-principal)' : 'var(--texto-terciario)', border: error ? '1px solid var(--cor-erro)' : '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, cursor: disabled ? 'default' : 'pointer', outline: 'none', opacity: disabled ? 0.65 : 1 }}
           />
-          {!disabled && <button type="button" onClick={onOpen} style={{ padding: '2px 6px', border: '1px solid var(--borda-media)', borderRadius: 3, background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><Search size={12} /></button>}
-          {!disabled && nome && <button type="button" onClick={onClear} style={{ padding: '2px 4px', border: 'none', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--texto-terciario)' }}><X size={12} /></button>}
+          {!disabled && <button type="button" onClick={onOpen} style={{ padding: '2px 6px', border: '1px solid var(--borda-media)', borderRadius: 3, background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}><Search size={12} /></button>}
+          {!disabled && nome && <button type="button" onClick={onClear} style={{ padding: '2px 4px', border: 'none', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--texto-terciario)', flexShrink: 0 }}><X size={12} /></button>}
         </div>
       </Row>
     )
@@ -389,170 +409,169 @@ export default function TituloPagarFormPage({ titulo }: Props) {
         {/* Campos */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
 
-          {/* ══════════════ ABA DADOS ══════════════ */}
-          {aba === 'Dados' && (<>
+          {/* ══════════════ ABA DADOS — 2 colunas: Identificação | Valores ══════════════ */}
+          {aba === 'Dados' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 32px', alignItems: 'start' }}>
 
-            <LookupField
-              label="Pessoa / Fornecedor:*"
-              nome={nomePessoa}
-              onOpen={() => setPicker('pessoa')}
-              onClear={() => { setValue('pessoa_id', 0); setNomePessoa('') }}
-              error={errors.pessoa_id?.message}
-              disabled={bloqueado}
-            />
-            <LookupField
-              label="Tipo de Despesa:"
-              nome={nomeTipoDespesa}
-              onOpen={() => setPicker('tipo_despesa')}
-              onClear={() => { setValue('tipo_despesa_id', null); setNomeTipoDespesa('') }}
-              disabled={bloqueado}
-            />
-            <LookupField
-              label="Tipo de Cobrança:"
-              nome={nomeTipoCobranca}
-              onOpen={() => setPicker('tipo_cobranca')}
-              onClear={() => { setValue('cod_tipo_cobranca', null); setNomeTipoCobranca('') }}
-              disabled={bloqueado}
-            />
-            <LookupField
-              label="Centro de Custo:"
-              nome={nomeCentro}
-              onOpen={() => setPicker('centro_custo')}
-              onClear={() => { setValue('centro_custo_id', null); setNomeCentro('') }}
-              disabled={bloqueado}
-            />
+              {/* ── Coluna 1: Identificação ── */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <TituloColuna>Identificação</TituloColuna>
 
-            <Sep />
+                <LookupField
+                  label="Pessoa / Fornecedor:*"
+                  nome={nomePessoa}
+                  onOpen={() => setPicker('pessoa')}
+                  onClear={() => { setValue('pessoa_id', 0); setNomePessoa('') }}
+                  error={errors.pessoa_id?.message}
+                  disabled={bloqueado}
+                  labelWidth={130}
+                />
+                <LookupField
+                  label="Tipo de Despesa:"
+                  nome={nomeTipoDespesa}
+                  onOpen={() => setPicker('tipo_despesa')}
+                  onClear={() => { setValue('tipo_despesa_id', null); setNomeTipoDespesa('') }}
+                  disabled={bloqueado}
+                  labelWidth={130}
+                />
+                <LookupField
+                  label="Tipo de Cobrança:"
+                  nome={nomeTipoCobranca}
+                  onOpen={() => setPicker('tipo_cobranca')}
+                  onClear={() => { setValue('cod_tipo_cobranca', null); setNomeTipoCobranca('') }}
+                  disabled={bloqueado}
+                  labelWidth={130}
+                />
+                <LookupField
+                  label="Centro de Custo:"
+                  nome={nomeCentro}
+                  onOpen={() => setPicker('centro_custo')}
+                  onClear={() => { setValue('centro_custo_id', null); setNomeCentro('') }}
+                  disabled={bloqueado}
+                  labelWidth={130}
+                />
 
-            <Row label="Nº Título:">
-              <Input {...register('numero_titulo')} disabled={bloqueado} style={{ width: 180, opacity: bloqueado ? 0.65 : 1 }} />
-            </Row>
-            <Row label="Nº Documento:">
-              <Input {...register('num_documento')} disabled={bloqueado} style={{ width: 220, opacity: bloqueado ? 0.65 : 1 }} />
-            </Row>
+                <Sep />
 
-            <Sep />
+                <Row label="Nº Título:" labelWidth={130}>
+                  <Input {...register('numero_titulo')} disabled={bloqueado} style={{ width: '100%', opacity: bloqueado ? 0.65 : 1 }} />
+                </Row>
+                <Row label="Nº Documento:" labelWidth={130}>
+                  <Input {...register('num_documento')} disabled={bloqueado} style={{ width: '100%', opacity: bloqueado ? 0.65 : 1 }} />
+                </Row>
 
-            <Row label="Data Emissão:*" error={errors.data_emissao?.message}>
-              <input type="date" {...register('data_emissao')} disabled={bloqueado}
-                style={{ padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: errors.data_emissao ? '1px solid var(--cor-erro)' : '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, outline: 'none', opacity: bloqueado ? 0.65 : 1 }} />
-            </Row>
-            <Row label="Data Vencimento:*" error={errors.data_vencimento?.message}>
-              <input type="date" {...register('data_vencimento')} disabled={bloqueado}
-                style={{ padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: errors.data_vencimento ? '1px solid var(--cor-erro)' : '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, outline: 'none', opacity: bloqueado ? 0.65 : 1 }} />
-            </Row>
-            <Row label="Data Competência:">
-              <input type="date" {...register('data_competencia')} disabled={bloqueado}
-                style={{ padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, outline: 'none', opacity: bloqueado ? 0.65 : 1 }} />
-            </Row>
+                <Sep />
 
-            <Sep />
+                <Row label="Data Emissão:*" error={errors.data_emissao?.message} labelWidth={130}>
+                  <input type="date" {...register('data_emissao')} disabled={bloqueado}
+                    style={{ width: '100%', padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: errors.data_emissao ? '1px solid var(--cor-erro)' : '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, outline: 'none', opacity: bloqueado ? 0.65 : 1 }} />
+                </Row>
+                <Row label="Data Vencimento:*" error={errors.data_vencimento?.message} labelWidth={130}>
+                  <input type="date" {...register('data_vencimento')} disabled={bloqueado}
+                    style={{ width: '100%', padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: errors.data_vencimento ? '1px solid var(--cor-erro)' : '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, outline: 'none', opacity: bloqueado ? 0.65 : 1 }} />
+                </Row>
+                <Row label="Data Competência:" labelWidth={130}>
+                  <input type="date" {...register('data_competencia')} disabled={bloqueado}
+                    style={{ width: '100%', padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, outline: 'none', opacity: bloqueado ? 0.65 : 1 }} />
+                </Row>
 
-            <Row label="Status:">
-              <Select {...register('status')} disabled={bloqueado} style={{ width: 180, opacity: bloqueado ? 0.65 : 1 }}>
-                <option value="A">A — Aberto</option>
-                <option value="L">L — Liquidado</option>
-                <option value="C">C — Cancelado</option>
-              </Select>
-            </Row>
+                <Sep />
 
-            <Row label="Requer Aprovação:">
-              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: bloqueado ? 'default' : 'pointer', userSelect: 'none', color: 'var(--texto-principal)', opacity: bloqueado ? 0.65 : 1 }}>
-                <input type="checkbox" {...register('requer_aprovacao')} disabled={bloqueado} style={{ cursor: bloqueado ? 'default' : 'pointer', width: 13, height: 13, accentColor: 'var(--cor-primaria)' }} />
-                Sim
-              </label>
-            </Row>
+                <Row label="Status:" labelWidth={130}>
+                  <Select {...register('status')} disabled={bloqueado} style={{ width: '100%', opacity: bloqueado ? 0.65 : 1 }}>
+                    <option value="A">A — Aberto</option>
+                    <option value="L">L — Liquidado</option>
+                    <option value="C">C — Cancelado</option>
+                  </Select>
+                </Row>
 
-            {watch('requer_aprovacao') && (
-              <Row label="Status Aprovação:">
-                <Select {...register('status_aprovacao')} disabled={bloqueado} style={{ width: 180, opacity: bloqueado ? 0.65 : 1 }}>
-                  <option value="">— Selecione —</option>
-                  <option value="P">P — Pendente</option>
-                  <option value="A">A — Aprovado</option>
-                  <option value="R">R — Rejeitado</option>
-                </Select>
-              </Row>
-            )}
-          </>)}
+                <Row label="Requer Aprovação:" labelWidth={130}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: bloqueado ? 'default' : 'pointer', userSelect: 'none', color: 'var(--texto-principal)', opacity: bloqueado ? 0.65 : 1 }}>
+                    <input type="checkbox" {...register('requer_aprovacao')} disabled={bloqueado} style={{ cursor: bloqueado ? 'default' : 'pointer', width: 13, height: 13, accentColor: 'var(--cor-primaria)' }} />
+                    Sim
+                  </label>
+                </Row>
 
-          {/* ══════════════ ABA VALORES ══════════════ */}
-          {aba === 'Valores' && (<>
+                {watch('requer_aprovacao') && (
+                  <Row label="Status Aprovação:" labelWidth={130}>
+                    <Select {...register('status_aprovacao')} disabled={bloqueado} style={{ width: '100%', opacity: bloqueado ? 0.65 : 1 }}>
+                      <option value="">— Selecione —</option>
+                      <option value="P">P — Pendente</option>
+                      <option value="A">A — Aprovado</option>
+                      <option value="R">R — Rejeitado</option>
+                    </Select>
+                  </Row>
+                )}
+              </div>
 
-            <Row label="Valor Original:*" error={errors.valor_original?.message}>
-              <MoneyInput value={watch('valor_original')} onValue={n => setValue('valor_original', n, { shouldValidate: true })} disabled={bloqueado} error={!!errors.valor_original} style={{ width: 160 }} />
-            </Row>
-            <Row label="Juros:">
-              <MoneyInput value={watch('valor_juros')} onValue={n => setValue('valor_juros', n)} disabled={bloqueado} style={{ width: 160 }} />
-            </Row>
-            <Row label="Multa:">
-              <MoneyInput value={watch('valor_multa')} onValue={n => setValue('valor_multa', n)} disabled={bloqueado} style={{ width: 160 }} />
-            </Row>
-            <Row label="Desconto:">
-              <MoneyInput value={watch('valor_desconto')} onValue={n => setValue('valor_desconto', n)} disabled={bloqueado} style={{ width: 160 }} />
-            </Row>
-            <Row label="Retenção:">
-              <MoneyInput value={watch('valor_retencao')} onValue={n => setValue('valor_retencao', n)} disabled={bloqueado} style={{ width: 160 }} />
-            </Row>
+              {/* ── Coluna 2: Valores ── */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <TituloColuna>Valores</TituloColuna>
 
-            <Sep />
+                <Row label="Valor Original:*" error={errors.valor_original?.message} labelWidth={130}>
+                  <MoneyInput value={watch('valor_original')} onValue={n => setValue('valor_original', n, { shouldValidate: true })} disabled={bloqueado} error={!!errors.valor_original} style={{ width: '100%' }} />
+                </Row>
+                <Row label="Juros:" labelWidth={130}>
+                  <MoneyInput value={watch('valor_juros')} onValue={n => setValue('valor_juros', n)} disabled={bloqueado} style={{ width: '100%' }} />
+                </Row>
+                <Row label="Multa:" labelWidth={130}>
+                  <MoneyInput value={watch('valor_multa')} onValue={n => setValue('valor_multa', n)} disabled={bloqueado} style={{ width: '100%' }} />
+                </Row>
+                <Row label="Desconto:" labelWidth={130}>
+                  <MoneyInput value={watch('valor_desconto')} onValue={n => setValue('valor_desconto', n)} disabled={bloqueado} style={{ width: '100%' }} />
+                </Row>
+                <Row label="Retenção:" labelWidth={130}>
+                  <MoneyInput value={watch('valor_retencao')} onValue={n => setValue('valor_retencao', n)} disabled={bloqueado} style={{ width: '100%' }} />
+                </Row>
 
-            {/* Totalizador calculado */}
-            <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', alignItems: 'start', gap: '2px 6px' }}>
-              <label style={{ textAlign: 'right', fontSize: 12, color: 'var(--texto-secundario)', paddingRight: 2, paddingTop: 4 }}>Valor Líquido:</label>
-              <span style={{ padding: '3px 6px', fontSize: 12, fontFamily: 'var(--fonte-mono)', fontWeight: 700, color: 'var(--texto-principal)' }}>
-                {valorLiquido.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-              </span>
+                <RowValor label="Valor Líquido:" value={valorLiquido} color="var(--cor-primaria)" />
+                <RowValor label="Saldo:" value={valorSaldo} color={valorSaldo > 0 ? 'var(--cor-aviso)' : 'var(--cor-sucesso)'} />
+
+                <Sep />
+
+                <Row label="Data Liquidação:" labelWidth={130}>
+                  <input type="date" {...register('data_liquidacao')} disabled={bloqueado}
+                    style={{ width: '100%', padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, outline: 'none', opacity: bloqueado ? 0.65 : 1 }} />
+                </Row>
+                <Row label="Valor Liquidado:" labelWidth={130}>
+                  <MoneyInput value={watch('valor_liquidado')} onValue={n => setValue('valor_liquidado', n)} disabled={bloqueado} style={{ width: '100%' }} />
+                  {!bloqueado && (
+                    <button type="button"
+                      title="Preencher com valor líquido (liquidação total)"
+                      onClick={() => setValue('valor_liquidado', parseFloat(valorLiquido.toFixed(2)))}
+                      style={{ display: 'flex', alignItems: 'center', padding: '3px 6px', border: '1px solid var(--borda-media)', borderRadius: 3, background: 'none', cursor: 'pointer', color: 'var(--texto-secundario)', flexShrink: 0 }}>
+                      <CopyCheck size={12} />
+                    </button>
+                  )}
+                </Row>
+                <Row label="Destino Liquidação:" labelWidth={130}>
+                  <Select
+                    {...register('destino_liquidacao')}
+                    disabled={bloqueado}
+                    onChange={e => {
+                      setValue('destino_liquidacao', (e.target.value as 'C' | 'B') || null)
+                      if (e.target.value !== 'B') { setValue('conta_banco_liq_id', null); setNomeContaBancoLiq('') }
+                    }}
+                    style={{ width: '100%', opacity: bloqueado ? 0.65 : 1 }}
+                  >
+                    <option value="">— Selecione —</option>
+                    <option value="C">Caixa</option>
+                    <option value="B">Banco</option>
+                  </Select>
+                </Row>
+                {(destLiq === 'B' || (bloqueado && titulo?.conta_banco_liq_id)) && (
+                  <LookupField
+                    label="Conta Bancária Liq.:"
+                    nome={nomeContaBancoLiq}
+                    onOpen={() => setPicker('conta_banco_liq')}
+                    onClear={() => { setValue('conta_banco_liq_id', null); setNomeContaBancoLiq('') }}
+                    disabled={bloqueado}
+                    labelWidth={130}
+                  />
+                )}
+              </div>
             </div>
-
-            <Sep />
-
-            <Row label="Data Liquidação:">
-              <input type="date" {...register('data_liquidacao')} disabled={bloqueado}
-                style={{ padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, outline: 'none', opacity: bloqueado ? 0.65 : 1 }} />
-            </Row>
-            <Row label="Valor Liquidado:">
-              <MoneyInput value={watch('valor_liquidado')} onValue={n => setValue('valor_liquidado', n)} disabled={bloqueado} style={{ width: 160 }} />
-              {!bloqueado && (
-                <button type="button"
-                  title="Preencher com valor líquido (liquidação total)"
-                  onClick={() => setValue('valor_liquidado', parseFloat(valorLiquido.toFixed(2)))}
-                  style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', border: '1px solid var(--borda-media)', borderRadius: 3, background: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--texto-secundario)', whiteSpace: 'nowrap' }}>
-                  <CopyCheck size={12} /> Liq. total
-                </button>
-              )}
-            </Row>
-            <Row label="Destino Liquidação:">
-              <Select
-                {...register('destino_liquidacao')}
-                disabled={bloqueado}
-                onChange={e => {
-                  setValue('destino_liquidacao', (e.target.value as 'C' | 'B') || null)
-                  if (e.target.value !== 'B') { setValue('conta_banco_liq_id', null); setNomeContaBancoLiq('') }
-                }}
-                style={{ width: 180, opacity: bloqueado ? 0.65 : 1 }}
-              >
-                <option value="">— Selecione —</option>
-                <option value="C">Caixa</option>
-                <option value="B">Banco</option>
-              </Select>
-            </Row>
-            {(destLiq === 'B' || (bloqueado && titulo?.conta_banco_liq_id)) && (
-              <LookupField
-                label="Conta Bancária Liq.:"
-                nome={nomeContaBancoLiq}
-                onOpen={() => setPicker('conta_banco_liq')}
-                onClear={() => { setValue('conta_banco_liq_id', null); setNomeContaBancoLiq('') }}
-                disabled={bloqueado}
-              />
-            )}
-
-            <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', alignItems: 'start', gap: '2px 6px' }}>
-              <label style={{ textAlign: 'right', fontSize: 12, color: 'var(--texto-secundario)', paddingRight: 2, paddingTop: 4 }}>Saldo:</label>
-              <span style={{ padding: '3px 6px', fontSize: 12, fontFamily: 'var(--fonte-mono)', fontWeight: 700, color: valorSaldo > 0 ? 'var(--cor-aviso)' : 'var(--cor-sucesso)' }}>
-                {valorSaldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-              </span>
-            </div>
-          </>)}
+          )}
 
           {/* ══════════════ ABA COMPLEMENTO ══════════════ */}
           {aba === 'Complemento' && (<>
