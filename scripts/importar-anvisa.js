@@ -306,10 +306,13 @@ function barra(atual, total, largura = 30) {
     for (let t = 0; t < 4; t++) {
       const result = await page.evaluate(async ({ pag, porPag }) => {
         try {
+          const ctrl = new AbortController()
+          const timer = setTimeout(() => ctrl.abort(), 12000)
           const r = await fetch(
             `/api/consulta/medicamento/produtos/?column=&count=${porPag}&page=${pag}&filter[checkNotificado]=false&filter[checkRegistrado]=true&filter[situacaoRegistro]=V&order=asc`,
-            { headers: { Authorization: 'Guest', Accept: 'application/json' } }
+            { headers: { Authorization: 'Guest', Accept: 'application/json' }, signal: ctrl.signal }
           )
+          clearTimeout(timer)
           const text = await r.text()
           if (!text || text.trimStart().startsWith('<')) return { _err: `HTML status=${r.status}` }
           return { data: JSON.parse(text) }
@@ -379,7 +382,8 @@ function barra(atual, total, largura = 30) {
       ok = await page.evaluate(async () => {
         try {
           const r = await fetch('/api/consulta/medicamento/produtos/?count=1&page=1&filter[checkRegistrado]=true&filter[checkNotificado]=false&filter[situacaoRegistro]=V', {
-            headers: { Authorization: 'Guest', Accept: 'application/json' }
+            headers: { Authorization: 'Guest', Accept: 'application/json' },
+            signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined
           })
           const text = await r.text()
           JSON.parse(text)
@@ -397,19 +401,22 @@ function barra(atual, total, largura = 30) {
     const lote = codigos.slice(idx, idx + BATCH)
     idx += BATCH
 
-    // Buscar lote no browser (paralelo)
+    // Buscar lote no browser (paralelo) com timeout de 12s por request
     const detalhes = await page.evaluate(async (lote) => {
       const headers = { 'Authorization': 'Guest', 'Accept': 'application/json' }
       return Promise.all(lote.map(async (cod) => {
         try {
-          const r = await fetch(`/api/consulta/medicamento/produtos/codigo/${cod}`, { headers })
+          const ctrl = new AbortController()
+          const timer = setTimeout(() => ctrl.abort(), 12000)
+          const r = await fetch(`/api/consulta/medicamento/produtos/codigo/${cod}`, { headers, signal: ctrl.signal })
+          clearTimeout(timer)
           const text = await r.text()
           if (!text || text.trimStart().startsWith('<')) return { _erro: `HTML status=${r.status}` }
           const d = JSON.parse(text)
           return d
         } catch (e) { return { _erro: e.message } }
       }))
-    }, lote)
+    }, lote).catch(() => lote.map(() => ({ _erro: 'evaluate_timeout' })))
 
     // Pausa entre lotes para nao saturar o servidor
     await page.waitForTimeout(600)
