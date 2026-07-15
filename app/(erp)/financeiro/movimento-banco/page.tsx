@@ -25,6 +25,7 @@ const ORIGEM_COR: Record<string, string> = {
   'Tít. Receber': 'var(--cor-sucesso)',
   'Despesa':      '#e07b00',
   'Receita':      'var(--cor-primaria)',
+  'Cartão':       'var(--cor-sucesso)',
   'Manual':       'var(--texto-terciario)',
 }
 

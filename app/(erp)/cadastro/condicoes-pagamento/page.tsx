@@ -8,6 +8,10 @@ import type { CondicaoPagamentoListItem, CondicaoPagamentoListResponse } from '@
 
 const TIPO_LABEL: Record<string, string> = { V: 'À Vista', P: 'A Prazo' }
 
+const TIPO_PAGAMENTO_LABEL: Record<string, string> = {
+  dinheiro: 'Dinheiro', debito: 'Débito', credito: 'Crédito', pix: 'PIX', a_prazo: 'A Prazo',
+}
+
 export default function CondicoesPagamentoPage() {
   const router = useRouter()
   const [dados,   setDados]   = useState<CondicaoPagamentoListItem[]>([])
@@ -81,13 +85,14 @@ export default function CondicoesPagamentoPage() {
                   <th style={{ width: 90 }}>Parcelas</th>
                   <th style={{ width: 110 }}>Intervalo (dias)</th>
                   <th style={{ width: 100 }}>Entrada (%)</th>
+                  <th style={{ width: 130 }}>Pagamento</th>
                   <th style={{ width: 80 }}>Status</th>
                   <th style={{ width: 80 }}></th>
                 </tr>
               </thead>
               <tbody>
-                {loading && <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--texto-terciario)' }}>Carregando...</td></tr>}
-                {!loading && dados.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40, color: 'var(--texto-terciario)' }}>Nenhuma condição de pagamento encontrada</td></tr>}
+                {loading && <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: 'var(--texto-terciario)' }}>Carregando...</td></tr>}
+                {!loading && dados.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', padding: 40, color: 'var(--texto-terciario)' }}>Nenhuma condição de pagamento encontrada</td></tr>}
                 {!loading && dados.map(c => (
                   <tr key={c.id}>
                     <td style={{ fontFamily: 'var(--fonte-mono)', color: 'var(--texto-terciario)', fontSize: 12 }}>{c.id}</td>
@@ -101,6 +106,14 @@ export default function CondicoesPagamentoPage() {
                     <td style={{ fontSize: 12, textAlign: 'center', color: 'var(--texto-secundario)' }}>{c.tipo === 'V' ? '—' : `${c.intervalo_dias}d`}</td>
                     <td style={{ fontSize: 12, textAlign: 'center', color: 'var(--texto-secundario)' }}>
                       {Number(c.entrada_pct) > 0 ? `${Number(c.entrada_pct).toFixed(2)}%` : '—'}
+                    </td>
+                    <td style={{ fontSize: 12 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span>{TIPO_PAGAMENTO_LABEL[c.tipo_pagamento] ?? c.tipo_pagamento}</span>
+                        {(c.tipo_pagamento === 'debito' || c.tipo_pagamento === 'credito') && c.adquirente && (
+                          <span style={{ fontSize: 10, color: 'var(--texto-terciario)' }}>{c.adquirente} · {c.bandeira}</span>
+                        )}
+                      </div>
                     </td>
                     <td><span className={`badge-status ${c.ativo ? 'badge-pago' : 'badge-cancelado'}`}>{c.ativo ? 'Ativo' : 'Inativo'}</span></td>
                     <td>

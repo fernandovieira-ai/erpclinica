@@ -455,15 +455,18 @@ export interface CondicaoPagamento {
   num_parcelas:       number
   intervalo_dias:     number
   entrada_pct:        string
-  tipo_pagamento:     'dinheiro' | 'debito' | 'credito' | 'pix'
-  conta_banco_pix_id: number | null
-  ativo:              boolean
-  created_at:         string
+  tipo_pagamento:       'dinheiro' | 'debito' | 'credito' | 'pix' | 'a_prazo'
+  conta_banco_pix_id:   number | null
+  conta_banco_cartao_id: number | null
+  adquirente:           string | null
+  bandeira:             string
+  ativo:                boolean
+  created_at:           string
 }
 
 export type CondicaoPagamentoListItem = Pick<
   CondicaoPagamento,
-  'id' | 'descricao' | 'tipo' | 'num_parcelas' | 'intervalo_dias' | 'entrada_pct' | 'tipo_pagamento' | 'ativo'
+  'id' | 'descricao' | 'tipo' | 'num_parcelas' | 'intervalo_dias' | 'entrada_pct' | 'tipo_pagamento' | 'adquirente' | 'bandeira' | 'ativo'
 >
 
 export interface CondicaoPagamentoListResponse {
@@ -711,4 +714,64 @@ export interface UsuarioListResponse {
   page:   number
   limit:  number
   pages:  number
+}
+
+// ─── Fluxo de Caixa (Gerencial) ────────────────────────────────────────────────
+
+export interface FluxoCaixaKpis {
+  saldoCaixa:      number
+  saldoBanco:      number
+  saldoTotal:      number
+  entradasHoje:    number
+  saidasHoje:      number
+  resultadoHoje:   number
+  entradasPeriodo: number
+  saidasPeriodo:   number
+  aReceberAberto:  number
+  aReceberVencido: number
+  aPagarAberto:    number
+  aPagarVencido:   number
+  nReceberVencido: number
+  nPagarVencido:   number
+  aReceberCartao:  number
+}
+
+export interface FluxoCaixaSeriePonto {
+  data:     string
+  entradas: number
+  saidas:   number
+  saldo:    number
+}
+
+export interface FluxoCaixaOrigem {
+  origem:   string
+  entradas: number
+  saidas:   number
+}
+
+export interface FluxoCaixaProjecaoBucket {
+  label:    string
+  aReceber: number
+  aPagar:   number
+}
+
+export interface FluxoCaixaMovimento {
+  id:             number
+  conta:          string
+  tipo:           'E' | 'S'
+  valor:          number
+  data_movimento: string
+  documento:      string | null
+  observacao:     string | null
+  origem:         string
+}
+
+export interface FluxoCaixaResponse {
+  periodoDias: number
+  hoje:        string
+  kpis:        FluxoCaixaKpis
+  serie:       FluxoCaixaSeriePonto[]
+  origem:      FluxoCaixaOrigem[]
+  projecao:    FluxoCaixaProjecaoBucket[]
+  movimentos:  FluxoCaixaMovimento[]
 }

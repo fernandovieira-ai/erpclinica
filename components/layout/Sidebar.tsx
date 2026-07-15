@@ -12,7 +12,7 @@ import {
   BarChart3, Activity,
   FileOutput, FileInput, FileUp, FileDown,
   ListTree, MinusCircle, PlusCircle, CalendarClock,
-  Timer,
+  Timer, RefreshCcw,
 } from 'lucide-react'
 import { useState } from 'react'
 import type { Session } from '@/types/session'
@@ -51,12 +51,14 @@ const NAV: NavItem[] = [
     label: 'Financeiro', icon: <DollarSign size={16} />,
     children: [
       { label: 'Títulos a Pagar',  href: '/financeiro/titulos-pagar',    icon: <FileOutput size={14} /> },
-      { label: 'Contas a Receber', href: '/financeiro/contas-receber',   icon: <FileInput size={14} /> },
+      { label: 'Títulos a Receber', href: '/financeiro/contas-receber',   icon: <FileInput size={14} /> },
       { label: 'Despesas',         href: '/financeiro/despesas',         icon: <TrendingDown size={14} /> },
       { label: 'Receitas',         href: '/financeiro/receitas',         icon: <TrendingUp size={14} /> },
       { label: 'Movimento Caixa',  href: '/financeiro/movimento-caixa',  icon: <Banknote size={14} /> },
       { label: 'Movimento Banco',  href: '/financeiro/movimento-banco',  icon: <Building2 size={14} /> },
       { label: 'Conciliação',      href: '/financeiro/conciliacao',      icon: <ArrowLeftRight size={14} /> },
+      { label: 'Vendas no Cartão',  href: '/financeiro/cartao-vendas',  icon: <CreditCard size={14} /> },
+      { label: 'Faturas de Cartão', href: '/financeiro/cartao-faturas', icon: <RefreshCcw size={14} /> },
     ],
   },
   {

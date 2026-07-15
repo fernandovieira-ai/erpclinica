@@ -62,6 +62,7 @@ interface Props {
   onClose: () => void
   onSaved?: () => void
   ocultarRecebimento?: boolean
+  ocultarFinalizar?: boolean
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -498,7 +499,7 @@ function BuscarPessoa({
   )
 }
 
-export default function PacienteCheckInFormModal({ open, paciente, agendamento, agendamentos, onClose, onSaved, ocultarRecebimento }: Props) {
+export default function PacienteCheckInFormModal({ open, paciente, agendamento, agendamentos, onClose, onSaved, ocultarRecebimento, ocultarFinalizar }: Props) {
   const { register, watch, setValue, handleSubmit, reset } = useForm({
     defaultValues: {
       tipo_pessoa: 'F',
@@ -1257,7 +1258,7 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
             >
               <Save size={12} /> {saving ? 'Salvando...' : 'Salvar'}
             </button>
-            {agendamento && agendamento.status !== 'ATENDIDO' && (
+            {!ocultarFinalizar && agendamento && agendamento.status !== 'ATENDIDO' && (
               <button
                 type="button"
                 disabled={finalizando}
@@ -1302,7 +1303,7 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
               >
                 Fechar
               </button>
-              {agendamento && agendamento.status !== 'ATENDIDO' && (
+              {!ocultarFinalizar && agendamento && agendamento.status !== 'ATENDIDO' && (
                 <button
                   type="button"
                   disabled={finalizando}

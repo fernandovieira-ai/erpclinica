@@ -16,6 +16,7 @@ interface RecebimentoItem {
 interface RecebimentoPayload {
   condicao_pagamento_id: number
   observacao?: string
+  nsu?: string | null
   itens: RecebimentoItem[]
 }
 
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { rows: condRows } = await client.query(
-      'SELECT tipo_pagamento, conta_banco_pix_id, num_parcelas, intervalo_dias, entrada_pct FROM tab_condicao_pagamento WHERE id = $1',
+      'SELECT tipo_pagamento, conta_banco_pix_id, conta_banco_cartao_id, num_parcelas, intervalo_dias, entrada_pct FROM tab_condicao_pagamento WHERE id = $1',
       [payload.condicao_pagamento_id],
     )
     if (condRows.length === 0) {
@@ -59,17 +60,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ erro: 'Condição de pagamento não encontrada' }, { status: 404 })
     }
 
-    const tipoPagamento   = condRows[0].tipo_pagamento
-    const contaBancoPixId = condRows[0].conta_banco_pix_id
-    const numParcelas     = parseInt(condRows[0].num_parcelas) || 1
-    const intervaloDias   = parseInt(condRows[0].intervalo_dias) || 30
-    const entradaPct      = parseFloat(condRows[0].entrada_pct) || 0
+    const tipoPagamento      = condRows[0].tipo_pagamento
+    const contaBancoPixId    = condRows[0].conta_banco_pix_id
+    const contaBancoCartaoId = condRows[0].conta_banco_cartao_id
+    const numParcelas        = parseInt(condRows[0].num_parcelas) || 1
+    const intervaloDias      = parseInt(condRows[0].intervalo_dias) || 30
+    const entradaPct         = parseFloat(condRows[0].entrada_pct) || 0
 
-    const isAPrazo = tipoPagamento === 'a_prazo'
+    const isAPrazo  = tipoPagamento === 'a_prazo'
+    const isCartao  = tipoPagamento === 'debito' || tipoPagamento === 'credito'
 
     if (tipoPagamento === 'pix' && !contaBancoPixId) {
       await client.query('ROLLBACK')
       return NextResponse.json({ erro: 'PIX sem conta bancária configurada' }, { status: 400 })
+    }
+    if (isCartao && !contaBancoCartaoId) {
+      await client.query('ROLLBACK')
+      return NextResponse.json({ erro: 'Condição de pagamento de cartão sem conta bancária configurada — cadastre a conta em Cadastros → Cond. Pagamento' }, { status: 400 })
     }
 
     const pacienteId    = payload.itens[0].paciente_id
@@ -94,6 +101,7 @@ export async function POST(req: NextRequest) {
     let titulo_id: number | null = null
     let movimento_id: number | null = null
     let movimento_banco_id: number | null = null
+    let venda_cartao_id: number | null = null
 
     if (isAPrazo) {
       // Cria N títulos independentes, um por parcela — padrão ERP correto.
@@ -148,6 +156,29 @@ export async function POST(req: NextRequest) {
           if (i === 1) titulo_id = id
         }
       }
+    } else if (isCartao) {
+      // Débito/Crédito → gera a venda no cartão (com parcelas previstas via
+      // trigger). Nenhum movimento de caixa/banco agora — o dinheiro só vira
+      // saldo em conta quando a Fatura de Cartão for confirmada.
+      try {
+        const { rows: vendaRows } = await client.query(
+          `INSERT INTO tab_venda_cartao (
+            empresa_id, conta_banco_id, condicao_pagamento_id, valor_bruto,
+            nsu, data_venda, observacao, created_by
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+          RETURNING id`,
+          [
+            session.empresa_id_ativa, contaBancoCartaoId, payload.condicao_pagamento_id, totalGeral,
+            payload.nsu ? payload.nsu.trim().toUpperCase() : null,
+            dataMovimento, `Recebimento - ${ids.length} consulta(s)`, session.nome ?? 'sistema',
+          ],
+        )
+        venda_cartao_id = vendaRows[0].id
+      } catch (err) {
+        await client.query('ROLLBACK')
+        const message = err instanceof Error ? err.message : 'Erro ao registrar venda no cartão'
+        return NextResponse.json({ erro: message }, { status: 400 })
+      }
     } else {
       // Pagamento à vista → movimento caixa ou banco (sem título)
       if (tipoPagamento === 'pix') {
@@ -196,14 +227,14 @@ export async function POST(req: NextRequest) {
         `INSERT INTO tab_recebimento_consulta (
           empresa_id, agendamento_id, paciente_id, condicao_pagamento_id,
           valor_original, valor_desconto, valor_acrescimo, valor_recebido, total_recebimento,
-          batch_agendamento_id, movimento_caixa_id, movimento_banco_id,
+          batch_agendamento_id, movimento_caixa_id, movimento_banco_id, venda_cartao_id,
           data_recebimento, status_recebimento, observacao, created_by
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
         [
           session.empresa_id_ativa, item.agendamento_id, item.paciente_id, payload.condicao_pagamento_id,
           item.valor_original, item.valor_desconto, item.valor_acrescimo,
           item.valor_recebido, item.total_recebimento,
-          batchAgendamentoId, movimento_id, movimento_banco_id,
+          batchAgendamentoId, movimento_id, movimento_banco_id, venda_cartao_id,
           item.data_recebimento, statusRecebimento,
           payload.observacao || null,
           session.nome ?? 'sistema',
@@ -224,6 +255,7 @@ export async function POST(req: NextRequest) {
       titulo_receber_id: titulo_id,
       movimento_caixa_id: movimento_id,
       movimento_banco_id,
+      venda_cartao_id,
       tipo_pagamento: tipoPagamento,
       total: totalGeral,
       agendamentos: ids.length,

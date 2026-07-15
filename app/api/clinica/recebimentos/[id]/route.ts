@@ -102,13 +102,27 @@ export async function DELETE(
 
     // 3. Todos os recebimentos do lote (mesmo batch_agendamento_id)
     const { rows: todosRecRows } = await client.query(
-      `SELECT id, movimento_caixa_id, movimento_banco_id FROM tab_recebimento_consulta
+      `SELECT id, movimento_caixa_id, movimento_banco_id, venda_cartao_id FROM tab_recebimento_consulta
        WHERE empresa_id = $1 AND batch_agendamento_id = $2`,
       [session.empresa_id_ativa, batchAgendamentoId]
     )
     const todosRecIds    = todosRecRows.map((r: { id: number }) => r.id)
     const recMovCaixaIds = todosRecRows.map((r: { movimento_caixa_id: number | null }) => r.movimento_caixa_id).filter((x): x is number => x != null)
     const recMovBancoIds = todosRecRows.map((r: { movimento_banco_id: number | null }) => r.movimento_banco_id).filter((x): x is number => x != null)
+    const vendaCartaoIds = [...new Set(todosRecRows.map((r: { venda_cartao_id: number | null }) => r.venda_cartao_id).filter((x): x is number => x != null))]
+
+    // Venda no cartão só pode ser desfeita enquanto nenhuma parcela tiver
+    // sido faturada/conciliada — depois disso o valor já está comprometido
+    // com uma fatura (e possivelmente já virou movimento bancário).
+    if (vendaCartaoIds.length > 0) {
+      const { rows: parcelasNaoPendentes } = await client.query(
+        `SELECT 1 FROM tab_venda_cartao_parcela WHERE venda_cartao_id = ANY($1::int[]) AND status <> 'PENDENTE' LIMIT 1`,
+        [vendaCartaoIds]
+      )
+      if (parcelasNaoPendentes.length > 0) {
+        return NextResponse.json({ erro: 'Este recebimento já tem parcela de cartão faturada/conciliada e não pode mais ser estornado automaticamente' }, { status: 400 })
+      }
+    }
 
     await client.query('BEGIN')
 
@@ -149,6 +163,12 @@ export async function DELETE(
     // D. Deleta títulos
     if (tituloIds.length > 0) {
       await client.query(`DELETE FROM tab_titulo_receber WHERE id = ANY($1::int[])`, [tituloIds])
+    }
+
+    // E. Desfaz a venda no cartão (já validado acima que nenhuma parcela saiu de PENDENTE)
+    if (vendaCartaoIds.length > 0) {
+      await client.query(`DELETE FROM tab_venda_cartao_parcela WHERE venda_cartao_id = ANY($1::int[])`, [vendaCartaoIds])
+      await client.query(`DELETE FROM tab_venda_cartao WHERE id = ANY($1::int[])`, [vendaCartaoIds])
     }
 
     await client.query('COMMIT')

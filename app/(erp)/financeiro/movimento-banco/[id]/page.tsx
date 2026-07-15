@@ -30,6 +30,7 @@ export default async function EditarMovimentoBancoPage({ params }: { params: { i
             mb.created_by,
             mb.created_at,
             CASE
+              WHEN mb.origem_modulo     = 'CARTAO' THEN 'Cartão'
               WHEN mb.titulo_pagar_id   IS NOT NULL THEN 'Tít. Pagar'
               WHEN mb.titulo_receber_id IS NOT NULL THEN 'Tít. Receber'
               WHEN mb.despesa_id        IS NOT NULL THEN 'Despesa'
@@ -37,6 +38,7 @@ export default async function EditarMovimentoBancoPage({ params }: { params: { i
               ELSE 'Manual'
             END AS origem_tipo,
             CASE
+              WHEN mb.origem_modulo = 'CARTAO' THEN mb.observacao
               WHEN mb.titulo_pagar_id IS NOT NULL THEN
                 COALESCE(td_tp.descricao, tp.num_documento, tp.numero_titulo)
               WHEN mb.titulo_receber_id IS NOT NULL THEN

@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { Save, Trash2, ArrowLeft, Plus, X } from 'lucide-react'
 import { condicaoPagamentoSchema, type CondicaoPagamentoInput } from '@/lib/validators/condicao-pagamento.schema'
 import type { CondicaoPagamento } from '@/types/cadastros.types'
+import TaxaCartaoInline from '@/components/financeiro/cartao/TaxaCartaoInline'
 
 interface Props { condicao?: CondicaoPagamento }
 
@@ -58,11 +59,12 @@ export default function CondicaoPagamentoFormPage({ condicao }: Props) {
 
   const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<CondicaoPagamentoInput>({
     resolver: zodResolver(condicaoPagamentoSchema),
-    defaultValues: { tipo: 'V', num_parcelas: 1, intervalo_dias: 30, entrada_pct: 0, tipo_pagamento: 'dinheiro', conta_banco_pix_id: null, ativo: true },
+    defaultValues: { tipo: 'V', num_parcelas: 1, intervalo_dias: 30, entrada_pct: 0, tipo_pagamento: 'dinheiro', conta_banco_pix_id: null, conta_banco_cartao_id: null, adquirente: '', bandeira: 'TODAS', ativo: true },
   })
 
   const tipo = watch('tipo')
   const tipoPagamento = watch('tipo_pagamento')
+  const isCartao = tipoPagamento === 'debito' || tipoPagamento === 'credito'
 
   useEffect(() => {
     fetch('/api/cadastro/contas-banco?ativo=true&limit=100')
@@ -81,9 +83,29 @@ export default function CondicaoPagamentoFormPage({ condicao }: Props) {
       entrada_pct:         Number(condicao.entrada_pct),
       tipo_pagamento:      condicao.tipo_pagamento ?? 'dinheiro',
       conta_banco_pix_id:  condicao.conta_banco_pix_id ? Number(condicao.conta_banco_pix_id) : null,
+      conta_banco_cartao_id: condicao.conta_banco_cartao_id ? Number(condicao.conta_banco_cartao_id) : null,
+      adquirente:          condicao.adquirente ?? '',
+      bandeira:            condicao.bandeira ?? 'TODAS',
       ativo:               condicao.ativo,
     })
-  }, [condicao, reset, contas])
+  // contas é usado só para popular as opções do <select> — não deve
+  // disparar um reset do formulário quando o fetch assíncrono terminar,
+  // senão apaga o que o usuário já tiver digitado/selecionado.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [condicao, reset])
+
+  // Os selects de conta bancária (PIX/Cartão) só existem quando a
+  // condição correspondente já está ativa, e suas <option> só existem
+  // depois que `contas` carrega (fetch assíncrono). Se o reset acima
+  // rodar antes de `contas` chegar, o valor não tem <option> pra casar
+  // e o select fica em branco — por isso reaplicamos só esses dois
+  // valores (via setValue, não reset) assim que `contas` estiver pronto.
+  useEffect(() => {
+    if (!condicao || contas.length === 0) return
+    if (condicao.conta_banco_pix_id)    setValue('conta_banco_pix_id', Number(condicao.conta_banco_pix_id))
+    if (condicao.conta_banco_cartao_id) setValue('conta_banco_cartao_id', Number(condicao.conta_banco_cartao_id))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contas])
 
   useEffect(() => {
     if (tipo === 'V') {
@@ -229,6 +251,52 @@ export default function CondicaoPagamentoFormPage({ condicao }: Props) {
             </Row>
           )}
 
+          {/* Adquirente/Bandeira — visíveis apenas quando tipo_pagamento = débito/crédito */}
+          {isCartao && (
+            <>
+              <Row label="Adquirente:*">
+                <Input list="lista-adquirentes" {...register('adquirente')}
+                  placeholder="Ex.: STONE, CIELO, REDE..."
+                  style={{ width: 220, border: errors.adquirente ? '1px solid var(--cor-erro)' : undefined }} />
+                <datalist id="lista-adquirentes">
+                  <option value="STONE" /><option value="CIELO" /><option value="REDE" />
+                  <option value="GETNET" /><option value="SAFRAPAY" /><option value="MERCADO PAGO" />
+                  <option value="PAGSEGURO" /><option value="SICREDI" />
+                </datalist>
+                {errors.adquirente && <span style={{ fontSize: 11, color: 'var(--cor-erro)', whiteSpace: 'nowrap' }}>{errors.adquirente.message}</span>}
+              </Row>
+
+              <Row label="Bandeira:">
+                <Select {...register('bandeira')} style={{ width: 180 }}>
+                  <option value="TODAS">Todas</option>
+                  <option value="VISA">Visa</option>
+                  <option value="MASTERCARD">Mastercard</option>
+                  <option value="ELO">Elo</option>
+                  <option value="AMEX">American Express</option>
+                  <option value="HIPERCARD">Hipercard</option>
+                </Select>
+              </Row>
+
+              <Row label="Conta Bancária (Cartão):*">
+                <Select
+                  {...register('conta_banco_cartao_id', {
+                    setValueAs: v => v ? parseInt(v, 10) : null,
+                  })}
+                  style={{ width: 250, border: errors.conta_banco_cartao_id ? '1px solid var(--cor-erro)' : undefined }}>
+                  <option value="">Selecione uma conta...</option>
+                  {contas.map(c => (
+                    <option key={c.id} value={String(c.id)}>{c.mnemonico} {c.banco_nome ? `(${c.banco_nome})` : ''}</option>
+                  ))}
+                </Select>
+                {errors.conta_banco_cartao_id && <span style={{ fontSize: 11, color: 'var(--cor-erro)', whiteSpace: 'nowrap' }}>{errors.conta_banco_cartao_id.message}</span>}
+              </Row>
+              <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginLeft: 0 }}>
+                Conta que recebe o depósito da maquininha/adquirente.
+              </div>
+            </>
+          )}
+
+
           <div style={{ height: 1, backgroundColor: 'var(--borda-suave)', margin: '4px 0' }} />
 
           {/* Campos de parcelamento — visíveis apenas quando tipo = P */}
@@ -287,8 +355,8 @@ export default function CondicaoPagamentoFormPage({ condicao }: Props) {
 
         </div>
 
-        {/* Coluna direita — resumo */}
-        <div style={{ width: 200, flexShrink: 0 }}>
+        {/* Coluna direita — resumo + taxas de cartão */}
+        <div style={{ width: isCartao ? 300 : 200, flexShrink: 0 }}>
           <fieldset style={{ border: '1px solid var(--borda-media)', borderRadius: 4, padding: '8px 14px 12px' }}>
             <legend style={{ fontSize: 11, fontWeight: 600, color: 'var(--texto-secundario)', padding: '0 6px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Resumo</legend>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 6, fontSize: 12 }}>
@@ -316,8 +384,27 @@ export default function CondicaoPagamentoFormPage({ condicao }: Props) {
                   )}
                 </>
               )}
+              {isCartao && (
+                <>
+                  <div style={{ height: 1, backgroundColor: 'var(--borda-suave)' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--texto-terciario)' }}>Adquirente:</span>
+                    <span style={{ fontWeight: 600 }}>{watch('adquirente') || '—'}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--texto-terciario)' }}>Bandeira:</span>
+                    <span style={{ fontWeight: 600 }}>{watch('bandeira') || 'TODAS'}</span>
+                  </div>
+                </>
+              )}
             </div>
           </fieldset>
+
+          {isCartao && (
+            <div style={{ marginTop: 12 }}>
+              <TaxaCartaoInline condicaoPagamentoId={condicao?.id} />
+            </div>
+          )}
         </div>
 
       </div>

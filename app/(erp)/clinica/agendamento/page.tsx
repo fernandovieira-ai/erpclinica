@@ -97,6 +97,7 @@ export default function AgendamentoPage() {
   const [pacienteDados, setPacienteDados] = useState<any>(null)
   const [agendamentoAtual, setAgendamentoAtual] = useState<AgendamentoListItem | null>(null)
   const [agendamentosAtuais, setAgendamentosAtuais] = useState<AgendamentoListItem[]>([])
+  const [modalPacienteOcultarFinalizar, setModalPacienteOcultarFinalizar] = useState(false)
 
   // Relógio ao vivo para calcular tempo de espera em tempo real
   const [agora, setAgora] = useState(() => new Date())
@@ -301,7 +302,7 @@ export default function AgendamentoPage() {
     }
   }
 
-  async function abrirModalPaciente(ag: AgendamentoListItem, e: React.MouseEvent) {
+  async function abrirModalPaciente(ag: AgendamentoListItem, e: React.MouseEvent, ocultarFinalizar = false) {
     e.stopPropagation()
     try {
       const res = await fetch(`/api/cadastro/pessoas/${ag.paciente_id}`)
@@ -315,6 +316,7 @@ export default function AgendamentoPage() {
         setPacienteDados(data)
         setAgendamentoAtual(ag)
         setAgendamentosAtuais(todosNoDia.length > 1 ? todosNoDia : [])
+        setModalPacienteOcultarFinalizar(ocultarFinalizar)
         setModalPacienteOpen(true)
       }
     } catch (err) {
@@ -327,6 +329,7 @@ export default function AgendamentoPage() {
     setPacienteDados(null)
     setAgendamentoAtual(null)
     setAgendamentosAtuais([])
+    setModalPacienteOcultarFinalizar(false)
   }
 
   function abrirNovoProximoDisponivel() {
@@ -1296,7 +1299,7 @@ export default function AgendamentoPage() {
                     if (ag.status === 'AGUARDANDO') {
                       marcarChegada(ag, e)
                     } else {
-                      abrirModalPaciente(ag, e)
+                      abrirModalPaciente(ag, e, true)
                     }
                   }}
                   title={ag.status === 'AGUARDANDO' && ag.horario_chegada
@@ -1468,6 +1471,7 @@ export default function AgendamentoPage() {
         agendamentos={agendamentosAtuais}
         onClose={fecharModalPaciente}
         onSaved={carregar}
+        ocultarFinalizar={modalPacienteOcultarFinalizar}
       />
     </>
   )

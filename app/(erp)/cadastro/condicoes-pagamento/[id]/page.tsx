@@ -10,7 +10,7 @@ export default async function EditarCondicaoPagamentoPage({ params }: { params: 
   const db = getDb(session.database_name)
   const { rows } = await db.query<CondicaoPagamento>(
     `SELECT id, empresa_id, descricao, tipo, num_parcelas, intervalo_dias, entrada_pct,
-            tipo_pagamento, conta_banco_pix_id, ativo, created_at
+            tipo_pagamento, conta_banco_pix_id, conta_banco_cartao_id, adquirente, bandeira, ativo, created_at
      FROM tab_condicao_pagamento
      WHERE id = $1 AND empresa_id = $2`,
     [params.id, session.empresa_id_ativa],

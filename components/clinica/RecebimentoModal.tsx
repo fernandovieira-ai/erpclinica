@@ -30,6 +30,7 @@ interface FormRecebimento {
   desconto: number
   acrescimo: number
   observacao: string
+  nsu: string
 }
 
 function fmtValor(v: number) {
@@ -59,10 +60,12 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
     desconto: 0,
     acrescimo: 0,
     observacao: '',
+    nsu: '',
   })
 
   const listaAgs = (agendamentos && agendamentos.length > 0) ? agendamentos : (agendamento ? [agendamento] : [])
   const condicaoSelecionada = condicoes.find(c => c.id === form.condicao_pagamento_id)
+  const isCartaoSelecionado = condicaoSelecionada?.tipo_pagamento === 'debito' || condicaoSelecionada?.tipo_pagamento === 'credito'
 
   function getValorBase(ag: AgendamentoListItem): number {
     const isPrazo = condicaoSelecionada?.tipo === 'P'
@@ -175,6 +178,7 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
         body: JSON.stringify({
           condicao_pagamento_id: form.condicao_pagamento_id,
           observacao: form.observacao,
+          nsu: isCartaoSelecionado ? (form.nsu.trim() || null) : null,
           itens,
         }),
       })
@@ -364,7 +368,8 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
             >
               <option value={0}>Selecione uma condição...</option>
               {condicoes.map(cond => {
-                const label = `${cond.descricao}${cond.tipo === 'P' && cond.num_parcelas > 1 ? ` (${cond.num_parcelas}x)` : ''}${cond.tipo_pagamento === 'pix' ? ' [PIX]' : ''}`
+                const sufixoCartao = cond.tipo_pagamento === 'debito' ? ' [DÉBITO]' : cond.tipo_pagamento === 'credito' ? ' [CRÉDITO]' : ''
+                const label = `${cond.descricao}${cond.tipo === 'P' && cond.num_parcelas > 1 ? ` (${cond.num_parcelas}x)` : ''}${cond.tipo_pagamento === 'pix' ? ' [PIX]' : ''}${sufixoCartao}`
                 return (
                   <option key={cond.id} value={cond.id}>
                     {label}
@@ -388,6 +393,19 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
               }}>
                 ✓ PIX - Conta bancária pré-configurada
               </div>
+            )}
+            {isCartaoSelecionado && (
+              <Field style={{ marginTop: 8 }}>
+                <Label>NSU do Cartão (opcional)</Label>
+                <input
+                  type="text"
+                  value={form.nsu}
+                  onChange={e => setForm({ ...form, nsu: e.target.value })}
+                  placeholder="Nº do comprovante da maquininha"
+                  className="input-field"
+                  style={{ fontSize: 13, padding: '10px 12px' }}
+                />
+              </Field>
             )}
           </Field>
 
