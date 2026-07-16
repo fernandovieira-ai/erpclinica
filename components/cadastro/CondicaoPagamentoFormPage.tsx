@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Save, Trash2, ArrowLeft, Plus, X } from 'lucide-react'
+import { Save, Trash2, ArrowLeft, Plus, X, ClipboardList } from 'lucide-react'
 import { condicaoPagamentoSchema, type CondicaoPagamentoInput } from '@/lib/validators/condicao-pagamento.schema'
 import type { CondicaoPagamento } from '@/types/cadastros.types'
 import TaxaCartaoInline from '@/components/financeiro/cartao/TaxaCartaoInline'
@@ -34,7 +34,7 @@ const Select = forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HTMLSele
   },
 )
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+export function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'center', gap: '2px 6px', minHeight: 24 }}>
       <label style={{ textAlign: 'right', fontSize: 12, color: 'var(--texto-secundario)', whiteSpace: 'nowrap', paddingRight: 2 }}>{label}</label>
@@ -108,6 +108,8 @@ export default function CondicaoPagamentoFormPage({ condicao }: Props) {
   }, [contas])
 
   useEffect(() => {
+    // Crédito tem campo próprio (Parcelas Máximas) — não mexe em num_parcelas/intervalo_dias aqui.
+    if (tipoPagamento === 'credito') return
     if (tipo === 'V') {
       setValue('num_parcelas', 1)
       setValue('intervalo_dias', 0)
@@ -117,7 +119,7 @@ export default function CondicaoPagamentoFormPage({ condicao }: Props) {
       setValue('intervalo_dias', condicao?.intervalo_dias ?? 30)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tipo])
+  }, [tipo, tipoPagamento])
 
   async function onSubmit(data: CondicaoPagamentoInput) {
     setSaving(true)
@@ -200,8 +202,13 @@ export default function CondicaoPagamentoFormPage({ condicao }: Props) {
       {/* ── Corpo ── */}
       <div style={{ padding: '14px 20px', display: 'flex', gap: 16, overflowY: 'auto', flex: 1 }}>
 
-        {/* Coluna esquerda */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {/* Coluna esquerda — dados da condição de pagamento */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+        <fieldset className="form-fieldset">
+          <legend>
+            <ClipboardList size={12} /> Dados Gerais
+          </legend>
+          <div className="form-fieldset-body">
 
           {/* ID */}
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -299,8 +306,22 @@ export default function CondicaoPagamentoFormPage({ condicao }: Props) {
 
           <div style={{ height: 1, backgroundColor: 'var(--borda-suave)', margin: '4px 0' }} />
 
-          {/* Campos de parcelamento — visíveis apenas quando tipo = P */}
-          {tipo === 'P' && (
+          {/* Crédito: só o máximo de parcelas que o operador poderá escolher no recebimento */}
+          {tipoPagamento === 'credito' && (
+            <Row label="Parcelas Máximas:">
+              <input type="number" min={1} max={99}
+                {...register('num_parcelas', { valueAsNumber: true })}
+                style={{ width: 100, padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: errors.num_parcelas ? '1px solid var(--cor-erro)' : '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, outline: 'none' }}
+                onFocus={e => { e.target.style.borderColor = 'var(--cor-primaria)' }}
+                onBlur={e  => { e.target.style.borderColor = errors.num_parcelas ? 'var(--cor-erro)' : 'var(--borda-media)' }}
+              />
+              <span style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>Nº máximo de parcelas no cartão. No recebimento o operador escolhe de 1x até esse limite.</span>
+              {errors.num_parcelas && <span style={{ fontSize: 11, color: 'var(--cor-erro)' }}>{errors.num_parcelas.message}</span>}
+            </Row>
+          )}
+
+          {/* Campos de parcelamento (A Prazo) — visíveis apenas quando tipo = P e não é crédito */}
+          {tipo === 'P' && tipoPagamento !== 'credito' && (
             <>
               <Row label="Nº de Parcelas:">
                 <input type="number" min={1}
@@ -335,7 +356,7 @@ export default function CondicaoPagamentoFormPage({ condicao }: Props) {
             </>
           )}
 
-          {tipo === 'V' && (
+          {tipo === 'V' && tipoPagamento !== 'credito' && (
             <div style={{ padding: '8px 12px', borderRadius: 4, background: 'var(--cor-sucesso)10', border: '1px solid var(--cor-sucesso)30', fontSize: 12, color: 'var(--texto-secundario)' }}>
               Pagamento à vista: 1 parcela sem intervalo.
             </div>
@@ -353,59 +374,48 @@ export default function CondicaoPagamentoFormPage({ condicao }: Props) {
             </select>
           </div>
 
+          </div>
+        </fieldset>
         </div>
 
-        {/* Coluna direita — resumo + taxas de cartão */}
-        <div style={{ width: isCartao ? 300 : 200, flexShrink: 0 }}>
-          <fieldset style={{ border: '1px solid var(--borda-media)', borderRadius: 4, padding: '8px 14px 12px' }}>
-            <legend style={{ fontSize: 11, fontWeight: 600, color: 'var(--texto-secundario)', padding: '0 6px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Resumo</legend>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 6, fontSize: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--texto-terciario)' }}>Tipo:</span>
-                <span style={{ fontWeight: 600, color: tipo === 'V' ? 'var(--cor-sucesso)' : 'var(--cor-primaria)' }}>
-                  {tipo === 'V' ? 'À Vista' : 'A Prazo'}
-                </span>
-              </div>
-              {tipo === 'P' && (
-                <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--texto-terciario)' }}>Parcelas:</span>
-                    <span style={{ fontWeight: 600 }}>{watch('num_parcelas')}x</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--texto-terciario)' }}>Intervalo:</span>
-                    <span style={{ fontWeight: 600 }}>{watch('intervalo_dias')} dias</span>
-                  </div>
-                  {Number(watch('entrada_pct')) > 0 && (
+        {/* Coluna direita — taxa de cartão (débito/crédito) lado a lado com os dados, ou resumo nos demais tipos */}
+        {isCartao ? (
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <TaxaCartaoInline condicaoPagamentoId={condicao?.id} />
+          </div>
+        ) : (
+          <div style={{ width: 220, flexShrink: 0 }}>
+            <fieldset className="form-fieldset">
+              <legend>Resumo</legend>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 6, fontSize: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--texto-terciario)' }}>Tipo:</span>
+                  <span style={{ fontWeight: 600, color: tipo === 'V' ? 'var(--cor-sucesso)' : 'var(--cor-primaria)' }}>
+                    {tipo === 'V' ? 'À Vista' : 'A Prazo'}
+                  </span>
+                </div>
+                {tipo === 'P' && (
+                  <>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--texto-terciario)' }}>Entrada:</span>
-                      <span style={{ fontWeight: 600 }}>{Number(watch('entrada_pct')).toFixed(2)}%</span>
+                      <span style={{ color: 'var(--texto-terciario)' }}>Parcelas:</span>
+                      <span style={{ fontWeight: 600 }}>{watch('num_parcelas')}x</span>
                     </div>
-                  )}
-                </>
-              )}
-              {isCartao && (
-                <>
-                  <div style={{ height: 1, backgroundColor: 'var(--borda-suave)' }} />
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--texto-terciario)' }}>Adquirente:</span>
-                    <span style={{ fontWeight: 600 }}>{watch('adquirente') || '—'}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--texto-terciario)' }}>Bandeira:</span>
-                    <span style={{ fontWeight: 600 }}>{watch('bandeira') || 'TODAS'}</span>
-                  </div>
-                </>
-              )}
-            </div>
-          </fieldset>
-
-          {isCartao && (
-            <div style={{ marginTop: 12 }}>
-              <TaxaCartaoInline condicaoPagamentoId={condicao?.id} />
-            </div>
-          )}
-        </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--texto-terciario)' }}>Intervalo:</span>
+                      <span style={{ fontWeight: 600 }}>{watch('intervalo_dias')} dias</span>
+                    </div>
+                    {Number(watch('entrada_pct')) > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: 'var(--texto-terciario)' }}>Entrada:</span>
+                        <span style={{ fontWeight: 600 }}>{Number(watch('entrada_pct')).toFixed(2)}%</span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </fieldset>
+          </div>
+        )}
 
       </div>
     </form>

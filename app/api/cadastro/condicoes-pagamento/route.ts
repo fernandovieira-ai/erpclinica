@@ -64,8 +64,12 @@ export async function POST(req: NextRequest) {
   const d  = body.data
   const db = getDb(session.database_name)
 
-  const numParcelas   = d.tipo === 'V' ? 1  : d.num_parcelas
-  const intervaloDias = d.tipo === 'V' ? 0  : d.intervalo_dias
+  // Crédito: num_parcelas passa a significar o máximo de parcelas que o
+  // operador poderá escolher no recebimento (independe do campo tipo V/P).
+  // Débito e demais tipos mantêm a regra original: tipo='V' força 1 parcela.
+  const isCredito     = d.tipo_pagamento === 'credito'
+  const numParcelas   = isCredito ? d.num_parcelas   : (d.tipo === 'V' ? 1 : d.num_parcelas)
+  const intervaloDias = isCredito ? d.intervalo_dias : (d.tipo === 'V' ? 0 : d.intervalo_dias)
   const entradaPct    = d.tipo === 'V' ? 0  : d.entrada_pct
   const up            = (v?: string | null) => (v ? v.toUpperCase() : null)
 

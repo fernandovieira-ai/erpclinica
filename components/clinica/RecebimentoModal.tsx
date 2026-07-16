@@ -31,6 +31,7 @@ interface FormRecebimento {
   acrescimo: number
   observacao: string
   nsu: string
+  parcelas_cartao: number
 }
 
 function fmtValor(v: number) {
@@ -61,11 +62,13 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
     acrescimo: 0,
     observacao: '',
     nsu: '',
+    parcelas_cartao: 1,
   })
 
   const listaAgs = (agendamentos && agendamentos.length > 0) ? agendamentos : (agendamento ? [agendamento] : [])
   const condicaoSelecionada = condicoes.find(c => c.id === form.condicao_pagamento_id)
   const isCartaoSelecionado = condicaoSelecionada?.tipo_pagamento === 'debito' || condicaoSelecionada?.tipo_pagamento === 'credito'
+  const isCreditoParcelavel = condicaoSelecionada?.tipo_pagamento === 'credito' && condicaoSelecionada.num_parcelas > 1
 
   function getValorBase(ag: AgendamentoListItem): number {
     const isPrazo = condicaoSelecionada?.tipo === 'P'
@@ -107,6 +110,11 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
       setForm(prev => ({ ...prev, valor_recebido: soma, desconto: 0, acrescimo: 0 }))
     }
   }, [form.condicao_pagamento_id, condicoes]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Zera a quantidade de parcelas do cartão sempre que a condição de pagamento muda
+  useEffect(() => {
+    setForm(prev => ({ ...prev, parcelas_cartao: 1 }))
+  }, [form.condicao_pagamento_id])
 
   async function carregarCondicoesPagamento() {
     setLoadingCondicoes(true)
@@ -179,6 +187,7 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
           condicao_pagamento_id: form.condicao_pagamento_id,
           observacao: form.observacao,
           nsu: isCartaoSelecionado ? (form.nsu.trim() || null) : null,
+          parcelas_cartao: isCreditoParcelavel ? form.parcelas_cartao : null,
           itens,
         }),
       })
@@ -393,6 +402,21 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
               }}>
                 ✓ PIX - Conta bancária pré-configurada
               </div>
+            )}
+            {isCreditoParcelavel && (
+              <Field style={{ marginTop: 8 }}>
+                <Label>Nº de Parcelas</Label>
+                <select
+                  value={form.parcelas_cartao}
+                  onChange={e => setForm({ ...form, parcelas_cartao: Number(e.target.value) })}
+                  className="input-field"
+                  style={{ fontSize: 13, fontWeight: 500, padding: '10px 12px' }}
+                >
+                  {Array.from({ length: condicaoSelecionada!.num_parcelas }, (_, i) => i + 1).map(n => (
+                    <option key={n} value={n}>{n}x{n === 1 ? ' (à vista)' : ''}</option>
+                  ))}
+                </select>
+              </Field>
             )}
             {isCartaoSelecionado && (
               <Field style={{ marginTop: 8 }}>

@@ -18,8 +18,8 @@ export interface TaxaCartao {
   percentual_mdr:            string
   percentual_antecipacao_am: string
   prazo_recebimento_dias:    number
-  data_vigencia_inicio:      string
-  data_vigencia_fim:         string | null
+  parcelas_de:               number
+  parcelas_ate:              number
   created_by:                string | null
   created_at:                string
 }
@@ -28,7 +28,7 @@ export type TaxaCartaoListItem = Pick<
   TaxaCartao,
   | 'id' | 'condicao_pagamento_id' | 'condicao_descricao' | 'adquirente' | 'bandeira'
   | 'percentual_mdr' | 'percentual_antecipacao_am' | 'prazo_recebimento_dias'
-  | 'data_vigencia_inicio' | 'data_vigencia_fim'
+  | 'parcelas_de' | 'parcelas_ate'
 >
 
 export interface TaxaCartaoListResponse {

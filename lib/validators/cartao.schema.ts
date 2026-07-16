@@ -5,9 +5,9 @@ export const taxaCartaoSchema = z.object({
   percentual_mdr:            z.number({ invalid_type_error: 'MDR inválido' }).min(0, 'MDR deve ser >= 0').max(100, 'MDR deve ser <= 100'),
   percentual_antecipacao_am: z.number().min(0).max(100).default(0),
   prazo_recebimento_dias:    z.number().int().min(0, 'Deve ser >= 0'),
-  data_vigencia_inicio:      z.string().min(1, 'Data de início da vigência é obrigatória'),
-  data_vigencia_fim:         z.string().optional().nullable(),
-})
+  parcelas_de:               z.number().int().min(1, 'Mínimo 1 parcela').default(1),
+  parcelas_ate:              z.number().int().min(1, 'Mínimo 1 parcela').default(99),
+}).refine(d => d.parcelas_ate >= d.parcelas_de, { message: 'Parcelas "até" deve ser >= "de"', path: ['parcelas_ate'] })
 
 export type TaxaCartaoInput = z.infer<typeof taxaCartaoSchema>
 

@@ -40,8 +40,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!body.success) return NextResponse.json({ erro: body.error.flatten() }, { status: 400 })
 
   const d             = body.data
-  const numParcelas   = d.tipo === 'V' ? 1 : d.num_parcelas
-  const intervaloDias = d.tipo === 'V' ? 0 : d.intervalo_dias
+  // Crédito: num_parcelas passa a significar o máximo de parcelas que o
+  // operador poderá escolher no recebimento (independe do campo tipo V/P).
+  // Débito e demais tipos mantêm a regra original: tipo='V' força 1 parcela.
+  const isCredito     = d.tipo_pagamento === 'credito'
+  const numParcelas   = isCredito ? d.num_parcelas   : (d.tipo === 'V' ? 1 : d.num_parcelas)
+  const intervaloDias = isCredito ? d.intervalo_dias : (d.tipo === 'V' ? 0 : d.intervalo_dias)
   const entradaPct    = d.tipo === 'V' ? 0 : d.entrada_pct
   const up            = (v?: string | null) => (v ? v.toUpperCase() : null)
   const db            = getDb(session.database_name)

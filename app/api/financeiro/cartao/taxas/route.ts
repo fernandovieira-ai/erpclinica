@@ -33,12 +33,11 @@ export async function GET(req: NextRequest) {
       `SELECT t.id, t.condicao_pagamento_id, cp.descricao AS condicao_descricao,
               cp.adquirente, cp.bandeira,
               t.percentual_mdr, t.percentual_antecipacao_am, t.prazo_recebimento_dias,
-              TO_CHAR(t.data_vigencia_inicio, 'YYYY-MM-DD') AS data_vigencia_inicio,
-              TO_CHAR(t.data_vigencia_fim,    'YYYY-MM-DD') AS data_vigencia_fim
+              t.parcelas_de, t.parcelas_ate
        FROM tab_taxa_cartao t
        JOIN tab_condicao_pagamento cp ON cp.id = t.condicao_pagamento_id
        ${where}
-       ORDER BY cp.descricao, t.data_vigencia_inicio DESC
+       ORDER BY cp.descricao, t.parcelas_de
        LIMIT $${pi} OFFSET $${pi + 1}`,
       [...params, limit, offset],
     ),
@@ -69,15 +68,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ erro: 'Condição de pagamento não é de Débito/Crédito' }, { status: 400 })
   }
 
+  // Só existe uma taxa por condição + faixa de parcelas — salvar de novo
+  // pra uma faixa já cadastrada atualiza em vez de duplicar/dar erro de unicidade.
   const { rows } = await db.query(
     `INSERT INTO tab_taxa_cartao
        (condicao_pagamento_id, percentual_mdr, percentual_antecipacao_am, prazo_recebimento_dias,
-        data_vigencia_inicio, data_vigencia_fim, created_by)
+        parcelas_de, parcelas_ate, created_by)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (condicao_pagamento_id, parcelas_de, parcelas_ate) DO UPDATE
+       SET percentual_mdr = EXCLUDED.percentual_mdr,
+           percentual_antecipacao_am = EXCLUDED.percentual_antecipacao_am,
+           prazo_recebimento_dias = EXCLUDED.prazo_recebimento_dias,
+           created_by = EXCLUDED.created_by
      RETURNING id`,
     [
       d.condicao_pagamento_id, d.percentual_mdr, d.percentual_antecipacao_am, d.prazo_recebimento_dias,
-      d.data_vigencia_inicio, d.data_vigencia_fim || null, session.nome ?? null,
+      d.parcelas_de, d.parcelas_ate, session.nome ?? null,
     ],
   )
 

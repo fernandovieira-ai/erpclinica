@@ -17,6 +17,7 @@ interface RecebimentoPayload {
   condicao_pagamento_id: number
   observacao?: string
   nsu?: string | null
+  parcelas_cartao?: number | null
   itens: RecebimentoItem[]
 }
 
@@ -160,17 +161,23 @@ export async function POST(req: NextRequest) {
       // Débito/Crédito → gera a venda no cartão (com parcelas previstas via
       // trigger). Nenhum movimento de caixa/banco agora — o dinheiro só vira
       // saldo em conta quando a Fatura de Cartão for confirmada.
+      // Débito é sempre 1x. Crédito: numParcelas veio da condição (=máximo
+      // permitido) — o operador escolhe quantas parcelas usar até esse limite.
+      const qtdParcelasCartao = tipoPagamento === 'credito'
+        ? Math.min(Math.max(parseInt(String(payload.parcelas_cartao)) || numParcelas, 1), numParcelas)
+        : 1
       try {
         const { rows: vendaRows } = await client.query(
           `INSERT INTO tab_venda_cartao (
             empresa_id, conta_banco_id, condicao_pagamento_id, valor_bruto,
-            nsu, data_venda, observacao, created_by
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+            nsu, data_venda, observacao, created_by, qtd_parcelas
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
           RETURNING id`,
           [
             session.empresa_id_ativa, contaBancoCartaoId, payload.condicao_pagamento_id, totalGeral,
             payload.nsu ? payload.nsu.trim().toUpperCase() : null,
             dataMovimento, `Recebimento - ${ids.length} consulta(s)`, session.nome ?? 'sistema',
+            qtdParcelasCartao,
           ],
         )
         venda_cartao_id = vendaRows[0].id
