@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Save, Trash2, ArrowLeft, Plus, X, Search } from 'lucide-react'
+import { Save, Trash2, ArrowLeft, Plus, X, Search, ClipboardList } from 'lucide-react'
 import { planoContasSchema, type PlanoContasInput } from '@/lib/validators/plano-contas.schema'
 import type { PlanoContas, PlanoContasListItem } from '@/types/cadastros.types'
 
@@ -281,7 +281,12 @@ export default function PlanoContasFormPage({ conta }: Props) {
         <div style={{ padding: '14px 20px', display: 'flex', gap: 16, overflowY: 'auto', flex: 1 }}>
 
           {/* Coluna esquerda */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+          <fieldset className="form-fieldset">
+            <legend>
+              <ClipboardList size={12} /> Dados Gerais
+            </legend>
+            <div className="form-fieldset-body">
 
             {/* Código + toggle tipo */}
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -353,13 +358,15 @@ export default function PlanoContasFormPage({ conta }: Props) {
               </select>
             </div>
 
+            </div>
+          </fieldset>
           </div>
 
           {/* Coluna direita — Tipo + Natureza */}
           <div style={{ width: 190, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
 
-            <fieldset style={{ border: '1px solid var(--borda-media)', borderRadius: 4, padding: '8px 12px' }}>
-              <legend style={{ fontSize: 11, fontWeight: 600, color: 'var(--texto-secundario)', padding: '0 6px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Tipo</legend>
+            <fieldset className="form-fieldset">
+              <legend>Tipo</legend>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 4 }}>
                 {[
                   { v: 'A' as const, l: 'Analítica', desc: 'Aceita lançamentos' },
@@ -376,8 +383,8 @@ export default function PlanoContasFormPage({ conta }: Props) {
               </div>
             </fieldset>
 
-            <fieldset style={{ border: '1px solid var(--borda-media)', borderRadius: 4, padding: '8px 12px' }}>
-              <legend style={{ fontSize: 11, fontWeight: 600, color: 'var(--texto-secundario)', padding: '0 6px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Natureza</legend>
+            <fieldset className="form-fieldset">
+              <legend>Natureza</legend>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 4 }}>
                 {[
                   { v: 'D' as const, l: 'Devedora' },

@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Save, Trash2, ArrowLeft, Plus, X, Search } from 'lucide-react'
+import { Save, Trash2, ArrowLeft, Plus, X, Search, ClipboardList } from 'lucide-react'
 import { tipoReceitaSchema, type TipoReceitaInput } from '@/lib/validators/tipo-receita.schema'
 import type { TipoReceita, TipoReceitaListItem, PlanoContasListItem } from '@/types/cadastros.types'
 
@@ -288,7 +288,12 @@ export default function TipoReceitaFormPage({ tipo }: Props) {
         <div style={{ padding: '14px 20px', display: 'flex', gap: 16, overflowY: 'auto', flex: 1 }}>
 
           {/* Coluna esquerda */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+          <fieldset className="form-fieldset">
+            <legend>
+              <ClipboardList size={12} /> Dados Gerais
+            </legend>
+            <div className="form-fieldset-body">
 
             {/* Código + ID */}
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -353,12 +358,14 @@ export default function TipoReceitaFormPage({ tipo }: Props) {
               </select>
             </div>
 
+            </div>
+          </fieldset>
           </div>
 
           {/* Coluna direita — indicador */}
           <div style={{ width: 200, flexShrink: 0 }}>
-            <fieldset style={{ border: '1px solid var(--borda-media)', borderRadius: 4, padding: '8px 14px 12px' }}>
-              <legend style={{ fontSize: 11, fontWeight: 600, color: 'var(--texto-secundario)', padding: '0 6px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Indicadores</legend>
+            <fieldset className="form-fieldset">
+              <legend>Indicadores</legend>
               <div style={{ paddingTop: 8 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer', color: 'var(--texto-principal)', userSelect: 'none' }}>
                   <input
