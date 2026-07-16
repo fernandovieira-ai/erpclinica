@@ -88,6 +88,7 @@ export default function AgendamentoPage() {
   const [buscandoSlot, setBuscandoSlot] = useState(false)
   const [diasIndisponíveis, setDiasIndisponíveis] = useState<Set<string>>(new Set())
   const [agendaSemanaRaw, setAgendaSemanaRaw]     = useState<Map<number, boolean>>(new Map())
+  const [agendaConfigRaw, setAgendaConfigRaw]     = useState<Map<number, { hora_inicio: string; hora_fim: string; intervalo_min: number }>>(new Map())
   const [excecoesRaw, setExcecoesRaw]             = useState<Map<string, boolean>>(new Map())
   const [configAgendaAberta, setConfigAgendaAberta] = useState(false)
   const [agendaProf, setAgendaProf] = useState<Record<number, { hora_inicio: string; hora_fim: string; ativo: boolean; id?: number }>>({})
@@ -127,9 +128,28 @@ export default function AgendamentoPage() {
 
   const carregarDiasIndisponíveis = useCallback(async () => {
     if (!profFiltro) {
+      // "Todos os profissionais": não há um único profissional para bloquear dias,
+      // mas ainda carregamos a grade agregada (menor intervalo / maior faixa de horário
+      // entre todos os profissionais ativos) para a grade da Visão Dia/Semana não ficar
+      // mais grosseira do que o necessário.
       setDiasIndisponíveis(new Set())
       setAgendaSemanaRaw(new Map())
       setExcecoesRaw(new Map())
+      try {
+        const resAgregado = await fetch('/api/clinica/agenda-profissional')
+        const agregadoData = resAgregado.ok ? await resAgregado.json() : { dados: [] }
+        const config = new Map<number, { hora_inicio: string; hora_fim: string; intervalo_min: number }>()
+        for (const row of (agregadoData.dados ?? [])) {
+          config.set(Number(row.dia_semana), {
+            hora_inicio: row.hora_inicio,
+            hora_fim: row.hora_fim,
+            intervalo_min: Number(row.intervalo_min) || 30,
+          })
+        }
+        setAgendaConfigRaw(config)
+      } catch {
+        setAgendaConfigRaw(new Map())
+      }
       return
     }
     try {
@@ -144,8 +164,17 @@ export default function AgendamentoPage() {
 
       // Mapa: dia_semana (0-6) → ativo
       const semana = new Map<number, boolean>()
+      // Mapa: dia_semana (0-6) → horário/intervalo configurado do profissional
+      const config = new Map<number, { hora_inicio: string; hora_fim: string; intervalo_min: number }>()
       for (const row of (agendaData.dados ?? [])) {
         semana.set(Number(row.dia_semana), Boolean(row.ativo))
+        if (row.ativo) {
+          config.set(Number(row.dia_semana), {
+            hora_inicio: row.hora_inicio,
+            hora_fim: row.hora_fim,
+            intervalo_min: Number(row.intervalo_min) || 30,
+          })
+        }
       }
 
       // Mapa: 'YYYY-MM-DD' → nao_atende
@@ -158,6 +187,7 @@ export default function AgendamentoPage() {
       }
 
       setAgendaSemanaRaw(semana)
+      setAgendaConfigRaw(config)
       setExcecoesRaw(excecoes)
       setDiasIndisponíveis(computarIndisponíveis(periodo.ini, periodo.fim, semana, excecoes))
     } catch {
@@ -230,6 +260,119 @@ export default function AgendamentoPage() {
   useEffect(() => {
     if (!isSameMonth(selectedDay, calMes)) setCalMes(selectedDay)
   }, [selectedDay])
+
+  // Grade de horários da Visão Dia: segue o intervalo/horário configurado do dia da
+  // semana em `agendaConfigRaw` — que é o do profissional filtrado quando um profissional
+  // está selecionado, ou o agregado (menor intervalo / maior faixa) de todos os
+  // profissionais ativos quando o filtro é "Todos". Agendamentos com horário fora da
+  // grade resultante (ex.: digitados manualmente) ganham uma linha própria em vez de
+  // ficarem ocultos.
+  const horasDia = useMemo(() => {
+    const cfg = agendaConfigRaw.get(selectedDay.getDay())
+    let base: { h: number; m: number }[] = []
+    let fimConfiguradoMin: number | null = null
+
+    if (cfg && cfg.hora_inicio && cfg.hora_fim) {
+      const [hIni, mIni] = cfg.hora_inicio.split(':').map(Number)
+      const [hFim, mFim] = cfg.hora_fim.split(':').map(Number)
+      const passo = cfg.intervalo_min > 0 ? cfg.intervalo_min : 30
+      const fimMin = hFim * 60 + mFim
+      fimConfiguradoMin = fimMin
+      let cur = hIni * 60 + mIni
+      while (cur < fimMin) {
+        base.push({ h: Math.floor(cur / 60), m: cur % 60 })
+        cur += passo
+      }
+    } else {
+      base = HORAS.map(s => ({ h: s.h, m: s.m }))
+    }
+
+    const chaves = new Set(base.map(s => s.h * 60 + s.m))
+    for (const ag of agendamentos) {
+      const ini = parseISO(ag.data_hora_inicio)
+      if (!isSameDay(ini, selectedDay)) continue
+      const chave = ini.getHours() * 60 + ini.getMinutes()
+      if (!chaves.has(chave)) {
+        chaves.add(chave)
+        base.push({ h: ini.getHours(), m: ini.getMinutes() })
+      }
+    }
+
+    base.sort((a, b) => (a.h * 60 + a.m) - (b.h * 60 + b.m))
+
+    const linhas = base.map((s, i) => {
+      const atualMin = s.h * 60 + s.m
+      const proxMin  = i + 1 < base.length ? base[i + 1].h * 60 + base[i + 1].m : atualMin + 30
+      return {
+        h: s.h, m: s.m,
+        dur: Math.max(proxMin - atualMin, 5),
+        label: `${String(s.h).padStart(2, '0')}:${String(s.m).padStart(2, '0')}`,
+        isFim: false,
+      }
+    })
+
+    // Linha de encerramento: mostra o horário configurado de fim de atendimento do
+    // profissional (ex.: 18:00), mesmo que nenhum slot de início caiba exatamente ali.
+    // Não é clicável — não sobra tempo hábil pra iniciar um novo atendimento nesse ponto.
+    if (fimConfiguradoMin != null) {
+      const ultimaMin = linhas.length ? linhas[linhas.length - 1].h * 60 + linhas[linhas.length - 1].m : -1
+      if (fimConfiguradoMin > ultimaMin) {
+        linhas.push({
+          h: Math.floor(fimConfiguradoMin / 60),
+          m: fimConfiguradoMin % 60,
+          dur: 0,
+          label: `${String(Math.floor(fimConfiguradoMin / 60)).padStart(2, '0')}:${String(fimConfiguradoMin % 60).padStart(2, '0')}`,
+          isFim: true,
+        })
+      }
+    }
+
+    return linhas
+  }, [selectedDay, agendaConfigRaw, agendamentos])
+
+  // Grade da Visão Semana: como a mesma grade de linhas é compartilhada pelos 7 dias,
+  // usa o menor intervalo e a faixa de horário mais ampla entre os dias da semana
+  // presentes em `agendaConfigRaw` (funciona tanto para 1 profissional quanto para
+  // "Todos", com qualquer quantidade de profissionais cadastrados). Qualquer horário
+  // de agendamento não coberto também vira uma linha extra, como segurança.
+  const horasSemana = useMemo(() => {
+    let base: { h: number; m: number }[] = []
+
+    if (agendaConfigRaw.size > 0) {
+      let passo = Infinity, inicioMin = Infinity, fimMin = -Infinity
+      for (const cfg of agendaConfigRaw.values()) {
+        if (!cfg.hora_inicio || !cfg.hora_fim) continue
+        const [hIni, mIni] = cfg.hora_inicio.split(':').map(Number)
+        const [hFim, mFim] = cfg.hora_fim.split(':').map(Number)
+        passo     = Math.min(passo, cfg.intervalo_min > 0 ? cfg.intervalo_min : 30)
+        inicioMin = Math.min(inicioMin, hIni * 60 + mIni)
+        fimMin    = Math.max(fimMin, hFim * 60 + mFim)
+      }
+      if (Number.isFinite(passo) && Number.isFinite(inicioMin) && Number.isFinite(fimMin)) {
+        for (let cur = inicioMin; cur < fimMin; cur += passo) {
+          base.push({ h: Math.floor(cur / 60), m: cur % 60 })
+        }
+      }
+    }
+
+    if (base.length === 0) base = HORAS.map(s => ({ h: s.h, m: s.m }))
+
+    const chaves = new Set(base.map(s => s.h * 60 + s.m))
+    for (const ag of agendamentos) {
+      const ini = parseISO(ag.data_hora_inicio)
+      if (ini < periodo.ini || ini > periodo.fim) continue
+      const chave = ini.getHours() * 60 + ini.getMinutes()
+      if (!chaves.has(chave)) {
+        chaves.add(chave)
+        base.push({ h: ini.getHours(), m: ini.getMinutes() })
+      }
+    }
+    base.sort((a, b) => (a.h * 60 + a.m) - (b.h * 60 + b.m))
+    return base.map(s => ({
+      ...s,
+      label: `${String(s.h).padStart(2, '0')}:${String(s.m).padStart(2, '0')}`,
+    }))
+  }, [agendamentos, periodo, agendaConfigRaw])
 
   function navAnterior() {
     if (view === 'dia') setSelectedDay(d => addDays(d, -1))
@@ -521,10 +664,43 @@ export default function AgendamentoPage() {
         </div>
 
         {/* Grade de horários */}
-        {HORAS.map(slot => {
+        {horasDia.map((slot, slotIdx) => {
+          // Linha de encerramento: só marca o horário de fim configurado do profissional,
+          // não é clicável (não há tempo hábil pra iniciar atendimento ali)
+          if (slot.isFim) {
+            return (
+              <div
+                key={`${slot.h}:${slot.m}-fim`}
+                style={{
+                  display: 'flex',
+                  minHeight: 22,
+                  borderTop: '1px solid var(--borda-media)',
+                  cursor: 'default',
+                }}
+              >
+                <div style={{
+                  width: 62, flexShrink: 0,
+                  display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end',
+                  paddingRight: 10, paddingTop: 2,
+                  fontSize: 11, fontWeight: 700,
+                  color: 'var(--texto-terciario)',
+                  borderRight: '0.5px solid var(--borda-suave)',
+                }}>
+                  {slot.label}
+                </div>
+                <div style={{
+                  flex: 1, paddingLeft: 10, paddingTop: 2,
+                  fontSize: 10, color: 'var(--texto-terciario)', fontStyle: 'italic',
+                }}>
+                  Encerramento do expediente
+                </div>
+              </div>
+            )
+          }
+
           const slotMin   = slot.h * 60 + slot.m
-          const isAtual   = isToday(selectedDay) && minutoAtual >= slotMin && minutoAtual < slotMin + 30
-          const isMeia    = slot.m === 30
+          const isAtual   = isToday(selectedDay) && minutoAtual >= slotMin && minutoAtual < slotMin + slot.dur
+          const isPrimeiraDaHora = slotIdx === 0 || horasDia[slotIdx - 1].h !== slot.h
           const slotDt    = setMinutes(setHours(selectedDay, slot.h), slot.m)
           const isPast    = slotDt < agora && !isAtual
           const ags       = agsHoje.filter(ag => {
@@ -540,12 +716,12 @@ export default function AgendamentoPage() {
 
           return (
             <div
-              key={slot.label}
+              key={`${slot.h}:${slot.m}`}
               onClick={() => !isPast && !isOccupied && abrirNovo(selectedDay, slot)}
               style={{
                 display: 'flex',
                 minHeight: SLOT_H,
-                borderBottom: `0.5px solid ${isMeia ? 'var(--borda-suave)' : 'rgba(0,0,0,0.03)'}`,
+                borderBottom: `0.5px solid ${isPrimeiraDaHora ? 'var(--borda-suave)' : 'rgba(0,0,0,0.03)'}`,
                 background: isAtual
                   ? 'rgba(15,110,86,0.04)'
                   : isPast
@@ -559,14 +735,19 @@ export default function AgendamentoPage() {
             >
               {/* Coluna hora */}
               <div style={{
-                width: 58, flexShrink: 0,
+                width: 62, flexShrink: 0,
                 display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end',
-                paddingRight: 10, paddingTop: 7,
-                fontSize: 11, fontWeight: 500,
-                color: isAtual ? 'var(--cor-primaria)' : 'var(--texto-terciario)',
+                paddingRight: 10, paddingTop: 6,
+                fontSize: isPrimeiraDaHora ? 13 : 11,
+                fontWeight: isPrimeiraDaHora ? 700 : 500,
+                color: isAtual
+                  ? 'var(--cor-primaria)'
+                  : isPrimeiraDaHora
+                  ? 'var(--texto-principal)'
+                  : 'var(--texto-secundario)',
                 borderRight: `0.5px solid ${isAtual ? 'var(--cor-primaria)' : 'var(--borda-suave)'}`,
               }}>
-                {slot.m === 0 ? slot.label : ''}
+                {slot.label}
               </div>
 
               {/* Área de agendamentos */}
@@ -712,7 +893,7 @@ export default function AgendamentoPage() {
                 })}
 
                 {/* Hint slot vazio */}
-                {ags.length === 0 && !isOccupied && slot.m === 0 && (
+                {ags.length === 0 && !isOccupied && (
                   <div style={{
                     position: 'absolute', inset: 0,
                     display: 'flex', alignItems: 'center', paddingLeft: 10,
@@ -787,18 +968,22 @@ export default function AgendamentoPage() {
             )
           })}
 
-          {HORAS.map(slot => (
-            <Fragment key={slot.label}>
+          {horasSemana.map((slot, slotIdx) => {
+            const isPrimeiraDaHora = slotIdx === 0 || horasSemana[slotIdx - 1].h !== slot.h
+            return (
+            <Fragment key={`${slot.h}:${slot.m}`}>
               <div
                 style={{
                   height: SLOT_H,
-                  borderBottom: slot.m === 30 ? '0.5px solid var(--borda-suave)' : 'none',
+                  borderBottom: isPrimeiraDaHora ? '0.5px solid var(--borda-suave)' : 'none',
                   display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end',
                   paddingRight: 8, paddingTop: 4,
-                  fontSize: 10, color: 'var(--texto-terciario)', fontWeight: 500,
+                  fontSize: isPrimeiraDaHora ? 12 : 10,
+                  fontWeight: isPrimeiraDaHora ? 700 : 500,
+                  color: isPrimeiraDaHora ? 'var(--texto-principal)' : 'var(--texto-secundario)',
                 }}
               >
-                {slot.m === 0 ? slot.label : ''}
+                {slot.label}
               </div>
 
               {dias.map(dia => {
@@ -814,7 +999,7 @@ export default function AgendamentoPage() {
                     style={{
                       height: SLOT_H,
                       borderLeft: '0.5px solid var(--borda-suave)',
-                      borderBottom: slot.m === 30 ? '0.5px solid var(--borda-suave)' : '0.5px solid rgba(0,0,0,0.03)',
+                      borderBottom: isPrimeiraDaHora ? '0.5px solid var(--borda-suave)' : '0.5px solid rgba(0,0,0,0.03)',
                       position: 'relative',
                       cursor: indisponível ? 'not-allowed' : 'pointer',
                       background: isToday(dia)
@@ -861,7 +1046,7 @@ export default function AgendamentoPage() {
                 )
               })}
             </Fragment>
-          ))}
+          )})}
         </div>
       </div>
     )

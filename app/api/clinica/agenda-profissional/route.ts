@@ -3,14 +3,33 @@ import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 
 // GET /api/clinica/agenda-profissional?profissional_id=X
+// GET /api/clinica/agenda-profissional (sem profissional_id) — agrega a grade de TODOS
+// os profissionais ativos da empresa por dia da semana: menor intervalo configurado e
+// o intervalo de horário mais amplo (MIN hora_inicio / MAX hora_fim). Usado pela Visão
+// Dia/Semana da agenda quando o filtro é "Todos os profissionais", para que a grade
+// nunca fique mais grosseira que o menor intervalo de atendimento cadastrado.
 export async function GET(req: NextRequest) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
 
   const profissionalId = req.nextUrl.searchParams.get('profissional_id')
-  if (!profissionalId) return NextResponse.json({ erro: 'profissional_id obrigatório' }, { status: 400 })
-
   const db = getDb(session.database_name)
+
+  if (!profissionalId) {
+    const { rows } = await db.query(
+      `SELECT dia_semana,
+              TO_CHAR(MIN(hora_inicio), 'HH24:MI') AS hora_inicio,
+              TO_CHAR(MAX(hora_fim),    'HH24:MI') AS hora_fim,
+              MIN(intervalo_min) AS intervalo_min
+       FROM tab_agenda_profissional
+       WHERE empresa_id = $1 AND ativo = true
+       GROUP BY dia_semana
+       ORDER BY dia_semana`,
+      [session.empresa_id_ativa],
+    )
+    return NextResponse.json({ dados: rows.map(r => ({ ...r, ativo: true })) })
+  }
+
   const { rows } = await db.query(
     `SELECT id, dia_semana,
             TO_CHAR(hora_inicio, 'HH24:MI') AS hora_inicio,
