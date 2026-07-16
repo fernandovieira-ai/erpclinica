@@ -52,6 +52,12 @@ interface Pessoa {
   indicacao_nome?: string
   indicacao_fone?: string
   indicacao_ligacao?: string
+  ind_cliente?: boolean
+  ind_fornecedor?: boolean
+  ind_banco?: boolean
+  ind_transportador?: boolean
+  ind_paciente?: boolean
+  ind_profissional?: boolean
 }
 
 interface Props {
@@ -221,14 +227,8 @@ const Check = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputEl
 
 function Secao({ titulo, children, style }: { titulo: string; children: React.ReactNode; style?: React.CSSProperties }) {
   return (
-    <fieldset style={{
-      border: '1px solid var(--borda-media)', borderRadius: 4,
-      padding: '6px 10px 10px', margin: 0, ...style,
-    }}>
-      <legend style={{ fontSize: 11, fontWeight: 600, color: 'var(--texto-secundario)',
-        padding: '0 6px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-        {titulo}
-      </legend>
+    <fieldset className="form-fieldset" style={{ margin: 0, ...style }}>
+      <legend>{titulo}</legend>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {children}
       </div>
@@ -512,6 +512,10 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
       mae_pessoa_id: null as number | null, mae_nome: '', mae_paciente: false,
       conjuge_pessoa_id: null as number | null, conjuge_nome: '', conjuge_paciente: false,
       indicacao_pessoa_id: null as number | null, indicacao_nome: '', indicacao_fone: '', indicacao_ligacao: '',
+      // Flags de papel (tipo de pessoa) — não exibidas neste modal, apenas
+      // repassadas sem alteração para não zerar o cadastro no PATCH full-replace.
+      ind_cliente: false, ind_fornecedor: false, ind_banco: false,
+      ind_transportador: false, ind_paciente: false, ind_profissional: false,
     },
   })
 
@@ -570,6 +574,12 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
         indicacao_nome:     paciente.indicacao_nome ?? '',
         indicacao_fone:     paciente.indicacao_fone ?? '',
         indicacao_ligacao:  paciente.indicacao_ligacao ?? '',
+        ind_cliente:        paciente.ind_cliente ?? false,
+        ind_fornecedor:     paciente.ind_fornecedor ?? false,
+        ind_banco:          paciente.ind_banco ?? false,
+        ind_transportador:  paciente.ind_transportador ?? false,
+        ind_paciente:       paciente.ind_paciente ?? false,
+        ind_profissional:   paciente.ind_profissional ?? false,
       })
     }
   }, [open, paciente, reset])

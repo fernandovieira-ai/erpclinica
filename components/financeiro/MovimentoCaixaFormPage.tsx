@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Save, Trash2, ArrowLeft, Search, X, CheckCircle, XCircle } from 'lucide-react'
+import { Save, Trash2, ArrowLeft, Search, X, CheckCircle, XCircle, ClipboardList, FileText } from 'lucide-react'
 import { movimentoCaixaSchema, type MovimentoCaixaInput } from '@/lib/validators/movimento-caixa.schema'
 import type { MovimentoCaixa } from '@/types/cadastros.types'
 import MoneyInput from '@/components/ui/MoneyInput'
@@ -296,7 +296,12 @@ export default function MovimentoCaixaFormPage({ movimento }: Props) {
         <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
 
           {/* ══════════════ ABA DADOS ══════════════ */}
-          {aba === 'Dados' && (<>
+          {aba === 'Dados' && (
+          <fieldset className="form-fieldset">
+            <legend>
+              <ClipboardList size={12} /> Dados do Movimento
+            </legend>
+            <div style={{ paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
 
             <Row label="Tipo:*" error={errors.tipo?.message}>
               <Select {...register('tipo')} style={{ width: 180 }}>
@@ -347,10 +352,17 @@ export default function MovimentoCaixaFormPage({ movimento }: Props) {
               <Input {...register('documento')} style={{ width: 220, textTransform: 'uppercase' }} />
             </Row>
 
-          </>)}
+            </div>
+          </fieldset>
+          )}
 
           {/* ══════════════ ABA COMPLEMENTO ══════════════ */}
-          {aba === 'Complemento' && (<>
+          {aba === 'Complemento' && (
+          <fieldset className="form-fieldset">
+            <legend>
+              <FileText size={12} /> Complemento
+            </legend>
+            <div style={{ paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
 
             <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', alignItems: 'start', gap: '2px 6px' }}>
               <label style={{ textAlign: 'right', fontSize: 12, color: 'var(--texto-secundario)', paddingRight: 2, paddingTop: 4 }}>Observação:</label>
@@ -423,7 +435,9 @@ export default function MovimentoCaixaFormPage({ movimento }: Props) {
               </div>
             </>)}
 
-          </>)}
+            </div>
+          </fieldset>
+          )}
 
         </div>
       </form>

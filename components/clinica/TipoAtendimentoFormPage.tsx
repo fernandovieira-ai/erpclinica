@@ -302,8 +302,8 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
 
         {/* Preview */}
         <div style={{ width: 180, flexShrink: 0 }}>
-          <fieldset style={{ border: '1px solid var(--borda-media)', borderRadius: 4, padding: '10px 14px 14px' }}>
-            <legend style={{ fontSize: 11, fontWeight: 600, color: 'var(--texto-secundario)', padding: '0 6px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Prévia</legend>
+          <fieldset className="form-fieldset">
+            <legend>Prévia</legend>
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{
                 padding: '6px 10px', borderRadius: 4, fontSize: 12, fontWeight: 600,

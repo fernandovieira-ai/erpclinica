@@ -163,12 +163,12 @@ export default function CategoriaFormPage({ categoria }: Props) {
         </button>
       </div>
 
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--borda-suave)', borderRadius: 6, padding: '20px 20px 24px' }}>
-        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--texto-principal)', marginBottom: 20 }}>
+      <fieldset className="form-fieldset">
+        <legend>
           {isEdit ? 'Editar Categoria' : 'Nova Categoria'}
-        </div>
+        </legend>
 
-        <form onSubmit={handleSubmit(onSubmit)} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <form onSubmit={handleSubmit(onSubmit)} style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingTop: 6 }}>
           <div style={fieldStyle}>
             <label style={labelStyle}>Descrição *</label>
             <Input
@@ -194,7 +194,7 @@ export default function CategoriaFormPage({ categoria }: Props) {
             </div>
           )}
         </form>
-      </div>
+      </fieldset>
     </div>
   )
 }

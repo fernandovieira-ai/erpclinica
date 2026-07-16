@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Save, Trash2, ArrowLeft, Plus, X } from 'lucide-react'
+import { Save, Trash2, ArrowLeft, Plus, X, ClipboardList } from 'lucide-react'
 import { tipoCobrancaSchema, tipoCobrancaUpdateSchema, type TipoCobrancaInput, type TipoCobrancaUpdateInput } from '@/lib/validators/forma-pagamento.schema'
 import type { TipoCobranca } from '@/types/cadastros.types'
 
@@ -150,7 +150,12 @@ export default function FormaPagamentoFormPage({ forma }: Props) {
       {/* ── Corpo ── */}
       <div style={{ padding: '14px 20px', display: 'flex', gap: 16, overflowY: 'auto', flex: 1 }}>
 
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ flex: 1 }}>
+        <fieldset className="form-fieldset">
+          <legend>
+            <ClipboardList size={12} /> Dados Gerais
+          </legend>
+          <div style={{ paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
 
           {/* Código */}
           <Row label="Código:">
@@ -184,6 +189,8 @@ export default function FormaPagamentoFormPage({ forma }: Props) {
             </select>
           </div>
 
+          </div>
+        </fieldset>
         </div>
 
       </div>

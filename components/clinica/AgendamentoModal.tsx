@@ -505,7 +505,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
         <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 'calc(100vh - 140px)', overflowY: 'auto' }}>
 
           {/* ── Paciente ────────────────────────────────────────── */}
-          <fieldset style={{ border: '1px solid var(--borda-suave)', borderRadius: 4, padding: '8px 10px 10px', margin: 0 }}>
+          <fieldset style={{ border: '1px solid var(--borda-suave)', borderRadius: 4, padding: '8px 10px 10px', margin: 0, backgroundColor: 'var(--bg-card)' }}>
             <legend style={{ fontSize: 10, fontWeight: 700, color: 'var(--texto-terciario)', textTransform: 'uppercase', letterSpacing: '.06em', padding: '0 6px', display: 'flex', alignItems: 'center', gap: 4 }}>
               <User size={10} /> Paciente<span style={{ color: 'var(--cor-erro)', marginLeft: 2 }}>*</span>
             </legend>
@@ -757,7 +757,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
           </fieldset>
 
           {/* ── Profissional + Data + Horários ───────────────────── */}
-          <fieldset style={{ border: '1px solid var(--borda-suave)', borderRadius: 4, padding: '8px 10px 10px', margin: 0 }}>
+          <fieldset style={{ border: '1px solid var(--borda-suave)', borderRadius: 4, padding: '8px 10px 10px', margin: 0, backgroundColor: 'var(--bg-card)' }}>
             <legend style={{ fontSize: 10, fontWeight: 700, color: 'var(--texto-terciario)', textTransform: 'uppercase', letterSpacing: '.06em', padding: '0 6px', display: 'flex', alignItems: 'center', gap: 4 }}>
               <Stethoscope size={10} /> Agendamento
               {loadingSlot && <span style={{ fontWeight: 400, color: 'var(--cor-primaria)', textTransform: 'none', letterSpacing: 0, marginLeft: 6 }}>Buscando próximo horário...</span>}

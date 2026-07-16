@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Save, Trash2, ArrowLeft, Search, X, CopyCheck, Banknote, RotateCcw } from 'lucide-react'
+import { Save, Trash2, ArrowLeft, Search, X, CopyCheck, Banknote, RotateCcw, User, FileText } from 'lucide-react'
 import { tituloReceberSchema, type TituloReceberInput } from '@/lib/validators/titulo-receber.schema'
 import type { TituloReceber } from '@/types/cadastros.types'
 import MoneyInput from '@/components/ui/MoneyInput'
@@ -413,8 +413,10 @@ export default function TituloReceberFormPage({ titulo }: Props) {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 32px', alignItems: 'start' }}>
 
               {/* ── Coluna 1: Identificação ── */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <TituloColuna>Identificação</TituloColuna>
+              <fieldset className="form-fieldset" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <legend>
+                  <User size={12} /> Identificação
+                </legend>
 
                 <LookupField
                   label="Pessoa / Cliente:*"
@@ -483,11 +485,13 @@ export default function TituloReceberFormPage({ titulo }: Props) {
                     <option value="C">C — Cancelado</option>
                   </Select>
                 </Row>
-              </div>
+              </fieldset>
 
               {/* ── Coluna 2: Valores ── */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <TituloColuna>Valores</TituloColuna>
+              <fieldset className="form-fieldset" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <legend>
+                  <Banknote size={12} /> Valores
+                </legend>
 
                 <Row label="Valor Original:*" error={errors.valor_original?.message} labelWidth={130}>
                   <MoneyInput value={watch('valor_original')} onValue={n => setValue('valor_original', n, { shouldValidate: true })} disabled={bloqueado} error={!!errors.valor_original} style={{ width: '100%' }} />
@@ -550,12 +554,17 @@ export default function TituloReceberFormPage({ titulo }: Props) {
                     labelWidth={130}
                   />
                 )}
-              </div>
+              </fieldset>
             </div>
           )}
 
           {/* ══════════════ ABA COMPLEMENTO ══════════════ */}
-          {aba === 'Complemento' && (<>
+          {aba === 'Complemento' && (
+          <fieldset className="form-fieldset">
+            <legend>
+              <FileText size={12} /> Complemento
+            </legend>
+            <div style={{ paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
 
             <Row label="Código de Barras:">
               <Input {...register('codigo_barras')} disabled={bloqueado} style={{ width: 340, fontFamily: 'var(--fonte-mono)', letterSpacing: '0.05em', opacity: bloqueado ? 0.65 : 1 }} />
@@ -586,7 +595,9 @@ export default function TituloReceberFormPage({ titulo }: Props) {
                 </span>
               </div>
             </>)}
-          </>)}
+            </div>
+          </fieldset>
+          )}
 
         </div>
       </form>

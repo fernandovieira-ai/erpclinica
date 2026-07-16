@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Save, Trash2, ArrowLeft, Search, Plus, X, Eye, EyeOff, Upload, Image as ImageIcon } from 'lucide-react'
+import { Save, Trash2, ArrowLeft, Search, Plus, X, Eye, EyeOff, Upload, Image as ImageIcon, ClipboardList, Receipt, Plug } from 'lucide-react'
 import { empresaSchema, type EmpresaInput } from '@/lib/validators/empresa.schema'
 import type { Empresa } from '@/types/cadastros.types'
 
@@ -430,7 +430,11 @@ export default function EmpresaFormPage({ empresa }: Props) {
       <div style={{ padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto', flex: 1 }}>
 
         {aba === 'Principal' && (
-          <>
+          <fieldset className="form-fieldset">
+            <legend>
+              <ClipboardList size={12} /> Dados Gerais
+            </legend>
+            <div style={{ paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
             {/* Linha: Código | Número | CNPJ */}
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <label style={{ fontSize: 12, color: 'var(--texto-secundario)', whiteSpace: 'nowrap' }}>Código:</label>
@@ -581,11 +585,16 @@ export default function EmpresaFormPage({ empresa }: Props) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 20, paddingLeft: 126 }}>
               <Check label="Empresa Ativa" {...register('ativo')} />
             </div>
-          </>
+            </div>
+          </fieldset>
         )}
 
         {aba === 'Faturamento' && (
-          <>
+          <fieldset className="form-fieldset">
+            <legend>
+              <Receipt size={12} /> Faturamento e Fiscal
+            </legend>
+            <div style={{ paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
             {/* Tipo de Cobrança Padrão */}
             <Row label="Tipo Cobrança:">
               <Select
@@ -655,11 +664,16 @@ export default function EmpresaFormPage({ empresa }: Props) {
                   border: '1px solid var(--borda-suave)', borderRadius: 3, fontSize: 12, outline: 'none' }} />
               <span style={{ fontSize: 11, color: 'var(--texto-terciario)', marginLeft: 6 }}>Upload do certificado via painel admin</span>
             </div>
-          </>
+            </div>
+          </fieldset>
         )}
 
         {aba === 'Integração' && (
-          <>
+          <fieldset className="form-fieldset">
+            <legend>
+              <Plug size={12} /> Integrações
+            </legend>
+            <div style={{ paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginBottom: 4 }}>
               Configuração da integração com o assistente de prontuário Voa. O token não fica fixo no
               código — cada empresa tem o seu, permitindo múltiplas empresas no futuro.
@@ -756,7 +770,8 @@ export default function EmpresaFormPage({ empresa }: Props) {
               Solicitar as chaves em doc.memed.com.br/integracao-rapida. A secret key nunca é
               devolvida pelo sistema depois de salva — só um indicador de que já está configurada.
             </div>
-          </>
+            </div>
+          </fieldset>
         )}
 
         {aba !== 'Principal' && aba !== 'Faturamento' && aba !== 'Integração' && (

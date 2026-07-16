@@ -161,6 +161,26 @@
     margin-bottom: 14px;
   }
 
+  /* --- Fieldsets de formulário (padrão: condição de pagamento) --- */
+
+  .form-fieldset {
+    border: 1px solid var(--borda-media);
+    border-radius: 8px;
+    padding: 10px 14px 14px;
+    background-color: var(--bg-card);
+  }
+  .form-fieldset > legend {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 700;
+    color: var(--texto-secundario);
+    padding: 0 6px;
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .form-fieldset-body {
+    padding-top: 6px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+
   /* --- Cards --- */
 
   .card {

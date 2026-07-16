@@ -163,14 +163,8 @@ const Check = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputEl
 // Seção com borda e título (estilo fieldset ERP)
 function Secao({ titulo, children, style }: { titulo: string; children: React.ReactNode; style?: React.CSSProperties }) {
   return (
-    <fieldset style={{
-      border: '1px solid var(--borda-media)', borderRadius: 4,
-      padding: '6px 10px 10px', margin: 0, ...style,
-    }}>
-      <legend style={{ fontSize: 11, fontWeight: 600, color: 'var(--texto-secundario)',
-        padding: '0 6px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-        {titulo}
-      </legend>
+    <fieldset className="form-fieldset" style={{ margin: 0, ...style }}>
+      <legend>{titulo}</legend>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {children}
       </div>

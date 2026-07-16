@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Save, Trash2, ArrowLeft, Plus, Search, X } from 'lucide-react'
+import { Save, Trash2, ArrowLeft, Plus, Search, X, ClipboardList } from 'lucide-react'
 import { contaBancoSchema, type ContaBancoInput } from '@/lib/validators/conta-banco.schema'
 import type { ContaBanco, Banco } from '@/types/cadastros.types'
 import MoneyInput from '@/components/ui/MoneyInput'
@@ -429,7 +429,12 @@ export default function ContaBancoFormPage({ conta }: Props) {
         <div style={{ padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto', flex: 1 }}>
 
           {aba === 'Principal' && (
-            <>
+            <fieldset className="form-fieldset">
+              <legend>
+                <ClipboardList size={12} /> Dados Gerais
+              </legend>
+              <div style={{ paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+
               {/* Linha 1: Código | Mnemônico */}
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 <Label style={{ width: 120, textAlign: 'right', paddingRight: 2 }}>Código:</Label>
@@ -561,7 +566,8 @@ export default function ContaBancoFormPage({ conta }: Props) {
                   <span style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>calculado automaticamente</span>
                 </div>
               )}
-            </>
+              </div>
+            </fieldset>
           )}
         </div>
       </form>

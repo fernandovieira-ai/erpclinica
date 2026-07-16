@@ -499,8 +499,8 @@ export default function ReceitaFormPage({ receita }: Props) {
           <Sep />
 
           {/* ── Destino: Banco ── */}
-          <fieldset style={{ border: '1px solid var(--borda-media)', borderRadius: 4, padding: '8px 12px 10px', margin: 0 }}>
-            <legend style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 6px', fontSize: 11, fontWeight: 700, color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}
+          <fieldset className="form-fieldset" style={{ margin: 0 }}>
+            <legend style={{ cursor: 'pointer', userSelect: 'none' }}
               onClick={() => {
                 const next = watch('destino') === 'B' ? undefined : 'B'
                 setValue('destino', next)
@@ -524,8 +524,8 @@ export default function ReceitaFormPage({ receita }: Props) {
           </fieldset>
 
           {/* ── Destino: Caixa ── */}
-          <fieldset style={{ border: '1px solid var(--borda-media)', borderRadius: 4, padding: '8px 12px 10px', margin: 0 }}>
-            <legend style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 6px', fontSize: 11, fontWeight: 700, color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}
+          <fieldset className="form-fieldset" style={{ margin: 0 }}>
+            <legend style={{ cursor: 'pointer', userSelect: 'none' }}
               onClick={() => {
                 const next = watch('destino') === 'C' ? undefined : 'C'
                 setValue('destino', next)
@@ -663,10 +663,8 @@ export default function ReceitaFormPage({ receita }: Props) {
             <Sep />
 
             {/* ── Geração Automática de Parcelas ── */}
-            <fieldset style={{ border: '1px solid var(--borda-media)', borderRadius: 4, padding: '8px 12px 10px', margin: 0 }}>
-              <legend style={{ padding: '0 6px', fontSize: 11, fontWeight: 700, color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Geração Automática de Parcelas
-              </legend>
+            <fieldset className="form-fieldset" style={{ margin: 0 }}>
+              <legend>Geração Automática de Parcelas</legend>
               <div style={{ display: 'flex', gap: 16, marginBottom: 8 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer', userSelect: 'none', color: 'var(--texto-principal)' }}>
                   <input type="checkbox" checked={diaFixo} onChange={e => setDiaFixo(e.target.checked)} style={{ cursor: 'pointer', width: 13, height: 13, accentColor: 'var(--cor-primaria)' }} />

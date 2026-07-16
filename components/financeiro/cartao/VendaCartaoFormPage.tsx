@@ -3,7 +3,7 @@
 import { Fragment, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Ban, ArrowLeft, Zap, Undo2 } from 'lucide-react'
+import { Ban, ArrowLeft, Zap, Undo2, ClipboardList } from 'lucide-react'
 import type { VendaCartao, VendaCartaoParcela } from '@/types/cartao.types'
 
 interface Props { venda: VendaCartao }
@@ -132,20 +132,25 @@ export default function VendaCartaoFormPage({ venda }: Props) {
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 20px', display: 'flex', gap: 20 }}>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 420, fontSize: 12 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: '6px 8px' }}>
-            <span style={{ color: 'var(--texto-terciario)' }}>Origem:</span>            <span>{venda.observacao ?? '—'}</span>
-            <span style={{ color: 'var(--texto-terciario)' }}>Conta Bancária:</span>     <span>{venda.conta_banco_desc}</span>
-            <span style={{ color: 'var(--texto-terciario)' }}>Condição:</span>           <span>{venda.condicao_descricao}</span>
-            <span style={{ color: 'var(--texto-terciario)' }}>Adquirente:</span>         <span>{venda.adquirente} · {venda.bandeira}</span>
-            <span style={{ color: 'var(--texto-terciario)' }}>Modalidade:</span>         <span>{venda.modalidade}</span>
-            <span style={{ color: 'var(--texto-terciario)' }}>Parcelas:</span>           <span>{venda.qtd_parcelas}x</span>
-            <span style={{ color: 'var(--texto-terciario)' }}>Valor Bruto:</span>        <span style={{ fontWeight: 600, fontFamily: 'var(--fonte-mono)' }}>{fmtValor(venda.valor_bruto)}</span>
-            <span style={{ color: 'var(--texto-terciario)' }}>MDR Aplicado:</span>       <span>{venda.percentual_mdr_aplicado ? `${Number(venda.percentual_mdr_aplicado).toFixed(4)}%` : '—'}</span>
-            <span style={{ color: 'var(--texto-terciario)' }}>NSU:</span>                <span style={{ fontFamily: 'var(--fonte-mono)' }}>{venda.nsu ?? '—'}</span>
-            <span style={{ color: 'var(--texto-terciario)' }}>Cód. Autorização:</span>   <span style={{ fontFamily: 'var(--fonte-mono)' }}>{venda.codigo_autorizacao ?? '—'}</span>
-            <span style={{ color: 'var(--texto-terciario)' }}>Data da Venda:</span>      <span>{new Date(venda.data_venda).toLocaleString('pt-BR')}</span>
-          </div>
+        <div style={{ flex: 1, maxWidth: 420 }}>
+          <fieldset className="form-fieldset" style={{ fontSize: 12 }}>
+            <legend>
+              <ClipboardList size={12} /> Dados da Venda
+            </legend>
+            <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: '6px 8px', paddingTop: 6 }}>
+              <span style={{ color: 'var(--texto-terciario)' }}>Origem:</span>            <span>{venda.observacao ?? '—'}</span>
+              <span style={{ color: 'var(--texto-terciario)' }}>Conta Bancária:</span>     <span>{venda.conta_banco_desc}</span>
+              <span style={{ color: 'var(--texto-terciario)' }}>Condição:</span>           <span>{venda.condicao_descricao}</span>
+              <span style={{ color: 'var(--texto-terciario)' }}>Adquirente:</span>         <span>{venda.adquirente} · {venda.bandeira}</span>
+              <span style={{ color: 'var(--texto-terciario)' }}>Modalidade:</span>         <span>{venda.modalidade}</span>
+              <span style={{ color: 'var(--texto-terciario)' }}>Parcelas:</span>           <span>{venda.qtd_parcelas}x</span>
+              <span style={{ color: 'var(--texto-terciario)' }}>Valor Bruto:</span>        <span style={{ fontWeight: 600, fontFamily: 'var(--fonte-mono)' }}>{fmtValor(venda.valor_bruto)}</span>
+              <span style={{ color: 'var(--texto-terciario)' }}>MDR Aplicado:</span>       <span>{venda.percentual_mdr_aplicado ? `${Number(venda.percentual_mdr_aplicado).toFixed(4)}%` : '—'}</span>
+              <span style={{ color: 'var(--texto-terciario)' }}>NSU:</span>                <span style={{ fontFamily: 'var(--fonte-mono)' }}>{venda.nsu ?? '—'}</span>
+              <span style={{ color: 'var(--texto-terciario)' }}>Cód. Autorização:</span>   <span style={{ fontFamily: 'var(--fonte-mono)' }}>{venda.codigo_autorizacao ?? '—'}</span>
+              <span style={{ color: 'var(--texto-terciario)' }}>Data da Venda:</span>      <span>{new Date(venda.data_venda).toLocaleString('pt-BR')}</span>
+            </div>
+          </fieldset>
         </div>
 
         <div style={{ flex: 1 }}>
