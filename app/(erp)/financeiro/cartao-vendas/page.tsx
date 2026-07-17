@@ -13,6 +13,10 @@ function fmtData(d: string | null) {
   if (!d) return '—'
   return new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
+function fmtDataSimples(d: string | null) {
+  if (!d) return '—'
+  return d.slice(0, 10).split('-').reverse().join('/')
+}
 
 const STATUS_COR: Record<string, string> = {
   PENDENTE:   'var(--cor-aviso)',
@@ -95,13 +99,16 @@ export default function CartaoVendasPage() {
                   <th style={{ width: 150 }}>Modalidade</th>
                   <th style={{ width: 80, textAlign: 'center' }}>Parc.</th>
                   <th style={{ width: 130, textAlign: 'right' }}>Valor Bruto</th>
+                  <th style={{ width: 90, textAlign: 'right' }}>Taxa</th>
+                  <th style={{ width: 130, textAlign: 'right' }}>Valor Líquido</th>
                   <th style={{ width: 150 }}>Data</th>
+                  <th style={{ width: 110 }}>Vencimento</th>
                   <th style={{ width: 100, textAlign: 'center' }}>Status</th>
                 </tr>
               </thead>
               <tbody>
-                {loading && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 24, color: 'var(--texto-terciario)' }}>Carregando...</td></tr>}
-                {!loading && dados.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 40, color: 'var(--texto-terciario)' }}>Nenhuma venda no cartão encontrada</td></tr>}
+                {loading && <tr><td colSpan={13} style={{ textAlign: 'center', padding: 24, color: 'var(--texto-terciario)' }}>Carregando...</td></tr>}
+                {!loading && dados.length === 0 && <tr><td colSpan={13} style={{ textAlign: 'center', padding: 40, color: 'var(--texto-terciario)' }}>Nenhuma venda no cartão encontrada</td></tr>}
                 {!loading && dados.map(v => (
                   <tr key={v.id} style={{ cursor: 'pointer' }} onClick={() => router.push(`/financeiro/cartao-vendas/${v.id}`)}>
                     <td style={{ fontFamily: 'var(--fonte-mono)', color: 'var(--texto-terciario)' }}>{v.id}</td>
@@ -112,7 +119,10 @@ export default function CartaoVendasPage() {
                     <td style={{ fontSize: 12 }}>{v.modalidade ? MODALIDADE_LABEL[v.modalidade] ?? v.modalidade : '—'}</td>
                     <td style={{ textAlign: 'center' }}>{v.qtd_parcelas}x</td>
                     <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)', fontWeight: 600 }}>{fmtValor(v.valor_bruto)}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)', fontSize: 12, color: 'var(--texto-secundario)' }}>{v.percentual_mdr_aplicado ? `${Number(v.percentual_mdr_aplicado).toFixed(2)}%` : '—'}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)', fontWeight: 600, color: 'var(--cor-sucesso)' }}>{fmtValor(v.valor_liquido)}</td>
                     <td style={{ fontFamily: 'var(--fonte-mono)', color: 'var(--texto-secundario)', fontSize: 12 }}>{fmtData(v.data_venda)}</td>
+                    <td style={{ fontFamily: 'var(--fonte-mono)', color: 'var(--texto-secundario)', fontSize: 12 }}>{fmtDataSimples(v.proximo_vencimento)}</td>
                     <td style={{ textAlign: 'center' }}>
                       <span style={{ fontSize: 11, fontWeight: 600, color: STATUS_COR[v.status_parcelas] }}>{STATUS_LABEL[v.status_parcelas] ?? v.status_parcelas}</span>
                     </td>

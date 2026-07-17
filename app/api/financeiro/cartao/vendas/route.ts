@@ -57,6 +57,7 @@ export async function GET(req: NextRequest) {
       `SELECT v.id, cb.mnemonico AS conta_banco_desc, cp.descricao AS condicao_descricao,
               v.adquirente, v.bandeira, v.modalidade, v.qtd_parcelas, v.valor_bruto,
               v.nsu, TO_CHAR(v.data_venda, 'YYYY-MM-DD"T"HH24:MI:SS') AS data_venda, v.status,
+              v.percentual_mdr_aplicado,
               (SELECT CASE
                  WHEN v.status = 'CANCELADO' THEN 'CANCELADO'
                  WHEN count(*) FILTER (WHERE p.status = 'CONCILIADA') = count(*) THEN 'CONCILIADA'
@@ -64,7 +65,9 @@ export async function GET(req: NextRequest) {
                  WHEN count(*) FILTER (WHERE p.status IN ('FATURADA','CONCILIADA')) > 0 THEN 'PARCIAL'
                  ELSE 'PENDENTE'
                END
-               FROM tab_venda_cartao_parcela p WHERE p.venda_cartao_id = v.id) AS status_parcelas
+               FROM tab_venda_cartao_parcela p WHERE p.venda_cartao_id = v.id) AS status_parcelas,
+              (SELECT TO_CHAR(MIN(p.data_prevista), 'YYYY-MM-DD') FROM tab_venda_cartao_parcela p WHERE p.venda_cartao_id = v.id) AS proximo_vencimento,
+              (SELECT COALESCE(SUM(p.valor_liquido), 0) FROM tab_venda_cartao_parcela p WHERE p.venda_cartao_id = v.id) AS valor_liquido
        FROM tab_venda_cartao v
        JOIN tab_conta_banco cb ON cb.id = v.conta_banco_id
        JOIN tab_condicao_pagamento cp ON cp.id = v.condicao_pagamento_id

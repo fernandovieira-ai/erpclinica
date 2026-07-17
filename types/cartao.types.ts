@@ -91,7 +91,11 @@ export type VendaCartaoListItem = Pick<
   VendaCartao,
   | 'id' | 'conta_banco_desc' | 'condicao_descricao' | 'adquirente' | 'bandeira' | 'modalidade'
   | 'qtd_parcelas' | 'valor_bruto' | 'nsu' | 'data_venda' | 'status' | 'status_parcelas'
->
+  | 'percentual_mdr_aplicado'
+> & {
+  proximo_vencimento: string | null
+  valor_liquido:      string
+}
 
 export interface VendaCartaoListResponse {
   dados: VendaCartaoListItem[]
