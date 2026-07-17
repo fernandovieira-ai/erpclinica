@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Save, Trash2, ArrowLeft, Plus, X, ClipboardList } from 'lucide-react'
+import { Save, Trash2, ArrowLeft, Plus, X, ClipboardList, Banknote } from 'lucide-react'
 import { agendamentoTipoSchema, type AgendamentoTipoInput } from '@/lib/validators/agendamento.schema'
 import type { TipoAtendimentoListItem, TipoCategoriaValorItem } from '@/types/clinica.types'
 
@@ -339,6 +339,12 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
         {/* ── Aba Categorias ── */}
         {aba === 'categorias' && (
           <div style={{ padding: '20px 24px', maxWidth: 600 }}>
+          <fieldset className="form-fieldset">
+            <legend>
+              <Banknote size={12} /> Valores por Categoria
+            </legend>
+            <div className="form-fieldset-body">
+
             {categorias.length === 0 ? (
               <p style={{ fontSize: 12, color: 'var(--texto-terciario)' }}>
                 Nenhuma categoria cadastrada. Cadastre categorias em <strong>Clínica → Categorias</strong> primeiro.
@@ -386,6 +392,9 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
             <p style={{ marginTop: 12, fontSize: 11, color: 'var(--texto-terciario)' }}>
               Deixe em branco ou zero para usar o valor padrão do tipo de atendimento.
             </p>
+
+            </div>
+          </fieldset>
           </div>
         )}
 
