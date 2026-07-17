@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Save, Trash2, ArrowLeft, Search, X, ClipboardList } from 'lucide-react'
+import { Save, Trash2, ArrowLeft, Search, X, ClipboardList, Receipt, PieChart } from 'lucide-react'
 import { receitaSchema, type ReceitaInput } from '@/lib/validators/receita.schema'
 import type { Receita } from '@/types/cadastros.types'
 import MoneyInput from '@/components/ui/MoneyInput'
@@ -575,7 +575,12 @@ export default function ReceitaFormPage({ receita }: Props) {
         )}
 
         {aba === 'Parcelas' && (
-          <>
+          <fieldset className="form-fieldset">
+            <legend>
+              <Receipt size={12} /> Parcelas
+            </legend>
+            <div className="form-fieldset-body">
+
             {/* Tipo de Cobrança */}
             <LookupField
               label="Tipo de Cobrança:"
@@ -721,7 +726,9 @@ export default function ReceitaFormPage({ receita }: Props) {
             <input type="hidden" {...register('num_parcelas',   { valueAsNumber: true })} />
             <input type="hidden" {...register('intervalo_dias', { valueAsNumber: true })} />
             <input type="hidden" {...register('ind_avista')} />
-          </>
+
+            </div>
+          </fieldset>
         )}
 
         {/* ══════════════════════════════ ABA RATEIO ══════════════════════════════ */}
@@ -806,7 +813,12 @@ export default function ReceitaFormPage({ receita }: Props) {
           const lblStyle: React.CSSProperties = { fontSize: 12, color: 'var(--texto-secundario)', whiteSpace: 'nowrap' }
 
           return (
-            <>
+            <fieldset className="form-fieldset">
+              <legend>
+                <PieChart size={12} /> Rateio de Centro de Custo
+              </legend>
+              <div className="form-fieldset-body">
+
               {tipoReceitaNatureza === 'A' && rateios.length === 0 && (
                 <div style={{ padding: '8px 12px', marginBottom: 4, backgroundColor: 'var(--cor-aviso)18', border: '1px solid var(--cor-aviso)60', borderRadius: 4, fontSize: 12, color: 'var(--cor-aviso)', fontWeight: 500 }}>
                   ⚠ Tipo de receita <strong>Administrativa</strong> — é obrigatório informar ao menos um rateio de centro de custo antes de salvar.
@@ -903,7 +915,9 @@ export default function ReceitaFormPage({ receita }: Props) {
                 <input readOnly value={valorDif.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                   style={{ ...inStyle, width: 110, textAlign: 'right', fontFamily: 'var(--fonte-mono)', background: 'var(--bg-hover)', color: Math.abs(valorDif) > 0.01 ? 'var(--cor-erro)' : 'var(--cor-sucesso)' }} />
               </div>
-            </>
+
+              </div>
+            </fieldset>
           )
         })()}
         </div>
