@@ -111,7 +111,7 @@ export default function FluxoCaixaPage() {
         {dados && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, opacity: loading ? 0.6 : 1, transition: 'opacity 0.15s' }}>
 
-            {/* ── Alerta de vencidos ── */}
+            {/* ── Alertas: vencidos e cartão em atraso ── */}
             {(dados.kpis.nReceberVencido > 0 || dados.kpis.nPagarVencido > 0) && (
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 10,
@@ -130,6 +130,23 @@ export default function FluxoCaixaPage() {
                 </div>
                 <Link href="/financeiro/contas-receber" style={{ fontSize: 12, fontWeight: 600, color: 'var(--cor-primaria)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap' }}>
                   Ver títulos <ArrowRight size={12} />
+                </Link>
+              </div>
+            )}
+
+            {dados.kpis.nCartaoAtrasado > 0 && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                background: 'var(--cor-aviso-bg)', border: '0.5px solid rgba(239,159,39,0.3)',
+                borderRadius: 10, padding: '10px 16px',
+              }}>
+                <AlertTriangle size={16} style={{ color: 'var(--cor-aviso)', flexShrink: 0 }} />
+                <div style={{ fontSize: 12.5, color: 'var(--cor-primaria-text)', flex: 1 }}>
+                  <strong>{dados.kpis.nCartaoAtrasado} parcela(s) de cartão em atraso</strong>
+                  {' '}· {fmtValor(dados.kpis.aReceberCartaoAtrasado)} sem fatura gerada
+                </div>
+                <Link href="/financeiro/cartao-faturas" style={{ fontSize: 12, fontWeight: 600, color: 'var(--cor-primaria)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap' }}>
+                  Gerar faturas <ArrowRight size={12} />
                 </Link>
               </div>
             )}
@@ -172,10 +189,14 @@ export default function FluxoCaixaPage() {
                 <StatCard
                   label="A Receber (Cartão)"
                   valor={fmtValor(dados.kpis.aReceberCartao)}
-                  sub="vendas no cartão ainda não confirmadas"
-                  icon={<CreditCard size={18} style={{ color: '#7E57C2' }} />}
-                  cor="#7E57C2"
-                  corBg="#7E57C220"
+                  sub={
+                    dados.kpis.nCartaoAtrasado > 0
+                      ? `${fmtValor(dados.kpis.aReceberCartaoAtrasado)} em atraso (${dados.kpis.nCartaoAtrasado})`
+                      : 'vendas no cartão ainda não confirmadas'
+                  }
+                  icon={<CreditCard size={18} style={{ color: dados.kpis.nCartaoAtrasado > 0 ? 'var(--cor-aviso)' : '#7E57C2' }} />}
+                  cor={dados.kpis.nCartaoAtrasado > 0 ? 'var(--cor-aviso)' : '#7E57C2'}
+                  corBg={dados.kpis.nCartaoAtrasado > 0 ? 'var(--cor-aviso-bg)' : '#7E57C220'}
                 />
               </Link>
             </div>

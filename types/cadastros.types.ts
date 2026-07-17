@@ -734,6 +734,8 @@ export interface FluxoCaixaKpis {
   nReceberVencido: number
   nPagarVencido:   number
   aReceberCartao:  number
+  aReceberCartaoAtrasado: number
+  nCartaoAtrasado:        number
 }
 
 export interface FluxoCaixaSeriePonto {

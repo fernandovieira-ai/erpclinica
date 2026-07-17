@@ -94,8 +94,14 @@ export async function GET(req: NextRequest) {
       // Recebíveis de cartão ainda não confirmados (não viram tab_movimento_banco
       // até a fatura ser confirmada) — não têm título a receber, então vw_titulos_*
       // não os enxerga; sem isso o fluxo de caixa fica cego pro dinheiro do cartão.
+      // "Atrasado" = data_prevista já passou e a parcela nem foi agrupada em fatura
+      // ainda (status ainda PENDENTE) — repasse que o operador esqueceu de conciliar.
       db.query(
-        `SELECT COALESCE(SUM(p.valor_liquido),0) AS total
+        `SELECT
+           COALESCE(SUM(p.valor_liquido),0) AS total,
+           COALESCE(SUM(CASE WHEN p.status = 'PENDENTE' AND p.data_prevista < CURRENT_DATE
+                              THEN p.valor_liquido ELSE 0 END), 0) AS atrasado,
+           COUNT(CASE WHEN p.status = 'PENDENTE' AND p.data_prevista < CURRENT_DATE THEN 1 END) AS n_atrasado
          FROM tab_venda_cartao_parcela p
          JOIN tab_venda_cartao v ON v.id = p.venda_cartao_id
          WHERE v.empresa_id=$1 AND v.status='PENDENTE' AND p.status IN ('PENDENTE','FATURADA')`,
@@ -186,6 +192,8 @@ export async function GET(req: NextRequest) {
       nReceberVencido: Number(aberto.n_receber_vencido),
       nPagarVencido:   Number(aberto.n_pagar_vencido),
       aReceberCartao:  Number(cartaoRow[0].total),
+      aReceberCartaoAtrasado: Number(cartaoRow[0].atrasado),
+      nCartaoAtrasado:        Number(cartaoRow[0].n_atrasado),
     }
 
     // Série diária: preenche todos os dias do período e calcula saldo acumulado
