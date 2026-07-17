@@ -90,6 +90,7 @@ export default function CartaoVendasPage() {
                   <th style={{ width: 60 }}>ID</th>
                   <th style={{ width: 130 }}>Conta</th>
                   <th>Condição</th>
+                  <th>Pessoa</th>
                   <th style={{ width: 130 }}>Adquirente</th>
                   <th style={{ width: 130 }}>NSU</th>
                   <th style={{ width: 150 }}>Modalidade</th>
@@ -103,13 +104,14 @@ export default function CartaoVendasPage() {
                 </tr>
               </thead>
               <tbody>
-                {loading && <tr><td colSpan={13} style={{ textAlign: 'center', padding: 24, color: 'var(--texto-terciario)' }}>Carregando...</td></tr>}
-                {!loading && dados.length === 0 && <tr><td colSpan={13} style={{ textAlign: 'center', padding: 40, color: 'var(--texto-terciario)' }}>Nenhuma venda no cartão encontrada</td></tr>}
+                {loading && <tr><td colSpan={14} style={{ textAlign: 'center', padding: 24, color: 'var(--texto-terciario)' }}>Carregando...</td></tr>}
+                {!loading && dados.length === 0 && <tr><td colSpan={14} style={{ textAlign: 'center', padding: 40, color: 'var(--texto-terciario)' }}>Nenhuma venda no cartão encontrada</td></tr>}
                 {!loading && dados.map(v => (
                   <tr key={v.id} style={{ cursor: 'pointer' }} onClick={() => router.push(`/financeiro/cartao-vendas/${v.id}`)}>
                     <td style={{ fontFamily: 'var(--fonte-mono)', color: 'var(--texto-terciario)' }}>{v.id}</td>
                     <td style={{ fontWeight: 500 }}>{v.conta_banco_desc}</td>
                     <td style={{ fontSize: 12, color: 'var(--texto-secundario)' }}>{v.condicao_descricao}</td>
+                    <td style={{ fontSize: 12, fontWeight: 500 }}>{v.pessoa_nome ?? '—'}</td>
                     <td style={{ fontSize: 12, color: 'var(--texto-secundario)' }}>{v.adquirente} · {v.bandeira}</td>
                     <td style={{ fontFamily: 'var(--fonte-mono)', fontSize: 12, color: 'var(--texto-secundario)' }}>{v.nsu ?? '—'}</td>
                     <td style={{ fontSize: 12 }}>{v.modalidade ? MODALIDADE_LABEL[v.modalidade] ?? v.modalidade : '—'}</td>

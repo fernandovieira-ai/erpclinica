@@ -95,6 +95,7 @@ export type VendaCartaoListItem = Pick<
 > & {
   proximo_vencimento: string | null
   valor_liquido:      string
+  pessoa_nome:        string | null
 }
 
 export interface VendaCartaoListResponse {
