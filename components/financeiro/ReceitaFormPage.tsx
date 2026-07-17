@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Save, Trash2, ArrowLeft, Search, X } from 'lucide-react'
+import { Save, Trash2, ArrowLeft, Search, X, ClipboardList } from 'lucide-react'
 import { receitaSchema, type ReceitaInput } from '@/lib/validators/receita.schema'
 import type { Receita } from '@/types/cadastros.types'
 import MoneyInput from '@/components/ui/MoneyInput'
@@ -453,7 +453,12 @@ export default function ReceitaFormPage({ receita }: Props) {
 
         {/* Campos */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {aba === 'Dados' && (<>
+        {aba === 'Dados' && (
+        <fieldset className="form-fieldset">
+          <legend>
+            <ClipboardList size={12} /> Dados Gerais
+          </legend>
+          <div className="form-fieldset-body">
 
           {/* Lookups */}
           <LookupField
@@ -564,7 +569,9 @@ export default function ReceitaFormPage({ receita }: Props) {
               onBlur={e  => (e.target.style.borderColor = 'var(--borda-media)')}
             />
           </div>
-        </>
+
+          </div>
+        </fieldset>
         )}
 
         {aba === 'Parcelas' && (
