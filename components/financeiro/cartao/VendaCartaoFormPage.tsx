@@ -3,7 +3,7 @@
 import { Fragment, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Ban, ArrowLeft, Zap, Undo2, ClipboardList } from 'lucide-react'
+import { Ban, ArrowLeft, Zap, Undo2, ClipboardList, Receipt } from 'lucide-react'
 import type { VendaCartao, VendaCartaoParcela } from '@/types/cartao.types'
 
 interface Props { venda: VendaCartao }
@@ -154,9 +154,11 @@ export default function VendaCartaoFormPage({ venda }: Props) {
         </div>
 
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--texto-terciario)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            Parcelas {pctAntecipacaoAM > 0 && <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>· taxa de antecipação: {pctAntecipacaoAM.toFixed(2)}% a.m.</span>}
-          </div>
+        <fieldset className="form-fieldset" style={{ fontSize: 12 }}>
+          <legend>
+            <Receipt size={12} /> Parcelas {pctAntecipacaoAM > 0 && <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>· taxa de antecipação: {pctAntecipacaoAM.toFixed(2)}% a.m.</span>}
+          </legend>
+          <div style={{ paddingTop: 6 }}>
           <div className="card">
             <div className="table-wrapper">
               <table className="table-base">
@@ -259,6 +261,8 @@ export default function VendaCartaoFormPage({ venda }: Props) {
               </table>
             </div>
           </div>
+          </div>
+        </fieldset>
         </div>
       </div>
     </div>
