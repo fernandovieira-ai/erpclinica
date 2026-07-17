@@ -9,10 +9,6 @@ import type { VendaCartaoListItem, VendaCartaoListResponse } from '@/types/carta
 function fmtValor(v: string | number) {
   return Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
-function fmtData(d: string | null) {
-  if (!d) return '—'
-  return new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
 function fmtDataSimples(d: string | null) {
   if (!d) return '—'
   return d.slice(0, 10).split('-').reverse().join('/')
@@ -121,7 +117,7 @@ export default function CartaoVendasPage() {
                     <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)', fontWeight: 600 }}>{fmtValor(v.valor_bruto)}</td>
                     <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)', fontSize: 12, color: 'var(--texto-secundario)' }}>{v.percentual_mdr_aplicado ? `${Number(v.percentual_mdr_aplicado).toFixed(2)}%` : '—'}</td>
                     <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)', fontWeight: 600, color: 'var(--cor-sucesso)' }}>{fmtValor(v.valor_liquido)}</td>
-                    <td style={{ fontFamily: 'var(--fonte-mono)', color: 'var(--texto-secundario)', fontSize: 12 }}>{fmtData(v.data_venda)}</td>
+                    <td style={{ fontFamily: 'var(--fonte-mono)', color: 'var(--texto-secundario)', fontSize: 12 }}>{fmtDataSimples(v.data_venda)}</td>
                     <td style={{ fontFamily: 'var(--fonte-mono)', color: 'var(--texto-secundario)', fontSize: 12 }}>{fmtDataSimples(v.proximo_vencimento)}</td>
                     <td style={{ textAlign: 'center' }}>
                       <span style={{ fontSize: 11, fontWeight: 600, color: STATUS_COR[v.status_parcelas] }}>{STATUS_LABEL[v.status_parcelas] ?? v.status_parcelas}</span>
