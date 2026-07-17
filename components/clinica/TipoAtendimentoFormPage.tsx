@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Save, Trash2, ArrowLeft, Plus, X } from 'lucide-react'
+import { Save, Trash2, ArrowLeft, Plus, X, ClipboardList } from 'lucide-react'
 import { agendamentoTipoSchema, type AgendamentoTipoInput } from '@/lib/validators/agendamento.schema'
 import type { TipoAtendimentoListItem, TipoCategoriaValorItem } from '@/types/clinica.types'
 
@@ -208,7 +208,12 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
           <div style={{ padding: '20px 24px', display: 'flex', gap: 24 }}>
 
             {/* Coluna principal */}
-        <div style={{ flex: 1, maxWidth: 560, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ flex: 1, maxWidth: 560 }}>
+        <fieldset className="form-fieldset">
+          <legend>
+            <ClipboardList size={12} /> Dados Gerais
+          </legend>
+          <div className="form-fieldset-body">
 
           {/* Descrição */}
           <Row label="Descrição:">
@@ -298,6 +303,9 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
               <option value="false">Não</option>
             </select>
           </Row>
+
+          </div>
+        </fieldset>
         </div>
 
         {/* Preview */}
