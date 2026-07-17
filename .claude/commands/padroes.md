@@ -288,7 +288,67 @@ END $$;
 
 ---
 
-## 11. PENDÊNCIA — login em produção 500 (PG_USER sem acesso a `saas_control`)
+## 12. Cartão de crédito — parcelamento e MDR por faixa de parcelas
+
+- `tab_condicao_pagamento.num_parcelas`: quando `tipo_pagamento='credito'`, o campo deixa de ser "parcelas fixas" e passa a ser o **máximo de parcelas** que o operador pode escolher no recebimento (1x até esse limite). As rotas `condicoes-pagamento` (POST/PATCH) tratam isso com `isCredito = tipo_pagamento === 'credito'` **antes** de aplicar a regra antiga `tipo==='V' → força num_parcelas=1` — não deixar essa regra antiga voltar a pisar em condição de crédito.
+- `num_parcelas` tem `.max(360)` no zod (`lib/validators/condicao-pagamento.schema.ts`) porque esse valor alimenta `Array.from({length: num_parcelas})` no dropdown de parcelas do `RecebimentoModal` — sem limite, um valor absurdo trava o navegador.
+- `tab_taxa_cartao` **não tem mais vigência por data** (decisão de negócio, migration 44): existe **uma taxa por `condicao_pagamento_id` + faixa de parcelas** (`parcelas_de`/`parcelas_ate`, índice único `uq_taxa_cartao_condicao_parcelas`). Salvar = upsert (`ON CONFLICT ... DO UPDATE`), nunca cria histórico/nova linha. `fn_taxa_cartao_vigente(condicao_pagamento_id, qtd_parcelas)` acha a faixa que contém `qtd_parcelas` (faixa mais estreita primeiro).
+- `RecebimentoModal.tsx`: o operador só escolhe quantas parcelas usar quando `tipo_pagamento==='credito' && num_parcelas > 1` (`isCreditoParcelavel`). Débito é sempre 1x. O servidor clampa (`Math.min/Math.max`) e a trigger `fn_trg_venda_cartao_auto` valida de novo no banco (`RAISE EXCEPTION` se fora do intervalo permitido) — são duas camadas de defesa, não remover nenhuma das duas.
+- `POST` e `PATCH` de `/api/financeiro/cartao/taxas` **precisam** confirmar que o `condicao_pagamento_id` recebido pertence à `empresa_id_ativa` antes de gravar (já existia no POST; o PATCH ganhou essa checagem em 2026-07 — sem ela dá pra reapontar uma taxa pra condição de outra empresa).
+- Migrations `novos/43_taxa_cartao_por_parcela.sql` e `novos/44_taxa_cartao_sem_vigencia.sql` já aplicadas no banco remoto compartilhado (`hiitcor`).
+
+## 13. Ciclo de vida da venda no cartão (Fatura de Cartão)
+
+`tab_venda_cartao` nasce automaticamente (nunca via formulário manual) sempre que um recebimento usa condição débito/crédito — trigger `fn_trg_venda_cartao_auto` (BEFORE INSERT) deriva adquirente/bandeira/modalidade/MDR aplicado, e `fn_trg_venda_cartao_parcelas` (AFTER INSERT) gera as linhas de `tab_venda_cartao_parcela`.
+
+Status da parcela: `PENDENTE → FATURADA → CONCILIADA`
+
+| Transição | Onde acontece | O que faz |
+|---|---|---|
+| `PENDENTE → FATURADA` | Tela **Faturas de Cartão** → "Gerar Faturas" (`GET/POST /api/financeiro/cartao/faturas/gerar`) | GET só lista parcelas com `data_prevista <= hoje`. `fn_gerar_faturas_cartao_selecao` agrupa a seleção em `tab_fatura_cartao` (status `ABERTA`) por conta+adquirente+data_prevista |
+| `FATURADA → CONCILIADA` | `POST /api/financeiro/cartao/faturas/[id]/confirmar` | `fn_confirmar_fatura_cartao` cria `tab_movimento_banco` (`origem_modulo='CARTAO'`) — só aqui o dinheiro vira saldo bancário de verdade |
+| Estorno | `POST /api/financeiro/cartao/faturas/[id]/estornar` | `fn_estornar_fatura_cartao` desfaz (bloqueia se já conciliado com extrato OFX) |
+
+`tab_venda_cartao.status` só tem `PENDENTE|CANCELADO` — o progresso real está nas parcelas. `status_parcelas` (calculado dinamicamente na API de listagem `GET /api/financeiro/cartao/vendas`) resume: `CONCILIADA / FATURADA / PARCIAL / PENDENTE / CANCELADO`.
+
+**Parcela "esquecida"**: se `data_prevista` passa e a parcela continua `PENDENTE` (ninguém gerou fatura pra ela), ela some silenciosamente da projeção de 30 dias do fluxo de caixa (que só olha pra frente) — não é bug, é o filtro de data descrito na seção 14. O alerta "Cartão em Atraso" cobre exatamente esse caso.
+
+## 14. Fluxo de caixa gerencial — regras da projeção e do KPI de cartão
+
+`app/api/gerencial/fluxo-caixa/route.ts`:
+- **Projeção "Próximos 30 dias"** é estritamente prospectiva (`data_vencimento`/`data_prevista BETWEEN CURRENT_DATE AND CURRENT_DATE + 30 dias`) nos três blocos do UNION (`tab_titulo_receber`, `tab_titulo_pagar`, `tab_venda_cartao_parcela`). Datas no passado (vencidas/atrasadas) ficam de fora da projeção **por design** — não confundir com bug ao investigar "por que esse valor não aparece".
+- KPI `aReceberCartao` soma parcelas `PENDENTE`/`FATURADA` de vendas `PENDENTE`, **sem** filtro de data (inclui atrasadas, mas sem separar).
+- KPI `aReceberCartaoAtrasado`/`nCartaoAtrasado` (adicionado 2026-07-17): subconjunto `status='PENDENTE' AND data_prevista < CURRENT_DATE` — repasse que a operadora deveria ter feito e que **nem foi agrupado em fatura ainda**. Parcela `FATURADA` com data passada não conta como atrasada (é estágio normal, só aguardando o usuário confirmar a fatura).
+- Banner de alerta na tela (`app/(erp)/gerencial/fluxo-caixa/page.tsx`) segue o mesmo padrão visual pros dois casos: títulos vencidos (`vw_titulos_receber_abertos`/`vw_titulos_pagar_abertos`, coluna `vencido`) e cartão em atraso (link pra `/financeiro/cartao-faturas`).
+
+## 15. Padrão visual `.form-fieldset` — armadilha da borda esticada
+
+Toda tela de cadastro usa `<fieldset className="form-fieldset"><legend><Icon size={12}/> Título</legend><div className="form-fieldset-body">...</div></fieldset>` (classe global definida em `app/globals.css`) pra dar borda+cor de fundo em cada seção de campos.
+
+**Armadilha (aconteceu várias vezes nesta sessão):** quando a tela tem duas colunas lado a lado (`display:flex`) e só uma vira fieldset, o `flex:1` **não pode ir direto no `<fieldset>`** — isso faz a borda esticar pra preencher toda a altura do container irmão ("borda gigante"). Estrutura correta:
+
+```tsx
+<div style={{ flex: 1, minWidth: 0 }}>
+  <fieldset className="form-fieldset">
+    <legend><Icon size={12} /> Dados Gerais</legend>
+    <div className="form-fieldset-body">
+      {/* campos */}
+    </div>
+  </fieldset>
+</div>
+```
+
+`flex:1` fica na `div` externa; o fieldset em si não recebe flex/altura — ele fica com altura de conteúdo (auto), igual à coluna vizinha.
+
+**Ao migrar uma tela pra esse padrão, revisar TODAS as colunas/abas, não só a mais óbvia** — em pelo menos 6 telas (`CentroCustoFormPage`, `TipoDespesaFormPage`, `TipoReceitaFormPage`, `PlanoContasFormPage`, `TipoAtendimentoFormPage` incluindo a aba "Valores p/ Categoria", `DespesaFormPage`/`ReceitaFormPage` nas abas Parcelas/Rateio, `VendaCartaoFormPage`) uma passada anterior só tinha convertido a coluna/aba secundária, deixando a coluna/aba principal (a com os campos de fato) sem borda.
+
+## 16. Deploy: commitar features multi-arquivo por completo, não aos pedaços
+
+Já aconteceu de commitar uma rota de API que dependia de um schema (`lib/validators/*.schema.ts`) sem commitar o schema junto — `tsc --noEmit` local não acusa (o working tree tem os dois arquivos), mas o build do Railway/CI só vê o que foi de fato commitado e pushado, e quebra com erro de tipo confuso (parece um erro no arquivo certo, mas a causa é um arquivo-irmão que ficou de fora). Ao commitar uma feature que toca `schema.ts` + `route.ts` + `types.ts` + componente, sempre conferir com `git status`/`git diff --stat` se todos os arquivos interdependentes foram staged juntos antes de fazer push — separar por assunto (seção de commits) não pode virar separar arquivos que dependem uns dos outros.
+
+---
+
+## 17. PENDÊNCIA — login em produção 500 (PG_USER sem acesso a `saas_control`)
 
 > **AJUSTAR QUANDO SOLICITADO.** Buscar por "PENDÊNCIA" neste arquivo para achar rápido.
 
