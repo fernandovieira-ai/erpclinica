@@ -3,7 +3,7 @@ import { Toaster } from 'sonner'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'DigitalRF Financeiro',
+  title: 'VitaRF Clínica',
   description: 'Sistema financeiro e fiscal para empresas brasileiras',
 }
 
