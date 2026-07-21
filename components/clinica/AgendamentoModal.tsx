@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { toast } from 'sonner'
-import { X, Search, User, Stethoscope, Phone, Smartphone, MapPin, Mail, UserPlus, ChevronRight } from 'lucide-react'
+import { X, Search, User, Stethoscope, Phone, Smartphone, MapPin, Mail, UserPlus, ChevronRight, CheckCircle2, Undo2 } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { AgendamentoListItem, AgendamentoTipo, CategoriaListItem, ProfissionalListItem } from '@/types/clinica.types'
@@ -35,6 +35,10 @@ const STATUS_OPTIONS = [
   { value: 'FALTOU',     label: 'Faltou',     color: '#EF4444' },
   { value: 'CANCELADO',  label: 'Cancelado',  color: '#6B7280' },
 ]
+
+function fmtValor(v: number) {
+  return Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
 
 function validarCPF(valor: string): boolean {
   const c = valor.replace(/\D/g, '')
@@ -83,7 +87,8 @@ function Field({ children, style }: { children: React.ReactNode; style?: React.C
 }
 
 export default function AgendamentoModal({ open, onClose, onSaved, agendamento, dataHoraInicio, profissionalPre }: Props) {
-  const isEdit = !!agendamento
+  const isEdit    = !!agendamento
+  const jaFoiPago = isEdit && agendamento?.status_recebimento === 'PAGO'
 
   const [profissionais, setProfissionais] = useState<ProfissionalListItem[]>([])
   const [tipos,         setTipos]         = useState<AgendamentoTipo[]>([])
@@ -94,6 +99,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
   const [loadingPac,    setLoadingPac]    = useState(false)
   const [loadingSlot,   setLoadingSlot]   = useState(false)
   const [saving,        setSaving]        = useState(false)
+  const [estornando,    setEstornando]    = useState(false)
 
   const [showCadRapido,   setShowCadRapido]   = useState(false)
   const [salvandoCad,     setSalvandoCad]     = useState(false)
@@ -458,6 +464,31 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
     else toast.error('Erro ao excluir')
   }
 
+  async function handleEstornarPagamento() {
+    if (!agendamento?.recebimento_id) return
+    const motivo = window.prompt('Motivo do estorno:')
+    if (!motivo) return
+
+    setEstornando(true)
+    try {
+      const res = await fetch(`/api/clinica/recebimentos/${agendamento.recebimento_id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ motivo_estorno: motivo }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        toast.error(err.detalhes || err.erro || 'Erro ao estornar pagamento')
+        return
+      }
+      toast.success('Pagamento estornado! Agora o agendamento pode ser editado.')
+      onSaved()
+      onClose()
+    } finally {
+      setEstornando(false)
+    }
+  }
+
   if (!open) return null
 
   const dataLabel = form.data
@@ -489,9 +520,11 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>
-            {isEdit
-              ? `Editar agendamento${dataLabel ? ` — ${dataLabel}` : ''}`
-              : `Novo agendamento${dataLabel ? ` para ${dataLabel}` : ''}`
+            {jaFoiPago
+              ? `Agendamento pago${dataLabel ? ` — ${dataLabel}` : ''}`
+              : isEdit
+                ? `Editar agendamento${dataLabel ? ` — ${dataLabel}` : ''}`
+                : `Novo agendamento${dataLabel ? ` para ${dataLabel}` : ''}`
             }
           </div>
           <button
@@ -502,7 +535,26 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
           </button>
         </div>
 
+        {jaFoiPago && (
+          <div style={{
+            margin: '12px 16px 0',
+            padding: '10px 12px',
+            background: 'var(--cor-sucesso-light, #DCFCE7)',
+            border: '1px solid var(--cor-sucesso, #22C55E)',
+            borderRadius: 6,
+            display: 'flex', alignItems: 'flex-start', gap: 8,
+          }}>
+            <CheckCircle2 size={16} style={{ color: 'var(--cor-sucesso, #16A34A)', flexShrink: 0, marginTop: 1 }} />
+            <div style={{ fontSize: 12, color: '#166534', lineHeight: 1.4 }}>
+              <strong>Pagamento já realizado</strong>
+              {agendamento?.total_recebimento ? ` — ${fmtValor(Number(agendamento.total_recebimento))}` : ''}.
+              {' '}Para alterar este agendamento, estorne o pagamento primeiro.
+            </div>
+          </div>
+        )}
+
         <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 'calc(100vh - 140px)', overflowY: 'auto' }}>
+          <fieldset disabled={jaFoiPago} style={{ border: 'none', padding: 0, margin: 0, display: 'contents' }}>
 
           {/* ── Paciente ────────────────────────────────────────── */}
           <fieldset style={{ border: '1px solid var(--borda-suave)', borderRadius: 4, padding: '8px 10px 10px', margin: 0, backgroundColor: 'var(--bg-card)' }}>
@@ -897,6 +949,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
               }}
             />
           </Field>
+          </fieldset>
         </div>
 
         {/* ── Footer ──────────────────────────────────────────── */}
@@ -907,12 +960,28 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
           background: 'var(--bg-page)',
         }}>
           <div>
-            {isEdit && (
+            {isEdit && !jaFoiPago && (
               <button
                 onClick={handleExcluir}
                 style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 12px', fontSize: 12, background: 'none', border: '1px solid var(--cor-erro)', borderRadius: 3, color: 'var(--cor-erro)', cursor: 'pointer' }}
               >
                 Excluir
+              </button>
+            )}
+            {jaFoiPago && (
+              <button
+                onClick={handleEstornarPagamento}
+                disabled={estornando}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '5px 12px', fontSize: 12, fontWeight: 600,
+                  background: '#E24B4A', color: '#fff', border: 'none', borderRadius: 3,
+                  cursor: estornando ? 'not-allowed' : 'pointer',
+                  opacity: estornando ? 0.8 : 1,
+                }}
+              >
+                <Undo2 size={13} />
+                {estornando ? 'Estornando...' : 'Estornar pagamento'}
               </button>
             )}
           </div>
@@ -921,22 +990,24 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
               onClick={onClose}
               style={{ padding: '5px 14px', fontSize: 12, background: 'none', border: '1px solid var(--borda-media)', borderRadius: 3, color: 'var(--texto-secundario)', cursor: 'pointer' }}
             >
-              Cancelar
+              {jaFoiPago ? 'Fechar' : 'Cancelar'}
             </button>
-            <button
-              onClick={handleSalvar}
-              disabled={saving}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '5px 18px', fontSize: 12, fontWeight: 600,
-                background: saving ? 'var(--cor-primaria-hover, #1a7a3a)' : 'var(--cor-primaria)',
-                color: '#fff', border: 'none', borderRadius: 3,
-                cursor: saving ? 'not-allowed' : 'pointer',
-                opacity: saving ? 0.8 : 1,
-              }}
-            >
-              {saving ? 'Salvando...' : isEdit ? 'Salvar alterações' : 'Cadastrar horário'}
-            </button>
+            {!jaFoiPago && (
+              <button
+                onClick={handleSalvar}
+                disabled={saving}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '5px 18px', fontSize: 12, fontWeight: 600,
+                  background: saving ? 'var(--cor-primaria-hover, #1a7a3a)' : 'var(--cor-primaria)',
+                  color: '#fff', border: 'none', borderRadius: 3,
+                  cursor: saving ? 'not-allowed' : 'pointer',
+                  opacity: saving ? 0.8 : 1,
+                }}
+              >
+                {saving ? 'Salvando...' : isEdit ? 'Salvar alterações' : 'Cadastrar horário'}
+              </button>
+            )}
           </div>
         </div>
       </div>

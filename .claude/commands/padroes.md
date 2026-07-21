@@ -155,6 +155,15 @@ ag.movimento_caixa_id  ? `caixa-${ag.movimento_caixa_id}`
 : `rec-${ag.recebimento_id}`
 ```
 
+### Agendamento pago não pode ser editado direto (AgendamentoModal.tsx)
+
+Regra de negócio (2026-07-21): se `agendamento.status_recebimento === 'PAGO'`, o modal de edição de agendamento (`components/clinica/AgendamentoModal.tsx`) abre em modo somente leitura — não é permitido reagendar horário, trocar profissional/paciente/tipo/status/categoria nem excluir enquanto o pagamento estiver ativo. Para editar, o usuário precisa estornar o pagamento primeiro (o que também desfaz `status`, movimento e título — ver seção "Estorno" acima).
+
+- `jaFoiPago = isEdit && agendamento?.status_recebimento === 'PAGO'` — computado no topo do componente.
+- Banner verde logo abaixo do header mostrando "Pagamento já realizado — R$ X" quando `jaFoiPago`.
+- Todos os campos do formulário ficam dentro de um único `<fieldset disabled={jaFoiPago} style={{ display: 'contents' }}>` envolvendo o corpo do modal — trava paciente/profissional/data/horários/tipo/status/categoria/observação de uma vez só (atributo HTML nativo de `fieldset`, cascade automático pros `<input>/<select>/<textarea>/<button>` descendentes; `display: 'contents'` evita que o fieldset quebre o layout flex do container pai).
+- Footer troca "Excluir" + "Salvar alterações" por um único botão "Estornar pagamento" (chama `DELETE /api/clinica/recebimentos/[recebimento_id]` com `motivo_estorno` via `window.prompt`, mesmo endpoint da tela de Recebimentos). Sucesso → `onSaved()` + `onClose()`; reabrir o mesmo agendamento depois já vem editável normalmente (status_recebimento volta a `null`).
+
 ### Listagem Títulos a Receber (GET /api/financeiro/titulos-receber)
 
 JOIN com `tab_titulo_receber_parcela parc ON parc.titulo_id = t.id`:
