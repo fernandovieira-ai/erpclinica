@@ -1,7 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { format, parseISO, startOfDay, endOfDay, isToday } from 'date-fns'
+import {
+  format, parseISO, addDays, addMonths, subMonths,
+  startOfWeek, endOfWeek, startOfMonth, endOfMonth, differenceInCalendarDays,
+} from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { toast } from 'sonner'
 import {
@@ -31,27 +34,87 @@ function fmtValor(v: number | null | undefined) {
   return Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
+type PresetPeriodo = 'hoje' | 'ontem' | 'semana' | '7dias' | 'mes' | '30dias' | 'mes_passado'
+
+const PRESETS_PERIODO: { valor: PresetPeriodo; label: string }[] = [
+  { valor: 'hoje',        label: 'Hoje' },
+  { valor: 'ontem',       label: 'Ontem' },
+  { valor: 'semana',      label: 'Esta Semana' },
+  { valor: '7dias',       label: 'Últimos 7 dias' },
+  { valor: 'mes',         label: 'Este Mês' },
+  { valor: '30dias',      label: 'Últimos 30 dias' },
+  { valor: 'mes_passado', label: 'Mês Passado' },
+]
+
+function rangeDoPreset(preset: PresetPeriodo): { inicio: Date; fim: Date } {
+  const hoje = new Date()
+  switch (preset) {
+    case 'hoje':  return { inicio: hoje, fim: hoje }
+    case 'ontem': { const d = addDays(hoje, -1); return { inicio: d, fim: d } }
+    case '7dias':  return { inicio: addDays(hoje, -6),  fim: hoje }
+    case '30dias': return { inicio: addDays(hoje, -29), fim: hoje }
+    case 'semana': return { inicio: startOfWeek(hoje, { weekStartsOn: 1 }), fim: endOfWeek(hoje, { weekStartsOn: 1 }) }
+    case 'mes':    return { inicio: startOfMonth(hoje), fim: endOfMonth(hoje) }
+    case 'mes_passado': { const m = subMonths(hoje, 1); return { inicio: startOfMonth(m), fim: endOfMonth(m) } }
+  }
+}
+
+const fmtISO = (d: Date) => format(d, 'yyyy-MM-dd')
+
 export default function RecebimentosPage() {
   const [agendamentos, setAgendamentos] = useState<AgendamentoListItem[]>([])
   const [loading, setLoading]           = useState(false)
-  const [dataHoje, setDataHoje]         = useState(new Date())
+  const [dataInicio, setDataInicio]     = useState(() => fmtISO(new Date()))
+  const [dataFim, setDataFim]           = useState(() => fmtISO(new Date()))
   const [modalOpen, setModalOpen]       = useState(false)
   const [agendamentosSel, setAgendamentosSel] = useState<AgendamentoListItem[]>([])
   const [filtroStatus, setFiltroStatus] = useState<string>('')
 
+  const periodoUnico = dataInicio === dataFim
+
+  const presetAtivo = useMemo(() => {
+    for (const p of PRESETS_PERIODO) {
+      const r = rangeDoPreset(p.valor)
+      if (fmtISO(r.inicio) === dataInicio && fmtISO(r.fim) === dataFim) return p.valor
+    }
+    return null
+  }, [dataInicio, dataFim])
+
+  function aplicarPreset(preset: PresetPeriodo) {
+    const { inicio, fim } = rangeDoPreset(preset)
+    setDataInicio(fmtISO(inicio))
+    setDataFim(fmtISO(fim))
+  }
+
+  function paginar(direcao: 1 | -1) {
+    const inicio = parseISO(dataInicio)
+    const fim    = parseISO(dataFim)
+    const ehMesInteiro = fmtISO(inicio) === fmtISO(startOfMonth(inicio)) &&
+      fmtISO(fim) === fmtISO(endOfMonth(fim)) && inicio.getMonth() === fim.getMonth()
+
+    if (ehMesInteiro) {
+      const novoMes = addMonths(inicio, direcao)
+      setDataInicio(fmtISO(startOfMonth(novoMes)))
+      setDataFim(fmtISO(endOfMonth(novoMes)))
+      return
+    }
+
+    const dias = differenceInCalendarDays(fim, inicio) + 1
+    setDataInicio(fmtISO(addDays(inicio, direcao * dias)))
+    setDataFim(fmtISO(addDays(fim, direcao * dias)))
+  }
+
   const carregar = useCallback(async () => {
     setLoading(true)
     try {
-      const inicio = format(startOfDay(dataHoje), 'yyyy-MM-dd')
-      const fim    = format(endOfDay(dataHoje),   'yyyy-MM-dd')
-      const res    = await fetch(`/api/clinica/agendamentos?inicio=${inicio}&fim=${fim}`)
+      const res = await fetch(`/api/clinica/agendamentos?inicio=${dataInicio}&fim=${dataFim}`)
       if (!res.ok) { toast.error('Erro ao carregar agendamentos'); return }
       const data = await res.json()
       setAgendamentos(data.dados ?? [])
     } finally {
       setLoading(false)
     }
-  }, [dataHoje])
+  }, [dataInicio, dataFim])
 
   useEffect(() => { carregar() }, [carregar])
 
@@ -142,76 +205,108 @@ export default function RecebimentosPage() {
 
       <div className="page-body">
         {/* Controles */}
-        <div style={{ display: 'flex', gap: 12, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-          {/* Navegação de data */}
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <button
-              className="btn-ghost"
-              style={{ padding: '6px 8px' }}
-              onClick={() => setDataHoje(d => new Date(d.getTime() - 86400000))}
-            >
-              <ChevronLeft size={16} />
-            </button>
-            <button
-              className="btn-ghost"
-              style={{ minWidth: 200, fontSize: 12, fontWeight: 600, padding: '6px 12px' }}
-              onClick={() => setDataHoje(new Date())}
-              title="Voltar para hoje"
-            >
-              {format(dataHoje, "d 'de' MMMM 'de' yyyy", { locale: ptBR })}
-            </button>
-            <button
-              className="btn-ghost"
-              style={{ padding: '6px 8px' }}
-              onClick={() => setDataHoje(d => new Date(d.getTime() + 86400000))}
-            >
-              <ChevronRight size={16} />
-            </button>
-            {!isToday(dataHoje) && (
-              <span style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>
-                (Hoje é {format(new Date(), 'd MMMM', { locale: ptBR })})
-              </span>
-            )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+
+          {/* Linha 1: presets de período */}
+          <div style={{ display: 'flex', gap: 4, background: 'var(--bg-page)', padding: 3, borderRadius: 8, flexWrap: 'wrap', width: 'fit-content' }}>
+            {PRESETS_PERIODO.map(p => (
+              <button
+                key={p.valor}
+                onClick={() => aplicarPreset(p.valor)}
+                style={{
+                  padding: '6px 12px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                  fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
+                  background: presetAtivo === p.valor ? 'var(--bg-card)' : 'transparent',
+                  color: presetAtivo === p.valor ? 'var(--cor-primaria)' : 'var(--texto-secundario)',
+                  boxShadow: presetAtivo === p.valor ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                  transition: 'all 0.15s',
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
           </div>
 
-          {/* Filtro status */}
-          <select
-            value={filtroStatus}
-            onChange={e => setFiltroStatus(e.target.value)}
-            className="input-field"
-            style={{ fontSize: 12, width: 150 }}
-          >
-            <option value="">Todos os Status</option>
-            {Object.entries(STATUS_LABEL).map(([k, v]) => (
-              <option key={k} value={k}>{v.label}</option>
-            ))}
-          </select>
+          {/* Linha 2: navegação, intervalo customizado, status e total */}
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* Navegação de período */}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button className="btn-ghost" style={{ padding: '6px 8px' }} onClick={() => paginar(-1)} title="Período anterior">
+                <ChevronLeft size={16} />
+              </button>
+              <span style={{ minWidth: 180, textAlign: 'center', fontSize: 12, fontWeight: 600, color: 'var(--texto-principal)' }}>
+                {periodoUnico
+                  ? format(parseISO(dataInicio), "d 'de' MMMM 'de' yyyy", { locale: ptBR })
+                  : `${format(parseISO(dataInicio), 'd MMM', { locale: ptBR })} — ${format(parseISO(dataFim), "d MMM 'de' yyyy", { locale: ptBR })}`}
+              </span>
+              <button className="btn-ghost" style={{ padding: '6px 8px' }} onClick={() => paginar(1)} title="Próximo período">
+                <ChevronRight size={16} />
+              </button>
+            </div>
 
-          <button
-            className="btn-ghost"
-            style={{ padding: '6px 8px' }}
-            onClick={() => carregar()}
-            title="Atualizar"
-            disabled={loading}
-          >
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          </button>
+            {/* Intervalo customizado */}
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>De</span>
+              <input
+                type="date"
+                className="input-field"
+                value={dataInicio}
+                max={dataFim}
+                onChange={e => setDataInicio(e.target.value)}
+                style={{ fontSize: 12, width: 140 }}
+              />
+              <span style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>até</span>
+              <input
+                type="date"
+                className="input-field"
+                value={dataFim}
+                min={dataInicio}
+                onChange={e => setDataFim(e.target.value)}
+                style={{ fontSize: 12, width: 140 }}
+              />
+            </div>
 
-          {/* Total do dia */}
-          <div style={{
-            marginLeft: 'auto',
-            padding: '6px 12px',
-            background: 'var(--bg-card)',
-            borderRadius: 6,
-            border: '0.5px solid var(--borda-suave)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}>
-            <span style={{ fontSize: 12, color: 'var(--texto-terciario)' }}>Total do dia:</span>
-            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--cor-primaria)' }}>
-              {fmtValor(totalValor)}
-            </span>
+            {/* Filtro status */}
+            <select
+              value={filtroStatus}
+              onChange={e => setFiltroStatus(e.target.value)}
+              className="input-field"
+              style={{ fontSize: 12, width: 150 }}
+            >
+              <option value="">Todos os Status</option>
+              {Object.entries(STATUS_LABEL).map(([k, v]) => (
+                <option key={k} value={k}>{v.label}</option>
+              ))}
+            </select>
+
+            <button
+              className="btn-ghost"
+              style={{ padding: '6px 8px' }}
+              onClick={() => carregar()}
+              title="Atualizar"
+              disabled={loading}
+            >
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            </button>
+
+            {/* Total do período */}
+            <div style={{
+              marginLeft: 'auto',
+              padding: '6px 12px',
+              background: 'var(--bg-card)',
+              borderRadius: 6,
+              border: '0.5px solid var(--borda-suave)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}>
+              <span style={{ fontSize: 12, color: 'var(--texto-terciario)' }}>
+                {periodoUnico ? 'Total do dia:' : 'Total do período:'}
+              </span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--cor-primaria)' }}>
+                {fmtValor(totalValor)}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -343,9 +438,11 @@ export default function RecebimentosPage() {
                           fontSize: 12,
                         }}
                       >
-                        {/* Hora */}
-                        <span style={{ fontWeight: 700, color: 'var(--texto-principal)', minWidth: 38, flexShrink: 0 }}>
-                          {format(parseISO(ag.data_hora_inicio), 'HH:mm')}
+                        {/* Data (só quando período > 1 dia) + Hora */}
+                        <span style={{ fontWeight: 700, color: 'var(--texto-principal)', minWidth: periodoUnico ? 38 : 80, flexShrink: 0 }}>
+                          {periodoUnico
+                            ? format(parseISO(ag.data_hora_inicio), 'HH:mm')
+                            : format(parseISO(ag.data_hora_inicio), "dd/MM HH:mm")}
                         </span>
 
                         {/* Profissional · Tipo · Categoria */}
