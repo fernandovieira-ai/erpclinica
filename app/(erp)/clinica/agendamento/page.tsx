@@ -337,6 +337,7 @@ export default function AgendamentoPage() {
   // de agendamento não coberto também vira uma linha extra, como segurança.
   const horasSemana = useMemo(() => {
     let base: { h: number; m: number }[] = []
+    let fimConfiguradoMin: number | null = null
 
     if (agendaConfigRaw.size > 0) {
       let passo = Infinity, inicioMin = Infinity, fimMin = -Infinity
@@ -349,6 +350,7 @@ export default function AgendamentoPage() {
         fimMin    = Math.max(fimMin, hFim * 60 + mFim)
       }
       if (Number.isFinite(passo) && Number.isFinite(inicioMin) && Number.isFinite(fimMin)) {
+        fimConfiguradoMin = fimMin
         for (let cur = inicioMin; cur < fimMin; cur += passo) {
           base.push({ h: Math.floor(cur / 60), m: cur % 60 })
         }
@@ -368,10 +370,28 @@ export default function AgendamentoPage() {
       }
     }
     base.sort((a, b) => (a.h * 60 + a.m) - (b.h * 60 + b.m))
-    return base.map(s => ({
+
+    const linhas = base.map(s => ({
       ...s,
       label: `${String(s.h).padStart(2, '0')}:${String(s.m).padStart(2, '0')}`,
+      isFim: false,
     }))
+
+    // Linha de encerramento: mostra o horário configurado de fim de expediente
+    // (ex.: 18:00), mesmo que o último slot de início seja anterior a ele (ex.: 17:45).
+    if (fimConfiguradoMin != null) {
+      const ultimaMin = linhas.length ? linhas[linhas.length - 1].h * 60 + linhas[linhas.length - 1].m : -1
+      if (fimConfiguradoMin > ultimaMin) {
+        linhas.push({
+          h: Math.floor(fimConfiguradoMin / 60),
+          m: fimConfiguradoMin % 60,
+          label: `${String(Math.floor(fimConfiguradoMin / 60)).padStart(2, '0')}:${String(fimConfiguradoMin % 60).padStart(2, '0')}`,
+          isFim: true,
+        })
+      }
+    }
+
+    return linhas
   }, [agendamentos, periodo, agendaConfigRaw])
 
   function navAnterior() {
@@ -970,6 +990,32 @@ export default function AgendamentoPage() {
 
           {horasSemana.map((slot, slotIdx) => {
             const isPrimeiraDaHora = slotIdx === 0 || horasSemana[slotIdx - 1].h !== slot.h
+
+            if (slot.isFim) {
+              return (
+                <Fragment key={`${slot.h}:${slot.m}-fim`}>
+                  <div
+                    style={{
+                      height: 22,
+                      borderTop: '1px solid var(--borda-media)',
+                      display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end',
+                      paddingRight: 8, paddingTop: 2,
+                      fontSize: 10, fontWeight: 700,
+                      color: 'var(--texto-terciario)',
+                    }}
+                  >
+                    {slot.label}
+                  </div>
+                  {dias.map(dia => (
+                    <div
+                      key={`${dia.toISOString()}-fim`}
+                      style={{ height: 22, borderTop: '1px solid var(--borda-media)', borderLeft: '0.5px solid var(--borda-suave)', cursor: 'default' }}
+                    />
+                  ))}
+                </Fragment>
+              )
+            }
+
             return (
             <Fragment key={`${slot.h}:${slot.m}`}>
               <div
