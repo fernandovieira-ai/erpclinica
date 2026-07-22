@@ -1,12 +1,16 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { toast } from 'sonner'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react'
 import { Percent } from 'lucide-react'
 import type { TaxaCartaoListItem } from '@/types/cartao.types'
 import { Row } from '@/components/cadastro/CondicaoPagamentoFormPage'
 
 interface Props { condicaoPagamentoId?: number }
+
+export interface TaxaCartaoInlineHandle {
+  // Retorna null se salvou com sucesso, ou a mensagem de erro caso contrário.
+  salvar: (condicaoPagamentoId: number) => Promise<string | null>
+}
 
 type FormState = {
   percentual_mdr:            string
@@ -26,14 +30,15 @@ const inputStyle = {
   border: '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, outline: 'none',
 } as React.CSSProperties
 
-export default function TaxaCartaoInline({ condicaoPagamentoId }: Props) {
+const TaxaCartaoInline = forwardRef<TaxaCartaoInlineHandle, Props>(function TaxaCartaoInline(
+  { condicaoPagamentoId }, ref,
+) {
   // Só existe uma taxa por condição de pagamento — taxaId é o registro
   // carregado (se já existir); os campos abaixo já vêm preenchidos com
   // ela, sem precisar de nenhum clique de "editar" separado.
   const [taxaId,  setTaxaId]  = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [form,    setForm]    = useState<FormState>(FORM_VAZIO)
-  const [saving,  setSaving]  = useState(false)
   const [erro,    setErro]    = useState('')
 
   const carregar = useCallback(() => {
@@ -60,35 +65,53 @@ export default function TaxaCartaoInline({ condicaoPagamentoId }: Props) {
 
   useEffect(() => { carregar() }, [carregar])
 
-  async function salvar() {
-    if (!condicaoPagamentoId) return
-    const mdr = Number(form.percentual_mdr)
-    if (!form.percentual_mdr || Number.isNaN(mdr) || mdr < 0 || mdr > 100) { setErro('MDR inválido'); return }
-    const parcelasDe  = parseInt(form.parcelas_de, 10) || 1
-    const parcelasAte = parseInt(form.parcelas_ate, 10) || 1
-    if (parcelasAte < parcelasDe) { setErro('Parcelas "até" deve ser >= "de"'); return }
+  // Exposto pro formulário pai (CondicaoPagamentoFormPage) — o botão "Salvar"
+  // do topo grava condição + taxa numa ação só, sem botão "Atualizar Taxa" separado.
+  useImperativeHandle(ref, () => ({
+    async salvar(condId: number) {
+      setErro('')
+      const mdr = Number(form.percentual_mdr)
+      if (!form.percentual_mdr || Number.isNaN(mdr) || mdr < 0 || mdr > 100) {
+        const msg = 'MDR inválido'
+        setErro(msg)
+        return msg
+      }
+      const parcelasDe  = parseInt(form.parcelas_de, 10) || 1
+      const parcelasAte = parseInt(form.parcelas_ate, 10) || 1
+      if (parcelasAte < parcelasDe) {
+        const msg = 'Parcelas "até" deve ser >= "de"'
+        setErro(msg)
+        return msg
+      }
 
-    const payload = {
-      condicao_pagamento_id:     condicaoPagamentoId,
-      percentual_mdr:            mdr,
-      percentual_antecipacao_am: Number(form.percentual_antecipacao_am) || 0,
-      prazo_recebimento_dias:    parseInt(form.prazo_recebimento_dias, 10) || 0,
-      parcelas_de:               parcelasDe,
-      parcelas_ate:              parcelasAte,
-    }
+      const payload = {
+        condicao_pagamento_id:     condId,
+        percentual_mdr:            mdr,
+        percentual_antecipacao_am: Number(form.percentual_antecipacao_am) || 0,
+        prazo_recebimento_dias:    parseInt(form.prazo_recebimento_dias, 10) || 0,
+        parcelas_de:               parcelasDe,
+        parcelas_ate:              parcelasAte,
+      }
 
-    setSaving(true)
-    setErro('')
-    try {
-      const url    = taxaId ? `/api/financeiro/cartao/taxas/${taxaId}` : '/api/financeiro/cartao/taxas'
-      const method = taxaId ? 'PATCH' : 'POST'
-      const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-      const json   = await res.json()
-      if (!res.ok) { setErro(json.erro?.formErrors?.[0] ?? json.erro ?? 'Erro ao salvar'); return }
-      toast.success('Taxa atualizada!')
-      if (!taxaId) setTaxaId(json.id)
-    } finally { setSaving(false) }
-  }
+      try {
+        const url    = taxaId ? `/api/financeiro/cartao/taxas/${taxaId}` : '/api/financeiro/cartao/taxas'
+        const method = taxaId ? 'PATCH' : 'POST'
+        const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+        const json   = await res.json()
+        if (!res.ok) {
+          const msg = json.erro?.formErrors?.[0] ?? json.erro ?? 'Erro ao salvar taxa'
+          setErro(msg)
+          return msg
+        }
+        if (!taxaId) setTaxaId(json.id)
+        return null
+      } catch {
+        const msg = 'Erro ao salvar taxa'
+        setErro(msg)
+        return msg
+      }
+    },
+  }), [form, taxaId])
 
   return (
     <fieldset className="form-fieldset">
@@ -96,51 +119,42 @@ export default function TaxaCartaoInline({ condicaoPagamentoId }: Props) {
         <Percent size={12} /> Taxa de Cartão (MDR)
       </legend>
 
-      {!condicaoPagamentoId && (
-        <div style={{ fontSize: 12, color: 'var(--texto-terciario)', padding: '6px 0' }}>
-          Salve a condição de pagamento primeiro para poder cadastrar a taxa.
+      <div style={{ paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {loading && <div style={{ fontSize: 12, color: 'var(--texto-terciario)' }}>Carregando...</div>}
+
+        <Row label="MDR (%):*">
+          <input type="number" min={0} max={100} step={0.0001} value={form.percentual_mdr}
+            onChange={e => setForm(f => ({ ...f, percentual_mdr: e.target.value }))} style={inputStyle} />
+        </Row>
+
+        <Row label="Antecipação (%a.m.):">
+          <input type="number" min={0} max={100} step={0.0001} value={form.percentual_antecipacao_am}
+            onChange={e => setForm(f => ({ ...f, percentual_antecipacao_am: e.target.value }))} style={inputStyle} />
+        </Row>
+
+        <Row label="Prazo Receb. (dias):*">
+          <input type="number" min={0} value={form.prazo_recebimento_dias}
+            onChange={e => setForm(f => ({ ...f, prazo_recebimento_dias: e.target.value }))} style={inputStyle} />
+        </Row>
+
+        <Row label="Parcelas De/Até:*">
+          <input type="number" min={1} value={form.parcelas_de}
+            onChange={e => setForm(f => ({ ...f, parcelas_de: e.target.value }))} style={{ ...inputStyle, width: 70 }} />
+          <span style={{ fontSize: 12, color: 'var(--texto-terciario)' }}>a</span>
+          <input type="number" min={1} value={form.parcelas_ate}
+            onChange={e => setForm(f => ({ ...f, parcelas_ate: e.target.value }))} style={{ ...inputStyle, width: 70 }} />
+        </Row>
+
+        {erro && (
+          <Row label=""><span style={{ fontSize: 11, color: 'var(--cor-erro)' }}>{erro}</span></Row>
+        )}
+
+        <div style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>
+          Salvo junto com a condição de pagamento — use o botão "Salvar" no topo da tela.
         </div>
-      )}
-
-      {condicaoPagamentoId && (
-        <div style={{ paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {loading && <div style={{ fontSize: 12, color: 'var(--texto-terciario)' }}>Carregando...</div>}
-
-          <Row label="MDR (%):*">
-            <input type="number" min={0} max={100} step={0.0001} value={form.percentual_mdr}
-              onChange={e => setForm(f => ({ ...f, percentual_mdr: e.target.value }))} style={inputStyle} />
-          </Row>
-
-          <Row label="Antecipação (%a.m.):">
-            <input type="number" min={0} max={100} step={0.0001} value={form.percentual_antecipacao_am}
-              onChange={e => setForm(f => ({ ...f, percentual_antecipacao_am: e.target.value }))} style={inputStyle} />
-          </Row>
-
-          <Row label="Prazo Receb. (dias):*">
-            <input type="number" min={0} value={form.prazo_recebimento_dias}
-              onChange={e => setForm(f => ({ ...f, prazo_recebimento_dias: e.target.value }))} style={inputStyle} />
-          </Row>
-
-          <Row label="Parcelas De/Até:*">
-            <input type="number" min={1} value={form.parcelas_de}
-              onChange={e => setForm(f => ({ ...f, parcelas_de: e.target.value }))} style={{ ...inputStyle, width: 70 }} />
-            <span style={{ fontSize: 12, color: 'var(--texto-terciario)' }}>a</span>
-            <input type="number" min={1} value={form.parcelas_ate}
-              onChange={e => setForm(f => ({ ...f, parcelas_ate: e.target.value }))} style={{ ...inputStyle, width: 70 }} />
-          </Row>
-
-          {erro && (
-            <Row label=""><span style={{ fontSize: 11, color: 'var(--cor-erro)' }}>{erro}</span></Row>
-          )}
-
-          <Row label="">
-            <button type="button" onClick={salvar} disabled={saving}
-              style={{ padding: '5px 14px', background: 'var(--cor-primaria)', color: '#fff', border: 'none', borderRadius: 3, fontSize: 12, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
-              {saving ? 'Salvando...' : 'Atualizar Taxa'}
-            </button>
-          </Row>
-        </div>
-      )}
+      </div>
     </fieldset>
   )
-}
+})
+
+export default TaxaCartaoInline

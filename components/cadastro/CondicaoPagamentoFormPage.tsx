@@ -1,6 +1,6 @@
 'use client'
 
-import { forwardRef, useEffect, useState } from 'react'
+import { forwardRef, useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
@@ -8,7 +8,7 @@ import { toast } from 'sonner'
 import { Save, Trash2, ArrowLeft, Plus, X, ClipboardList } from 'lucide-react'
 import { condicaoPagamentoSchema, type CondicaoPagamentoInput } from '@/lib/validators/condicao-pagamento.schema'
 import type { CondicaoPagamento } from '@/types/cadastros.types'
-import TaxaCartaoInline from '@/components/financeiro/cartao/TaxaCartaoInline'
+import TaxaCartaoInline, { type TaxaCartaoInlineHandle } from '@/components/financeiro/cartao/TaxaCartaoInline'
 
 interface Props { condicao?: CondicaoPagamento }
 
@@ -56,6 +56,7 @@ export default function CondicaoPagamentoFormPage({ condicao }: Props) {
   const [excluding, setExcluding] = useState(false)
 
   const [contas, setContas] = useState<Array<{ id: number; mnemonico: string; banco_nome?: string }>>([])
+  const taxaRef = useRef<TaxaCartaoInlineHandle>(null)
 
   const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<CondicaoPagamentoInput>({
     resolver: zodResolver(condicaoPagamentoSchema),
@@ -108,8 +109,13 @@ export default function CondicaoPagamentoFormPage({ condicao }: Props) {
   }, [contas])
 
   useEffect(() => {
-    // Crédito tem campo próprio (Parcelas Máximas) — não mexe em num_parcelas/intervalo_dias aqui.
-    if (tipoPagamento === 'credito') return
+    // Crédito tem campo próprio (Parcelas Máximas + Intervalo) — mantém intervalo_dias
+    // com um valor útil (nunca 0, senão a trigger fn_trg_venda_cartao_parcelas gera
+    // todas as parcelas com o mesmo vencimento).
+    if (tipoPagamento === 'credito') {
+      setValue('intervalo_dias', condicao?.intervalo_dias || 30)
+      return
+    }
     if (tipo === 'V') {
       setValue('num_parcelas', 1)
       setValue('intervalo_dias', 0)
@@ -129,8 +135,24 @@ export default function CondicaoPagamentoFormPage({ condicao }: Props) {
       const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
       const json   = await res.json()
       if (!res.ok) { toast.error(json.erro?.formErrors?.[0] ?? json.erro ?? 'Erro ao salvar'); return }
+
+      const condicaoId  = condicao ? condicao.id : json.id
+      const isCartaoAgora = data.tipo_pagamento === 'debito' || data.tipo_pagamento === 'credito'
+
+      // Um único "Salvar" grava condição + taxa de cartão — não existe mais
+      // botão "Atualizar Taxa" separado dentro do TaxaCartaoInline.
+      if (isCartaoAgora && taxaRef.current) {
+        const erroTaxa = await taxaRef.current.salvar(condicaoId)
+        if (erroTaxa) {
+          toast.error(`Condição salva, mas a taxa não: ${erroTaxa}`)
+          if (!condicao) router.push(`/cadastro/condicoes-pagamento/${condicaoId}`)
+          else router.refresh()
+          return
+        }
+      }
+
       toast.success(condicao ? 'Condição de pagamento atualizada!' : 'Condição de pagamento cadastrada!')
-      if (!condicao) router.push(`/cadastro/condicoes-pagamento/${json.id}`)
+      if (!condicao) router.push(`/cadastro/condicoes-pagamento/${condicaoId}`)
       else router.refresh()
     } finally { setSaving(false) }
   }
@@ -308,16 +330,29 @@ export default function CondicaoPagamentoFormPage({ condicao }: Props) {
 
           {/* Crédito: só o máximo de parcelas que o operador poderá escolher no recebimento */}
           {tipoPagamento === 'credito' && (
-            <Row label="Parcelas Máximas:">
-              <input type="number" min={1} max={99}
-                {...register('num_parcelas', { valueAsNumber: true })}
-                style={{ width: 100, padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: errors.num_parcelas ? '1px solid var(--cor-erro)' : '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, outline: 'none' }}
-                onFocus={e => { e.target.style.borderColor = 'var(--cor-primaria)' }}
-                onBlur={e  => { e.target.style.borderColor = errors.num_parcelas ? 'var(--cor-erro)' : 'var(--borda-media)' }}
-              />
-              <span style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>Nº máximo de parcelas no cartão. No recebimento o operador escolhe de 1x até esse limite.</span>
-              {errors.num_parcelas && <span style={{ fontSize: 11, color: 'var(--cor-erro)' }}>{errors.num_parcelas.message}</span>}
-            </Row>
+            <>
+              <Row label="Parcelas Máximas:">
+                <input type="number" min={1} max={99}
+                  {...register('num_parcelas', { valueAsNumber: true })}
+                  style={{ width: 100, padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: errors.num_parcelas ? '1px solid var(--cor-erro)' : '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, outline: 'none' }}
+                  onFocus={e => { e.target.style.borderColor = 'var(--cor-primaria)' }}
+                  onBlur={e  => { e.target.style.borderColor = errors.num_parcelas ? 'var(--cor-erro)' : 'var(--borda-media)' }}
+                />
+                <span style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>Nº máximo de parcelas no cartão. No recebimento o operador escolhe de 1x até esse limite.</span>
+                {errors.num_parcelas && <span style={{ fontSize: 11, color: 'var(--cor-erro)' }}>{errors.num_parcelas.message}</span>}
+              </Row>
+
+              <Row label="Intervalo (dias):">
+                <input type="number" min={1}
+                  {...register('intervalo_dias', { valueAsNumber: true })}
+                  style={{ width: 100, padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: errors.intervalo_dias ? '1px solid var(--cor-erro)' : '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, outline: 'none' }}
+                  onFocus={e => { e.target.style.borderColor = 'var(--cor-primaria)' }}
+                  onBlur={e  => { e.target.style.borderColor = errors.intervalo_dias ? 'var(--cor-erro)' : 'var(--borda-media)' }}
+                />
+                <span style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>Dias entre o vencimento de uma parcela e a próxima (normalmente 30).</span>
+                {errors.intervalo_dias && <span style={{ fontSize: 11, color: 'var(--cor-erro)' }}>{errors.intervalo_dias.message}</span>}
+              </Row>
+            </>
           )}
 
           {/* Campos de parcelamento (A Prazo) — visíveis apenas quando tipo = P e não é crédito */}
@@ -381,7 +416,7 @@ export default function CondicaoPagamentoFormPage({ condicao }: Props) {
         {/* Coluna direita — taxa de cartão (débito/crédito) lado a lado com os dados, ou resumo nos demais tipos */}
         {isCartao ? (
           <div style={{ flex: 1, minWidth: 0 }}>
-            <TaxaCartaoInline condicaoPagamentoId={condicao?.id} />
+            <TaxaCartaoInline ref={taxaRef} condicaoPagamentoId={condicao?.id} />
           </div>
         ) : (
           <div style={{ width: 220, flexShrink: 0 }}>
