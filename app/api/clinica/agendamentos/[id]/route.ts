@@ -20,6 +20,7 @@ export async function GET(req: NextRequest, { params }: Params) {
        pro.id   AS profissional_id, pro.nome AS profissional_nome,
        tp.id    AS tipo_id,         tp.descricao AS tipo_descricao,
        tp.cor   AS tipo_cor,        tp.duracao_min AS tipo_duracao_min,
+       tp.voa_clinical_type AS tipo_voa_clinical_type,
        esp.id   AS especialidade_id, esp.descricao AS especialidade_descricao, esp.cor AS especialidade_cor,
        cat.id   AS categoria_id,    cat.descricao AS categoria_descricao
      FROM tab_agendamento a

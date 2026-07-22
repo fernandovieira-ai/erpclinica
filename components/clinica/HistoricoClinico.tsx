@@ -1,14 +1,14 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   ChevronDown, ChevronUp, Pencil, Save, X, FileText, Stethoscope, Users, User,
   Activity, AlertTriangle, ClipboardList, Scale, HeartPulse, FlaskConical, Pill, ListChecks, Mic,
-  FileSignature, ExternalLink, Printer, Loader2,
+  FileSignature, ExternalLink, Printer, Loader2, Paperclip, Trash2,
 } from 'lucide-react'
-import type { AgendamentoListItem, Prontuario, ReceitaMedica, ReceitaSistemaRegistro } from '@/types/clinica.types'
-import VoaPluginView from './VoaPluginView'
+import type { AgendamentoListItem, Prontuario, ProntuarioAnexo, ReceitaMedica, ReceitaSistemaRegistro } from '@/types/clinica.types'
+import VoaPluginView, { type Status as VoaStatus, type VoaPluginHandle } from './VoaPluginView'
 import MemedPrescricao from './MemedPrescricao'
 import ReceitaSistema from './ReceitaSistema'
 import { gerarHtmlReceita, type DadosPrescritor } from './receitaSistemaPrint'
@@ -44,6 +44,7 @@ type FormState = {
   alergias:                string
   exame_fisico:            string
   peso:                    string
+  imc:                     string
   pressao:                 string
   exames:                  string
   diagnostico:             string
@@ -53,8 +54,70 @@ type FormState = {
 
 const CAMPOS_VAZIOS: FormState = {
   queixas: '', hda: '', antecedentes_familiares: '', antecedentes_pessoais: '',
-  habitos: '', alergias: '', exame_fisico: '', peso: '', pressao: '',
+  habitos: '', alergias: '', exame_fisico: '', peso: '', imc: '', pressao: '',
   exames: '', diagnostico: '', medicacao: '', outras_condutas: '',
+}
+
+// Mapa dos títulos de seção do documento markdown que a Voa gera (botão "copiar todo o
+// documento" dentro do widget) para os campos do nosso prontuário. Chaves já sem acento
+// e em minúsculo — comparação é feita normalizando o título lido também.
+const MAPA_SECOES_DOCUMENTO: Record<string, keyof FormState> = {
+  'queixa principal':                 'queixas',
+  'historia da doenca atual':         'hda',
+  'historia pregressa':               'antecedentes_pessoais',
+  'historia familiar':                'antecedentes_familiares',
+  'historia social e habitos de vida': 'habitos',
+  'alergias':                         'alergias',
+  'exame fisico':                     'exame_fisico',
+  'resultado de exames':              'exames',
+  'exames complementares':            'exames',
+  'escalas e scores cardiologicos':   'exames',
+  'hipoteses diagnosticas':           'diagnostico',
+  'medicacoes em uso':                'medicacao',
+  'medicacoes prescritas':            'medicacao',
+  'orientacoes':                      'outras_condutas',
+}
+
+function semAcento(s: string): string {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '')
+}
+
+// Documento gerado/copiado pela Voa vem como texto solto em markdown (títulos "## Seção:"),
+// não no formato chave/valor do structuredOutputSchema — por isso precisa de um parser à parte.
+function parseDocumentoVoa(texto: string): Partial<FormState> {
+  const secoes: { chave: keyof FormState; linhas: string[] }[] = []
+  let atual: { chave: keyof FormState; linhas: string[] } | null = null
+
+  for (const linha of texto.split(/\r?\n/)) {
+    const titulo = linha.match(/^#{1,3}\s*(.+?):?\s*$/)
+    if (titulo) {
+      const chave = MAPA_SECOES_DOCUMENTO[semAcento(titulo[1].trim().toLowerCase())]
+      atual = chave ? { chave, linhas: [] } : null
+      if (atual) secoes.push(atual)
+      continue
+    }
+    if (atual && linha.trim()) atual.linhas.push(linha.trim())
+  }
+
+  const resultado: Partial<FormState> = {}
+  for (const { chave, linhas } of secoes) {
+    const bloco = linhas.join('\n').trim()
+    if (!bloco) continue
+    resultado[chave] = resultado[chave] ? `${resultado[chave]}\n${bloco}` : bloco
+  }
+
+  // Pressão não tem seção própria no documento — tenta achar "170x100 mmHg" direto no
+  // texto, ou monta a partir de "PA Sistólica"/"PA Diastólica" (seção Sinais Vitais).
+  const direto = texto.match(/(\d{2,3})\s*[xX]\s*(\d{2,3})\s*mm[hH]g/)
+  if (direto) {
+    resultado.pressao = `${direto[1]}x${direto[2]}mmHg`
+  } else {
+    const sist  = texto.match(/PA\s*Sist[oó]lica:?\s*(\d{2,3})/i)
+    const diast = texto.match(/PA\s*Diast[oó]lica:?\s*(\d{2,3})/i)
+    if (sist && diast) resultado.pressao = `${sist[1]}x${diast[1]}mmHg`
+  }
+
+  return resultado
 }
 
 function prontuarioParaForm(p?: Prontuario): FormState {
@@ -68,6 +131,7 @@ function prontuarioParaForm(p?: Prontuario): FormState {
     alergias:                p.alergias ?? '',
     exame_fisico:            p.exame_fisico ?? '',
     peso:                    p.peso != null ? String(p.peso) : '',
+    imc:                     p.imc != null ? String(p.imc) : '',
     pressao:                 p.pressao ?? '',
     exames:                  p.exames ?? '',
     diagnostico:             p.diagnostico ?? '',
@@ -157,22 +221,32 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
   const [salvando,    setSalvando]    = useState(false)
   const [voaAtivoId,   setVoaAtivoId]   = useState<number | null>(null)
   const [voaMontadoId, setVoaMontadoId] = useState<number | null>(null)
+  // Espelha o status da instância montada da Voa — só pra saber se há algo "vivo"
+  // a perder antes de desmontar sem avisar (troca de consulta, fechar, etc.).
+  const [voaGravando, setVoaGravando] = useState(false)
   const [receitaAtivaId, setReceitaAtivaId] = useState<number | null>(null)
   const [receitaSistemaId, setReceitaSistemaId] = useState<number | null>(null)
+  const [anexos, setAnexos] = useState<Record<number, ProntuarioAnexo[]>>({})
+  const [enviandoAnexoId, setEnviandoAnexoId] = useState<number | null>(null)
+  const [anexoAlvoId, setAnexoAlvoId] = useState<number | null>(null)
+  const inputAnexoRef = useRef<HTMLInputElement>(null)
+  const voaRef = useRef<VoaPluginHandle>(null)
 
   const carregar = useCallback(async () => {
     setLoading(true)
     try {
-      const [resAg, resPr, resRe, resRs] = await Promise.all([
+      const [resAg, resPr, resRe, resRs, resAn] = await Promise.all([
         fetch(`/api/clinica/agendamentos?${new URLSearchParams({ paciente_id: String(pacienteId), status: 'ATENDIDO' })}`),
         fetch(`/api/clinica/prontuarios?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
         fetch(`/api/clinica/receitas?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
         fetch(`/api/clinica/receitas-sistema?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
+        fetch(`/api/clinica/prontuarios/anexos?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
       ])
       const dataAg = await resAg.json()
       const dataPr = await resPr.json()
       const dataRe = await resRe.json()
       const dataRs = await resRs.json()
+      const dataAn = await resAn.json()
       const lista: AgendamentoListItem[] = [...(dataAg.dados ?? [])]
       if (agendamentoAtual && !lista.some(a => a.id === agendamentoAtual.id)) lista.push(agendamentoAtual)
       lista.sort((a, b) => +new Date(b.data_hora_inicio) - +new Date(a.data_hora_inicio))
@@ -186,10 +260,15 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
       for (const r of (dataRs.dados ?? []) as ReceitaSistemaRegistro[]) {
         (mapaReceitasSistema[r.agendamento_id] ??= []).push(r)
       }
+      const mapaAnexos: Record<number, ProntuarioAnexo[]> = {}
+      for (const a of (dataAn.dados ?? []) as ProntuarioAnexo[]) {
+        (mapaAnexos[a.agendamento_id] ??= []).push(a)
+      }
       setConsultas(lista)
       setProntuarios(mapa)
       setReceitas(mapaReceitas)
       setReceitasSistema(mapaReceitasSistema)
+      setAnexos(mapaAnexos)
     } finally {
       setLoading(false)
     }
@@ -198,6 +277,14 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
   useEffect(() => { carregar() }, [carregar])
 
   function iniciarEdicao(ag: AgendamentoListItem) {
+    // Se havia uma sessão da Voa montada em OUTRA consulta, encerra de vez —
+    // senão ela continua escutando em background e pode aplicar dados extraídos
+    // dela dentro do form desta consulta (mistura de consulta).
+    if (voaMontadoId !== null && voaMontadoId !== ag.id) {
+      if (voaGravando && !confirm('Há uma gravação da Voa em andamento em outra consulta. Se ainda não copiou o documento gerado, você vai perder o conteúdo ao trocar de consulta agora. Continuar?')) return
+      setVoaMontadoId(null)
+      setVoaGravando(false)
+    }
     setForm(prontuarioParaForm(prontuarios[ag.id]))
     setEditandoId(ag.id)
     setAbertoId(ag.id)
@@ -208,6 +295,14 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
   function cancelarEdicao() {
     setEditandoId(null)
     setVoaAtivoId(null)
+  }
+
+  // Encerra de vez a gravação da Voa (desmonta o SDK) — diferente de só ocultar o
+  // painel: usado quando o usuário clica em "Encerrar gravação" ou troca de consulta.
+  function encerrarVoa() {
+    setVoaMontadoId(null)
+    setVoaAtivoId(null)
+    setVoaGravando(false)
   }
 
   function abrirVoa(agId: number) {
@@ -237,6 +332,77 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
     toast.success('Campos preenchidos pela Voa — revise antes de salvar')
   }
 
+  // Documento completo gerado/copiado dentro do próprio widget da Voa (formato markdown,
+  // diferente do structuredOutputSchema) — reaproveita o mesmo merge de aplicarDadosVoa.
+  function aplicarDocumentoVoa(texto: string) {
+    const dados = parseDocumentoVoa(texto)
+    if (Object.keys(dados).length === 0) {
+      toast.error('Não consegui reconhecer as seções do documento da Voa — copie e cole manualmente')
+      return
+    }
+    aplicarDadosVoa(dados)
+  }
+
+  // Rastreabilidade: guarda o uuid que a própria Voa gera pra consulta, vinculado ao
+  // agendamento local — não é crítico pro fluxo de gravação, por isso falha é silenciosa.
+  async function salvarVoaAtendimentoId(agendamentoId: number, voaAtendimentoId: string, tipo: string) {
+    try {
+      await fetch('/api/voa/atendimento', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agendamento_id: agendamentoId, voa_atendimento_id: voaAtendimentoId, voa_atendimento_tipo: tipo }),
+      })
+    } catch {
+      // silencioso — auditoria, não bloqueia o fluxo principal
+    }
+  }
+
+  // Anexa o arquivo no nosso sistema (fica salvo no banco/volume) e, se a Voa estiver
+  // com sessão ativa nessa consulta, também empurra o mesmo arquivo pro pipeline dela.
+  async function anexarArquivo(ag: AgendamentoListItem, file: File) {
+    setEnviandoAnexoId(ag.id)
+    try {
+      const formData = new FormData()
+      formData.append('agendamento_id', String(ag.id))
+      formData.append('file', file)
+      const res = await fetch('/api/clinica/prontuarios/anexos', { method: 'POST', body: formData })
+      const salvo = await res.json()
+      if (!res.ok) { toast.error(salvo.erro || 'Erro ao anexar arquivo'); return }
+
+      setAnexos(prev => ({ ...prev, [ag.id]: [salvo, ...(prev[ag.id] ?? [])] }))
+
+      const enviadoTambemNaVoa = voaMontadoId === ag.id && (voaRef.current?.uploadFiles([file]) ?? false)
+      toast.success(enviadoTambemNaVoa ? 'Arquivo anexado e enviado também para a Voa' : 'Arquivo anexado à consulta')
+    } catch {
+      toast.error('Erro ao anexar arquivo')
+    } finally {
+      setEnviandoAnexoId(null)
+    }
+  }
+
+  function abrirSeletorAnexo(agId: number) {
+    setAnexoAlvoId(agId)
+    inputAnexoRef.current?.click()
+  }
+
+  function handleArquivoSelecionado(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // permite selecionar o mesmo arquivo de novo depois
+    const ag = consultas.find(a => a.id === anexoAlvoId)
+    if (file && ag) anexarArquivo(ag, file)
+  }
+
+  async function removerAnexo(ag: AgendamentoListItem, anexo: ProntuarioAnexo) {
+    if (!confirm(`Remover o anexo "${anexo.nome_arquivo}"?`)) return
+    try {
+      const res = await fetch(`/api/clinica/prontuarios/anexos/${anexo.id}`, { method: 'DELETE' })
+      if (!res.ok) { toast.error('Erro ao remover anexo'); return }
+      setAnexos(prev => ({ ...prev, [ag.id]: (prev[ag.id] ?? []).filter(a => a.id !== anexo.id) }))
+    } catch {
+      toast.error('Erro ao remover anexo')
+    }
+  }
+
   async function salvar(ag: AgendamentoListItem) {
     setSalvando(true)
     try {
@@ -246,6 +412,7 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
         profissional_id: ag.profissional_id,
         ...form,
         peso: form.peso === '' ? null : Number(form.peso),
+        imc:  form.imc === ''  ? null : Number(form.imc),
       }
       const res = await fetch('/api/clinica/prontuarios', {
         method: 'POST',
@@ -299,6 +466,13 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0, position: 'relative' }}>
+      <input
+        ref={inputAnexoRef}
+        type="file"
+        style={{ display: 'none' }}
+        onChange={handleArquivoSelecionado}
+        accept=".pdf,.jpg,.jpeg,.png,.webp"
+      />
       {consultas.map((ag, idx) => {
         const prontuario = prontuarios[ag.id]
         const aberto      = abertoId === ag.id
@@ -407,8 +581,9 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
                               <Campo icone={AlertTriangle} label="Alergias"                 valor={prontuario.alergias} />
                             </div>
                             <Campo icone={ClipboardList}  label="Exame Físico"              valor={prontuario.exame_fisico} />
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
                               <Campo icone={Scale}        label="Peso"                      valor={prontuario.peso != null ? `${prontuario.peso} kg` : null} />
+                              <Campo icone={Scale}        label="IMC"                       valor={prontuario.imc != null ? String(prontuario.imc) : null} />
                               <Campo icone={HeartPulse}   label="Pressão"                   valor={prontuario.pressao} />
                             </div>
                             <Campo icone={FlaskConical}   label="Exames"                    valor={prontuario.exames} />
@@ -467,7 +642,60 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
                           >
                             <FileText size={12} /> Emitir Receita Sistema
                           </button>
+
+                          <button
+                            type="button"
+                            onClick={() => abrirSeletorAnexo(ag.id)}
+                            disabled={enviandoAnexoId === ag.id}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 4,
+                              padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
+                              backgroundColor: 'var(--cor-sucesso-bg)', border: '1px solid var(--cor-sucesso)', borderRadius: 4,
+                              cursor: enviandoAnexoId === ag.id ? 'not-allowed' : 'pointer',
+                              color: 'var(--cor-sucesso)', opacity: enviandoAnexoId === ag.id ? 0.6 : 1,
+                            }}
+                          >
+                            {enviandoAnexoId === ag.id ? <Loader2 size={12} /> : <Paperclip size={12} />}
+                            Anexar exame
+                          </button>
                         </div>
+
+                        {!!anexos[ag.id]?.length && (
+                          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--texto-terciario)' }}>
+                              Anexos
+                            </div>
+                            {anexos[ag.id].map(anexo => (
+                              <div key={anexo.id} style={{
+                                display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+                                backgroundColor: 'var(--bg-input)', borderRadius: 5, fontSize: 12,
+                              }}>
+                                <Paperclip size={13} style={{ color: 'var(--texto-terciario)', flexShrink: 0 }} />
+                                <a
+                                  href={`/api/clinica/prontuarios/anexos/${anexo.id}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--cor-primaria)', fontWeight: 600 }}
+                                >
+                                  {anexo.nome_arquivo}
+                                </a>
+                                {anexo.tamanho_bytes != null && (
+                                  <span style={{ color: 'var(--texto-terciario)', fontSize: 11, whiteSpace: 'nowrap' }}>
+                                    {(anexo.tamanho_bytes / 1024).toFixed(0)} KB
+                                  </span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => removerAnexo(ag, anexo)}
+                                  style={{ display: 'flex', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--cor-erro)', padding: 0 }}
+                                  title="Remover anexo"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
 
                         {receitaAtivaId === ag.id && (
                           <div style={{ marginTop: 8 }}>
@@ -566,30 +794,102 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
                         {voaMontadoId === ag.id && (
                           <div style={{ display: voaAtivoId === ag.id ? 'block' : 'none' }}>
                             <VoaPluginView
+                              ref={voaRef}
                               agendamentoId={ag.id}
                               doctorId={ag.profissional_id}
                               patientId={pacienteId}
-                              onFechar={() => setVoaAtivoId(null)}
+                              voaClinicalType={ag.tipo_voa_clinical_type}
+                              onFechar={encerrarVoa}
                               onDadosExtraidos={aplicarDadosVoa}
+                              onDocumentoGerado={aplicarDocumentoVoa}
+                              onStatusChange={(s: VoaStatus) => setVoaGravando(s === 'ready')}
+                              onConsultaCriada={(voaId, tipo) => salvarVoaAtendimentoId(ag.id, voaId, tipo)}
                             />
                           </div>
                         )}
                         {voaAtivoId !== ag.id && (
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button
+                              type="button"
+                              onClick={() => abrirVoa(ag.id)}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: 7, width: 'fit-content',
+                                padding: '9px 18px', fontSize: 13.5, fontWeight: 700,
+                                backgroundColor: VOA_COR, border: 'none', borderRadius: 7,
+                                cursor: 'pointer', color: '#fff',
+                                boxShadow: `0 2px 6px ${VOA_COR}55`,
+                              }}
+                            >
+                              <Mic size={16} />
+                              {voaMontadoId === ag.id ? 'Retomar Voa' : 'Gravar com Voa'}
+                            </button>
+                            {voaMontadoId === ag.id && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!confirm('Encerrar a gravação da Voa desta consulta? Se ainda não copiou o documento gerado, você pode perder o conteúdo.')) return
+                                  encerrarVoa()
+                                }}
+                                title="Encerra a gravação desta consulta — a Voa para de escutar em background"
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: 5, width: 'fit-content',
+                                  padding: '9px 14px', fontSize: 12.5, fontWeight: 600,
+                                  background: 'none', border: `1px solid ${VOA_COR}`, borderRadius: 7,
+                                  cursor: 'pointer', color: VOA_COR,
+                                }}
+                              >
+                                <X size={14} /> Encerrar gravação
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        <div>
                           <button
                             type="button"
-                            onClick={() => abrirVoa(ag.id)}
+                            onClick={() => abrirSeletorAnexo(ag.id)}
+                            disabled={enviandoAnexoId === ag.id}
                             style={{
-                              display: 'flex', alignItems: 'center', gap: 7, width: 'fit-content',
-                              padding: '9px 18px', fontSize: 13.5, fontWeight: 700,
-                              backgroundColor: VOA_COR, border: 'none', borderRadius: 7,
-                              cursor: 'pointer', color: '#fff',
-                              boxShadow: `0 2px 6px ${VOA_COR}55`,
+                              display: 'flex', alignItems: 'center', gap: 4, width: 'fit-content',
+                              padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
+                              backgroundColor: 'var(--cor-sucesso-bg)', border: '1px solid var(--cor-sucesso)', borderRadius: 4,
+                              cursor: enviandoAnexoId === ag.id ? 'not-allowed' : 'pointer',
+                              color: 'var(--cor-sucesso)', opacity: enviandoAnexoId === ag.id ? 0.6 : 1,
                             }}
                           >
-                            <Mic size={16} />
-                            {voaMontadoId === ag.id ? 'Retomar Voa' : 'Gravar com Voa'}
+                            {enviandoAnexoId === ag.id ? <Loader2 size={12} /> : <Paperclip size={12} />}
+                            Anexar exame{voaMontadoId === ag.id && voaAtivoId === ag.id ? ' (envia também pra Voa)' : ''}
                           </button>
-                        )}
+
+                          {!!anexos[ag.id]?.length && (
+                            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              {anexos[ag.id].map(anexo => (
+                                <div key={anexo.id} style={{
+                                  display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+                                  backgroundColor: 'var(--bg-input)', borderRadius: 5, fontSize: 12,
+                                }}>
+                                  <Paperclip size={13} style={{ color: 'var(--texto-terciario)', flexShrink: 0 }} />
+                                  <a
+                                    href={`/api/clinica/prontuarios/anexos/${anexo.id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--cor-primaria)', fontWeight: 600 }}
+                                  >
+                                    {anexo.nome_arquivo}
+                                  </a>
+                                  <button
+                                    type="button"
+                                    onClick={() => removerAnexo(ag, anexo)}
+                                    style={{ display: 'flex', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--cor-erro)', padding: 0 }}
+                                    title="Remover anexo"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
 
                         <CampoEdit label="Queixas"                value={form.queixas}                 onChange={v => setForm(f => ({ ...f, queixas: v }))} />
                         <CampoEdit label="HDA"                    value={form.hda}                     onChange={v => setForm(f => ({ ...f, hda: v }))} />
@@ -602,8 +902,9 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
                           <CampoEdit label="Alergias"                value={form.alergias}                onChange={v => setForm(f => ({ ...f, alergias: v }))} />
                         </div>
                         <CampoEdit label="Exame Físico"            value={form.exame_fisico}            onChange={v => setForm(f => ({ ...f, exame_fisico: v }))} />
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
                           <CampoEdit label="Peso (kg)"    area={false} placeholder="Ex: 80" value={form.peso}    onChange={v => setForm(f => ({ ...f, peso: v }))} />
+                          <CampoEdit label="IMC"          area={false} placeholder="Ex: 24.5" value={form.imc}   onChange={v => setForm(f => ({ ...f, imc: v }))} />
                           <CampoEdit label="Pressão"      area={false} placeholder="Ex: 135x85mmHg" value={form.pressao} onChange={v => setForm(f => ({ ...f, pressao: v }))} />
                         </div>
                         <CampoEdit label="Exames"                  value={form.exames}                  onChange={v => setForm(f => ({ ...f, exames: v }))} />

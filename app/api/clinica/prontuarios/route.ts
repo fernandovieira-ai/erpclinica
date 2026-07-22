@@ -50,9 +50,9 @@ export async function POST(req: NextRequest) {
     `INSERT INTO tab_prontuario (
        empresa_id, agendamento_id, paciente_id, profissional_id,
        queixas, hda, antecedentes_familiares, antecedentes_pessoais,
-       habitos, alergias, exame_fisico, peso, pressao,
+       habitos, alergias, exame_fisico, peso, imc, pressao,
        exames, diagnostico, medicacao, outras_condutas, created_by
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
      ON CONFLICT (agendamento_id) DO UPDATE SET
        queixas                 = EXCLUDED.queixas,
        hda                     = EXCLUDED.hda,
@@ -62,6 +62,7 @@ export async function POST(req: NextRequest) {
        alergias                = EXCLUDED.alergias,
        exame_fisico            = EXCLUDED.exame_fisico,
        peso                    = EXCLUDED.peso,
+       imc                     = EXCLUDED.imc,
        pressao                 = EXCLUDED.pressao,
        exames                  = EXCLUDED.exames,
        diagnostico             = EXCLUDED.diagnostico,
@@ -71,7 +72,7 @@ export async function POST(req: NextRequest) {
     [
       session.empresa_id_ativa, d.agendamento_id, d.paciente_id, d.profissional_id,
       d.queixas ?? null, d.hda ?? null, d.antecedentes_familiares ?? null, d.antecedentes_pessoais ?? null,
-      d.habitos ?? null, d.alergias ?? null, d.exame_fisico ?? null, d.peso ?? null, d.pressao ?? null,
+      d.habitos ?? null, d.alergias ?? null, d.exame_fisico ?? null, d.peso ?? null, d.imc ?? null, d.pressao ?? null,
       d.exames ?? null, d.diagnostico ?? null, d.medicacao ?? null, d.outras_condutas ?? null,
       session.nome ?? null,
     ],

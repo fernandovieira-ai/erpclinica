@@ -11,7 +11,7 @@ export async function GET(req: NextRequest, { params }: Params) {
 
   const db = getDb(session.database_name)
   const { rows } = await db.query(
-    `SELECT id, descricao, duracao_min, cor, valor, ativo
+    `SELECT id, descricao, duracao_min, cor, valor, ativo, voa_clinical_type
      FROM tab_agendamento_tipo
      WHERE id = $1 AND empresa_id = $2`,
     [params.id, session.empresa_id_ativa],
@@ -42,18 +42,20 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const d = parsed.data
   await db.query(
     `UPDATE tab_agendamento_tipo
-     SET descricao   = COALESCE($1, descricao),
-         duracao_min = COALESCE($2, duracao_min),
-         cor         = COALESCE($3, cor),
-         valor       = $4,
-         ativo       = COALESCE($5, ativo)
-     WHERE id = $6 AND empresa_id = $7`,
+     SET descricao         = COALESCE($1, descricao),
+         duracao_min       = COALESCE($2, duracao_min),
+         cor               = COALESCE($3, cor),
+         valor             = $4,
+         ativo             = COALESCE($5, ativo),
+         voa_clinical_type = $6
+     WHERE id = $7 AND empresa_id = $8`,
     [
       d.descricao ? d.descricao.toUpperCase() : null,
       d.duracao_min ?? null,
       d.cor ?? null,
       (d.valor ?? null) as number | null,
       (d as Record<string, unknown>).ativo ?? null,
+      d.voa_clinical_type ?? null,
       params.id,
       session.empresa_id_ativa,
     ],

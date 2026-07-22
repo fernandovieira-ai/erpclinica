@@ -283,13 +283,41 @@ END $$;
 
 ## 9. Prontuário clínico + integração Voa (referência rápida)
 
-- **`tab_prontuario`**: 1:1 com `tab_agendamento` (`UNIQUE(agendamento_id)`), upsert via `ON CONFLICT (agendamento_id) DO UPDATE` em `POST /api/clinica/prontuarios`. Campos clínicos (queixas, HDA, antecedentes, exame físico, diagnóstico, medicação etc.) **não** passam pela regra de maiúsculo da seção 2 — é texto narrativo do profissional, preserva o case original.
-- **Consultas do paciente**: `GET /api/clinica/agendamentos?paciente_id=X&status=ATENDIDO` (rota já aceitava `profissional_id`, ganhou o filtro `paciente_id` também). UI em `components/clinica/HistoricoClinico.tsx` — timeline expansível dentro da aba "Consultas" do cadastro de pessoas (só aparece se `ind_paciente`; aba "Agenda" só aparece se `ind_profissional`).
-- **Integração Voa** (assistente de gravação/IA): configuração fica em `tab_empresa.voa_auth_token` + `voa_ambiente` (`desenvolvimento`/`producao`), editável na aba "Integração" do cadastro de empresa — nunca fixar token em env var, cada empresa tem o seu.
-  - `POST /api/voa/token` gera o token: em modo `desenvolvimento` devolve o Auth Token bruto direto (documentado pela própria Voa); em `producao` tentaria trocar por Bearer Token via `/integration/identify/`, mas essa troca **não passou na validação** nos testes (401 em `/auth/validate-integration-token/`) — pendência a confirmar com `integration@voahealth.com` antes de usar produção de verdade.
-  - `VoaPlugin` (script `https://integration.voa.health/plugin.js`) expõe `window.VoaPlugin` como **classe**, não singleton pronto — usar sempre `VoaPlugin.instance.init(...)` e `VoaPlugin.instance.mount(...)`, nunca `VoaPlugin.init(...)` direto (o próprio exemplo da doc oficial da Voa tem esse bug).
-  - Preenchimento automático do prontuário usa `structuredOutputSchema` no `mount()` (JSON Schema com um `description` por campo) — a Voa dispara `voa.plugin.ehr.structured_output` com os valores extraídos quando o profissional clica em "Preencher prontuário" dentro do próprio widget da Voa. Ver `components/clinica/VoaPluginView.tsx`.
-  - Callback passado para dentro do `VoaPluginView` (`onDadosExtraidos`) deve ir num `useRef`, nunca direto na dependency array do `useEffect` de mount — senão o widget remonta a cada re-render do formulário pai (cada tecla digitada).
+- **`tab_prontuario`**: 1:1 com `tab_agendamento` (`UNIQUE(agendamento_id)`), upsert via `ON CONFLICT (agendamento_id) DO UPDATE` em `POST /api/clinica/prontuarios`. Campos clínicos (queixas, HDA, antecedentes, exame físico, diagnóstico, medicação etc.) **não** passam pela regra de maiúsculo da seção 2 — é texto narrativo do profissional, preserva o case original. Tem `peso` (NUMERIC 5,2) e `imc` (NUMERIC 4,2) além dos campos de texto.
+- **Consultas do paciente**: `GET /api/clinica/agendamentos?paciente_id=X&status=ATENDIDO`. UI em `components/clinica/HistoricoClinico.tsx` — timeline expansível dentro da aba "Consultas" do cadastro de pessoas.
+- **Anexos de exame** (`tab_prontuario_anexo`, 1 agendamento → N anexos): arquivo vai pro volume Railway via `lib/storage.ts` (ver §18), metadado no banco. Rotas `app/api/clinica/prontuarios/anexos/(route.ts|[id]/route.ts)`. Botão "Anexar exame" em `HistoricoClinico.tsx` salva no nosso banco **e**, se a Voa estiver com sessão `ready` naquela consulta, também chama `voaRef.current.uploadFiles([file])` (exposto por `VoaPluginView` via `forwardRef`/`useImperativeHandle`) — mesmo arquivo nos dois lugares, numa ação só.
+
+### Integração Voa (assistente de gravação/IA) — `components/clinica/VoaPluginView.tsx`
+
+Config em `tab_empresa.voa_auth_token` + `voa_ambiente` (`desenvolvimento`/`producao`), aba "Integração" do cadastro de empresa — nunca fixar token em env var.
+
+- `POST /api/voa/token` gera o token: em `desenvolvimento` devolve o Auth Token bruto; em `producao` tentaria trocar por Bearer Token via `/integration/identify/`, mas essa troca **não passou na validação** nos testes (401) — confirmar com `integration@voahealth.com` antes de produção de verdade.
+- `VoaPlugin` (script `plugin.js`) é uma **classe**: sempre `VoaPlugin.instance.init(...)`/`.mount(...)`, nunca `VoaPlugin.init(...)` direto.
+- Callbacks passados pro `VoaPluginView` (`onDadosExtraidos`, `onFechar`, etc.) vão sempre num `useRef` interno, nunca direto na dependency array do `useEffect` de mount — senão o widget remonta a cada re-render do pai (cada tecla digitada no form).
+
+**Opções do `mount()` — armadilhas já resolvidas, não regredir:**
+- `enableFillEhr: true` **é obrigatório**. Com `false`, o botão "Preencher prontuário" cai num fluxo de "clique para colar" baseado em `clipboard.read()` que dá `NotAllowedError` (permissão do navegador). Com `true`, ele dispara mensagem (`ehr.fill` + `structured_output`) — sem erro.
+- `allowChangeConsultationType: false` — trava a modalidade em `consultationType` fixo (clínica é só presencial); sem isso a Voa mostra uma tela extra "Modalidade do atendimento" antes de gravar.
+- `enableFileUpload: true` — habilita upload de exame **dentro da própria UI da Voa** (vai pro pipeline dela, não pro nosso banco; ver "Anexos" acima pra isso ficar nos dois lugares).
+- `clinicalType` — **não documentado pro SDK** (só documentado pra instalação via iframe alternativa, que não usamos). Setamos mesmo assim porque testes empíricos não quebraram nada. Valor vem de `tab_agendamento_tipo.voa_clinical_type` (configurável na tela Tipo de Atendimento — dropdown com os 26 modelos da página "Modelos" da doc da Voa), fallback pro código é `'anamnesisCardiology'` se o tipo não tiver nada configurado. **Nunca hardcodear um valor fixo aqui de novo** — é por isso que existe a coluna.
+
+**Mensagens (`addMessageListener`) — formato real, não o que a doc "óbvia" sugere:**
+- `voa.plugin.ehr.structured_output`: `eventData` é `{ output: {...}, from_cache: boolean }` — os campos clínicos ficam **dentro de `output`**, não soltos em `eventData` direto. **Bug já cometido uma vez** (`Object.entries(eventData)` em vez de `Object.entries(eventData.output)`) — o preenchimento automático via IA ficou semanas sem funcionar silenciosamente (nenhum erro, só nunca populava nada) até essa doc oficial ser revisada. Ao mexer nesse handler, sempre confirmar contra a doc "Comunicação com a página" da Voa, não assumir o shape.
+- `voa.plugin.ehr.fill`: `eventData.document` (markdown do documento inteiro) + `eventData.template`. Documentado.
+- `voa.plugin.ehr.document.copied` (botão "Copiar todo o documento"): a doc oficial não define `eventData` nenhum pra esse evento, mas **na prática** ele chega com o texto do documento *direto* em `eventData` (string crua, não objeto) — confirmado no console. Tratamento em `extrairTextoDocumento()` cobre os dois formatos (string direta e objeto com chave `document`/`content`/etc) e loga um aviso se não reconhecer, pra pegar rápido se a Voa mudar o formato de novo.
+- `voa.plugin.ehr.document.created`: só `{id, created_at}` — **nunca** traz o texto do documento, não tentar extrair texto daí.
+- `voa.plugin.ehr.created`: dispara uma vez, `eventData.id` é o **uuid da Voa** pro atendimento — salvo em `tab_agendamento.voa_atendimento_id`/`voa_atendimento_tipo` via `POST /api/voa/atendimento`, só rastreabilidade/auditoria (não crítico, falha é silenciosa).
+- `voa.plugin.closed`: chama o mesmo callback de fechar do usuário (`onFechar`) — evita o botão continuar oferecendo "Retomar Voa" pra uma sessão que a própria Voa já encerrou do lado dela.
+- `voa.plugin.file.upload.success`/`.error`: só feedback via toast (nome do arquivo, ou `eventData.error.message`).
+
+**Schema (`structuredOutputSchema`) usa campos especiais da Voa em vez de `type:'string'` genérico:**
+- Diagnóstico: `{ type:'array', items: { $ref: '#/$defs/CID' } }` → volta `[{code, description}]`, formatado em texto "CODE — descrição" (`formatarDiagnosticosCID`).
+- Peso/IMC: `{ $ref: '#/$defs/AnthropometricData' }` → volta `{weight, height, imc}` (kg/cm), `formatarDadosAntropometricos` usa `weight`→`peso` e `imc`→`imc` (altura ainda sem campo no prontuário).
+
+**Ciclo de vida da sessão — evita misturar dados entre consultas/pacientes:**
+- Só uma instância montada por vez (`voaMontadoId` no `HistoricoClinico.tsx`, um valor só, nunca por-agendamento).
+- Trocar de consulta enquanto a Voa está `ready` (gravando) numa outra: `iniciarEdicao()` força desmonte da sessão anterior — se `voaGravando` (status espelhado do filho via `onStatusChange`), pede confirmação antes (perder gravação sem copiar o documento).
+- Fechar (botão "Fechar" no painel ou "Encerrar gravação") também confirma se `status==='ready'` — só não confirma quando é a própria Voa quem encerrou (`voa.plugin.closed`, sem gesto do usuário, não tem porque perguntar).
 
 ## 10. `novos/` nunca entra no build do Next
 
@@ -305,6 +333,8 @@ END $$;
 - `RecebimentoModal.tsx`: o operador só escolhe quantas parcelas usar quando `tipo_pagamento==='credito' && num_parcelas > 1` (`isCreditoParcelavel`). Débito é sempre 1x. O servidor clampa (`Math.min/Math.max`) e a trigger `fn_trg_venda_cartao_auto` valida de novo no banco (`RAISE EXCEPTION` se fora do intervalo permitido) — são duas camadas de defesa, não remover nenhuma das duas.
 - `POST` e `PATCH` de `/api/financeiro/cartao/taxas` **precisam** confirmar que o `condicao_pagamento_id` recebido pertence à `empresa_id_ativa` antes de gravar (já existia no POST; o PATCH ganhou essa checagem em 2026-07 — sem ela dá pra reapontar uma taxa pra condição de outra empresa).
 - Migrations `novos/43_taxa_cartao_por_parcela.sql` e `novos/44_taxa_cartao_sem_vigencia.sql` já aplicadas no banco remoto compartilhado (`hiitcor`).
+- **`parcelas_de`/`parcelas_ate` de `tab_taxa_cartao` NÃO é regra de limite de parcelamento** — é só a faixa que decide qual MDR (%) aplicar pra aquele número de parcelas (`fn_taxa_cartao_vigente`). Quem limita quantas parcelas o operador pode escolher é exclusivamente `tab_condicao_pagamento.num_parcelas`. Se `num_parcelas` (máximo) ficar maior que o `parcelas_ate` cadastrado em `tab_taxa_cartao`, a venda quebra com `Nenhuma taxa cadastrada pra condicao X (Y parcelas)` — ao investigar "aceita mais parcelas do que devia", checar sempre `num_parcelas` primeiro, não a faixa de taxa.
+- **Armadilha de UX em `CondicaoPagamentoFormPage.tsx`**: a tela tem dois botões de salvar independentes lado a lado — **"Salvar"** (toolbar do topo) grava `num_parcelas` em `tab_condicao_pagamento`; **"Atualizar Taxa"** (dentro de `TaxaCartaoInline`, fieldset MDR) grava só `parcelas_de/parcelas_ate/percentual_mdr` em `tab_taxa_cartao` — tabela diferente. É fácil o usuário digitar um novo valor em "Parcelas Máximas", clicar só em "Atualizar Taxa" (por estar mais perto/mais recente na tela) e sair achando que salvou, enquanto `num_parcelas` continua com o valor antigo no banco. Sintoma real já visto em produção: tela mostrando "Parcelas Máximas: 1" mas `tab_condicao_pagamento.num_parcelas` ainda em 6 — sistema aceitando até 6x. Ao depurar "condição configurada pra X mas aceitando Y", sempre confirmar o valor **direto no banco**, não confiar no que a tela exibe (pode ser estado não persistido).
 
 ## 13. Ciclo de vida da venda no cartão (Fatura de Cartão)
 
@@ -371,3 +401,15 @@ Diagnosticado em 2026-07-10 (Railway, `erpclinica-production-5963`). POST `/api/
 - [middleware.ts:5](middleware.ts#L5) tem `DEV_NO_AUTH = true` hardcoded (não lê mais env var) desde commit `6e86bf8` (2026-07-01) — desativa autenticação do ERP em produção para todas as rotas exceto `/admin`. Perguntar antes de reverter.
 - `JWT_SECRET` de produção foi colado em texto puro nesta conversa — considerar comprometido; rotacionar com `openssl rand -hex 64` quando o login estiver resolvido (invalida sessões ativas).
 - [app/api/auth/login/route.ts](app/api/auth/login/route.ts) já ganhou `try/catch` com `console.error('[login] erro interno:', err)` — manter esse padrão de log ao mexer nessa rota, senão erros voltam a ser 500 mudo.
+
+---
+
+## 18. Volume Railway para upload de arquivos (implementado 2026-07-22 — anexos de prontuário)
+
+Volume persistente no Railway, montado em **`/data/uploads`** no serviço do app (Next.js). Env var é **`UPLOADS_DIR`** (plural — não `UPLOAD_DIR`, que era o nome planejado antes de implementar; se for configurar no Railway, confirmar o nome certo `UPLOADS_DIR`). Sem a env var, o código cai no default hardcoded `/data/uploads` — funciona igual em produção, só evita quebrar se a env var não foi setada.
+
+**Implementado**: `lib/storage.ts` (`salvarArquivo`/`lerArquivo`/`removerArquivo`/`caminhoRelativoAnexo` — sanitiza nome de arquivo contra path traversal). Usado por `tab_prontuario_anexo` (anexos de exame por consulta, ver seção 9) via `app/api/clinica/prontuarios/anexos/(route.ts|[id]/route.ts)`.
+
+Em dev local (Windows), `.env.local` sobrescreve com `UPLOADS_DIR=./uploads-dev` (pasta relativa, `.gitignore`d) — o path absoluto `/data/uploads` não existe fora do Railway.
+
+**Restrição do volume Railway**: preso a **uma única réplica** — não persiste em ambiente com múltiplas instâncias/escala horizontal do mesmo serviço. Como o serviço hoje é single-instance, sem problema, mas checar isso antes de qualquer decisão de escalar.

@@ -1,6 +1,7 @@
 node_modules/
 .next/
 out/
+uploads-dev/
 
 .env
 .env.local

@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
 
   const [{ rows }, { rows: cnt }] = await Promise.all([
     db.query(
-      `SELECT id, descricao, duracao_min, cor, valor, ativo
+      `SELECT id, descricao, duracao_min, cor, valor, ativo, voa_clinical_type
        FROM tab_agendamento_tipo
        WHERE ${where}
        ORDER BY descricao
@@ -57,9 +57,9 @@ export async function POST(req: NextRequest) {
   const db = getDb(session.database_name)
 
   const { rows } = await db.query(
-    `INSERT INTO tab_agendamento_tipo (empresa_id, descricao, duracao_min, cor, valor)
-     VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-    [session.empresa_id_ativa, d.descricao.toUpperCase(), d.duracao_min, d.cor, d.valor ?? null],
+    `INSERT INTO tab_agendamento_tipo (empresa_id, descricao, duracao_min, cor, valor, voa_clinical_type)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+    [session.empresa_id_ativa, d.descricao.toUpperCase(), d.duracao_min, d.cor, d.valor ?? null, d.voa_clinical_type ?? null],
   )
 
   return NextResponse.json({ id: rows[0].id }, { status: 201 })

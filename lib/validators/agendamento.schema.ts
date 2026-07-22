@@ -23,6 +23,7 @@ export const agendamentoTipoSchema = z.object({
     v => (v === null || v === undefined || v === '' || (typeof v === 'number' && isNaN(v))) ? null : Number(v),
     z.number().nonnegative().nullable(),
   ).optional(),
+  voa_clinical_type: z.preprocess(v => (v === '' ? null : v), z.string().max(50).nullable().optional()),
   ativo:       z.boolean().default(true),
 })
 

@@ -9,14 +9,44 @@ import { Save, Trash2, ArrowLeft, Plus, X, ClipboardList, Banknote } from 'lucid
 import { agendamentoTipoSchema, type AgendamentoTipoInput } from '@/lib/validators/agendamento.schema'
 import type { TipoAtendimentoListItem, TipoCategoriaValorItem } from '@/types/clinica.types'
 
-type Aba = 'principal' | 'categorias'
-
 interface Props { tipo?: TipoAtendimentoListItem }
 
 const CORES_SUGERIDAS = [
   '#0EA5E9', '#10B981', '#F59E0B', '#EF4444',
   '#6366F1', '#EC4899', '#14B8A6', '#8B5CF6',
   '#F97316', '#06B6D4', '#84CC16', '#6B7280',
+]
+
+// Modelos de anamnese disponíveis na Voa (página "Modelos" da doc deles) — lista fixa,
+// não editável aqui. Serve só pra amarrar qual modelo esse tipo de atendimento usa
+// quando o médico abre a Voa numa consulta desse tipo.
+const MODELOS_VOA: { id: string; nome: string }[] = [
+  { id: 'anamnesis',                     nome: 'Anamnese padrão' },
+  { id: 'anamnesisCardiology',           nome: 'Cardiologia' },
+  { id: 'anamnesisDermatology',          nome: 'Dermatologia' },
+  { id: 'anamnesisEndocrinology',        nome: 'Endocrinologia' },
+  { id: 'anamnesisGeriatrics',           nome: 'Geriatria' },
+  { id: 'anamnesisGeriatrics240812',     nome: 'Geriatria - Novo' },
+  { id: 'anamnesisGynecology',           nome: 'Ginecologia / Saúde da mulher' },
+  { id: 'anamnesisMedicalExpertReport',  nome: 'Perícia médica' },
+  { id: 'anamnesisNeurology',            nome: 'Neurologia' },
+  { id: 'anamnesisNutrology',            nome: 'Nutrologia' },
+  { id: 'anamnesisObstetrics',           nome: 'Obstetrícia' },
+  { id: 'anamnesisOccupationalExam',     nome: 'Medicina do Trabalho' },
+  { id: 'anamnesisOncology',             nome: 'Oncologia' },
+  { id: 'anamnesisOphthalmology',        nome: 'Oftalmologia' },
+  { id: 'anamnesisOrthopedics',          nome: 'Ortopedia' },
+  { id: 'anamnesisOtorhinolaryngology',  nome: 'Otorrinolaringologia' },
+  { id: 'anamnesisPediatrics',           nome: 'Pediatria' },
+  { id: 'anamnesisPneumology',           nome: 'Pneumologia' },
+  { id: 'anamnesisPsychiatry',           nome: 'Psiquiatria' },
+  { id: 'anamnesisPsychology',           nome: 'Psicologia' },
+  { id: 'anamnesisReturningConsultation', nome: 'Consulta de retorno' },
+  { id: 'anamnesisRheumatology',         nome: 'Reumatologia' },
+  { id: 'anamnesisSportsMedicine',       nome: 'Medicina do Esporte' },
+  { id: 'anamnesisSurgery',              nome: 'Cirurgia' },
+  { id: 'anamnesisWardEvolution',        nome: 'Evolução de enfermaria' },
+  { id: 'soap',                          nome: 'SOAP' },
 ]
 
 const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
@@ -47,11 +77,9 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
   const [saving,    setSaving]    = useState(false)
   const [deleting,  setDeleting]  = useState(false)
   const [excluding, setExcluding] = useState(false)
-  const [aba,       setAba]       = useState<Aba>('principal')
   const [categorias,        setCategorias]        = useState<TipoCategoriaValorItem[]>([])
   const [valoresEdit,       setValoresEdit]       = useState<Record<number, string>>({})
   const [valoresPrazoEdit,  setValoresPrazoEdit]  = useState<Record<number, string>>({})
-  const [savingCat,         setSavingCat]         = useState(false)
 
   const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<AgendamentoTipoInput>({
     resolver: zodResolver(agendamentoTipoSchema),
@@ -63,17 +91,18 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
   useEffect(() => {
     if (!tipo) return
     reset({
-      descricao:   tipo.descricao,
-      duracao_min: tipo.duracao_min,
-      cor:         tipo.cor,
-      valor:       tipo.valor != null ? parseFloat(String(tipo.valor)) : undefined,
-      ativo:       tipo.ativo,
+      descricao:         tipo.descricao,
+      duracao_min:       tipo.duracao_min,
+      cor:               tipo.cor,
+      valor:             tipo.valor != null ? parseFloat(String(tipo.valor)) : undefined,
+      voa_clinical_type: tipo.voa_clinical_type ?? undefined,
+      ativo:             tipo.ativo,
     })
   }, [tipo, reset])
 
-  // Carrega categorias ao entrar na aba
+  // Carrega categorias junto com o resto — tudo na mesma página agora
   useEffect(() => {
-    if (!tipo || aba !== 'categorias') return
+    if (!tipo) return
     fetch(`/api/clinica/tipos-agendamento/${tipo.id}/categorias`)
       .then(r => r.json())
       .then((data: TipoCategoriaValorItem[]) => {
@@ -87,26 +116,7 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
         setValoresEdit(vals)
         setValoresPrazoEdit(valsPrazo)
       })
-  }, [tipo, aba])
-
-  async function salvarCategorias() {
-    if (!tipo) return
-    setSavingCat(true)
-    try {
-      const valores = categorias.map(c => ({
-        categoria_id: c.categoria_id,
-        valor:       parseFloat(valoresEdit[c.categoria_id]      || '0') || 0,
-        valor_prazo: parseFloat(valoresPrazoEdit[c.categoria_id] || '0') || 0,
-      }))
-      const res = await fetch(`/api/clinica/tipos-agendamento/${tipo.id}/categorias`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ valores }),
-      })
-      if (!res.ok) { toast.error('Erro ao salvar valores'); return }
-      toast.success('Valores por categoria salvos!')
-    } finally { setSavingCat(false) }
-  }
+  }, [tipo])
 
   async function onSubmit(data: AgendamentoTipoInput) {
     setSaving(true)
@@ -116,6 +126,23 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
       const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
       const json   = await res.json()
       if (!res.ok) { toast.error(json.erro?.formErrors?.[0] ?? json.erro ?? 'Erro ao salvar'); return }
+
+      // Tipo já existia (tem categorias carregadas na tela) — salva os valores por
+      // categoria junto, no mesmo clique.
+      if (tipo && categorias.length > 0) {
+        const valores = categorias.map(c => ({
+          categoria_id: c.categoria_id,
+          valor:       parseFloat(valoresEdit[c.categoria_id]      || '0') || 0,
+          valor_prazo: parseFloat(valoresPrazoEdit[c.categoria_id] || '0') || 0,
+        }))
+        const resCat = await fetch(`/api/clinica/tipos-agendamento/${tipo.id}/categorias`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ valores }),
+        })
+        if (!resCat.ok) { toast.error('Tipo salvo, mas houve erro ao salvar os valores por categoria'); return }
+      }
+
       toast.success(tipo ? 'Tipo de atendimento atualizado!' : 'Tipo de atendimento cadastrado!')
       if (!tipo) router.push(`/clinica/tipos-atendimento/${json.id}`)
       else router.refresh()
@@ -160,17 +187,10 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
           style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', background: 'none', border: '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, cursor: 'pointer', color: 'var(--texto-secundario)' }}>
           <Plus size={13} /> Novo
         </button>
-        {aba === 'principal' ? (
-          <button type="submit" disabled={saving}
-            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 14px', background: 'var(--cor-primaria)', color: '#fff', border: 'none', borderRadius: 3, fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
-            <Save size={13} /> {saving ? 'Salvando...' : 'Salvar'}
-          </button>
-        ) : (
-          <button type="button" onClick={salvarCategorias} disabled={savingCat}
-            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 14px', background: 'var(--cor-primaria)', color: '#fff', border: 'none', borderRadius: 3, fontSize: 12, cursor: savingCat ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: savingCat ? 0.7 : 1 }}>
-            <Save size={13} /> {savingCat ? 'Salvando...' : 'Salvar Valores'}
-          </button>
-        )}
+        <button type="submit" disabled={saving}
+          style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 14px', background: 'var(--cor-primaria)', color: '#fff', border: 'none', borderRadius: 3, fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
+          <Save size={13} /> {saving ? 'Salvando...' : 'Salvar'}
+        </button>
         {tipo && (
           <button type="button" onClick={desativar} disabled={deleting}
             style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', background: 'none', border: '1px solid var(--cor-erro)', borderRadius: 3, fontSize: 12, cursor: 'pointer', color: 'var(--cor-erro)' }}>
@@ -186,26 +206,10 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
         {tipo && <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--texto-terciario)' }}>#{tipo.id} — {tipo.ativo ? 'Ativo' : 'Inativo'}</span>}
       </div>
 
-      {/* ── Abas ── */}
-      <div style={{ display: 'flex', backgroundColor: 'var(--bg-page)', borderBottom: '1px solid var(--borda-media)', paddingLeft: 12 }}>
-        {(['principal', ...(tipo ? ['categorias'] : [])] as Aba[]).map(a => {
-          const ativa = aba === a
-          const label = a === 'principal' ? 'Principal' : 'Valores p/ Categoria'
-          return (
-            <button key={a} type="button" onClick={() => setAba(a)}
-              style={{ padding: '7px 14px', fontSize: 12, fontWeight: ativa ? 600 : 400, color: ativa ? 'var(--cor-primaria)' : 'var(--texto-secundario)', background: ativa ? 'var(--bg-card)' : 'transparent', border: 'none', borderBottom: ativa ? '2px solid var(--cor-primaria)' : '2px solid transparent', borderRight: '1px solid var(--borda-suave)', cursor: ativa ? 'default' : 'pointer' }}>
-              {label}
-            </button>
-          )
-        })}
-      </div>
-
       {/* ── Corpo ── */}
       <div style={{ overflowY: 'auto', flex: 1 }}>
 
-        {/* ── Aba Principal ── */}
-        {aba === 'principal' && (
-          <div style={{ padding: '20px 24px', display: 'flex', gap: 24 }}>
+        <div style={{ padding: '20px 24px', display: 'flex', gap: 24 }}>
 
             {/* Coluna principal */}
         <div style={{ flex: 1, maxWidth: 560 }}>
@@ -249,6 +253,24 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
               style={{ width: 110, padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: errors.valor ? '1px solid var(--cor-erro)' : '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, textAlign: 'right' }}
             />
             {errors.valor && <span style={{ fontSize: 11, color: 'var(--cor-erro)' }}>{errors.valor.message}</span>}
+          </Row>
+
+          {/* Modelo Voa */}
+          <Row label="Modelo Voa:">
+            <select
+              {...register('voa_clinical_type')}
+              style={{ width: 260, padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12 }}
+            >
+              <option value="">Padrão da clínica (Cardiologia)</option>
+              {MODELOS_VOA.map(m => (
+                <option key={m.id} value={m.id}>{m.nome}</option>
+              ))}
+            </select>
+          </Row>
+          <Row label="">
+            <span style={{ fontSize: 10.5, color: 'var(--texto-terciario)' }}>
+              Modelo de documento que a Voa gera quando esse tipo de atendimento é usado numa consulta.
+            </span>
           </Row>
 
           <div style={{ height: 1, backgroundColor: 'var(--borda-suave)', margin: '4px 0' }} />
@@ -308,44 +330,19 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
         </fieldset>
         </div>
 
-        {/* Preview */}
-        <div style={{ width: 180, flexShrink: 0 }}>
-          <fieldset className="form-fieldset">
-            <legend>Prévia</legend>
-            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{
-                padding: '6px 10px', borderRadius: 4, fontSize: 12, fontWeight: 600,
-                backgroundColor: `${corAtual}20`,
-                color: corAtual,
-                borderLeft: `3px solid ${corAtual}`,
-              }}>
-                {watch('descricao') || 'DESCRIÇÃO'}
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>
-                Duração: <strong>{watch('duracao_min') || 30} min</strong>
-              </div>
-              {watch('valor') != null && (
-                <div style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>
-                  Valor: <strong>R$ {parseFloat(String(watch('valor'))).toFixed(2).replace('.', ',')}</strong>
-                </div>
-              )}
-            </div>
-          </fieldset>
-        </div>
-
-          </div>
-        )}
-
-        {/* ── Aba Categorias ── */}
-        {aba === 'categorias' && (
-          <div style={{ padding: '20px 24px', maxWidth: 600 }}>
+        {/* Valores por Categoria — no lugar da antiga Prévia */}
+        <div style={{ flex: 1, minWidth: 420 }}>
           <fieldset className="form-fieldset">
             <legend>
               <Banknote size={12} /> Valores por Categoria
             </legend>
             <div className="form-fieldset-body">
 
-            {categorias.length === 0 ? (
+            {!tipo ? (
+              <p style={{ fontSize: 12, color: 'var(--texto-terciario)' }}>
+                Salve o cadastro primeiro para configurar valores por categoria.
+              </p>
+            ) : categorias.length === 0 ? (
               <p style={{ fontSize: 12, color: 'var(--texto-terciario)' }}>
                 Nenhuma categoria cadastrada. Cadastre categorias em <strong>Clínica → Categorias</strong> primeiro.
               </p>
@@ -389,15 +386,17 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
                 </tbody>
               </table>
             )}
-            <p style={{ marginTop: 12, fontSize: 11, color: 'var(--texto-terciario)' }}>
-              Deixe em branco ou zero para usar o valor padrão do tipo de atendimento.
-            </p>
+            {!!tipo && categorias.length > 0 && (
+              <p style={{ marginTop: 12, fontSize: 11, color: 'var(--texto-terciario)' }}>
+                Deixe em branco ou zero para usar o valor padrão do tipo de atendimento.
+              </p>
+            )}
 
             </div>
           </fieldset>
-          </div>
-        )}
+        </div>
 
+        </div>
       </div>
     </form>
   )

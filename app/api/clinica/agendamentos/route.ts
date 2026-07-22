@@ -84,6 +84,7 @@ export async function GET(req: NextRequest) {
        pro.id   AS profissional_id, pro.nome AS profissional_nome,
        tp.id    AS tipo_id,         tp.descricao AS tipo_descricao,
        tp.cor   AS tipo_cor,        tp.duracao_min AS tipo_duracao_min,
+       tp.voa_clinical_type AS tipo_voa_clinical_type,
        COALESCE(atc.valor, tp.valor) AS tipo_valor,
        atc.valor_prazo AS tipo_valor_prazo,
        esp.id   AS especialidade_id, esp.descricao AS especialidade_descricao,

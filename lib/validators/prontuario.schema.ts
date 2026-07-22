@@ -14,6 +14,7 @@ export const prontuarioSchema = z.object({
   alergias:                textoOpcional,
   exame_fisico:            textoOpcional,
   peso:                    z.preprocess(v => (v == null || v === '') ? null : Number(v), z.number().min(0).max(999).nullable().optional()),
+  imc:                     z.preprocess(v => (v == null || v === '') ? null : Number(v), z.number().min(0).max(99.99).nullable().optional()),
   pressao:                 z.preprocess(v => (v === '' ? null : v), z.string().max(20).nullable().optional()),
   exames:                  textoOpcional,
   diagnostico:             textoOpcional,

@@ -50,6 +50,7 @@ export interface Agendamento {
   tipo_descricao:        string | null
   tipo_cor:              string | null
   tipo_duracao_min:      number | null
+  tipo_voa_clinical_type: string | null
   especialidade_id:      number | null
   especialidade_descricao: string | null
   especialidade_cor:     string | null
@@ -71,7 +72,7 @@ export type AgendamentoListItem = Pick<
   Agendamento,
   | 'id' | 'paciente_id' | 'paciente_nome' | 'paciente_celular'
   | 'profissional_id' | 'profissional_nome'
-  | 'tipo_id' | 'tipo_descricao' | 'tipo_cor'
+  | 'tipo_id' | 'tipo_descricao' | 'tipo_cor' | 'tipo_voa_clinical_type'
   | 'especialidade_id' | 'especialidade_descricao'
   | 'data_hora_inicio' | 'data_hora_fim' | 'status' | 'motivo' | 'observacao'
   | 'categoria_id' | 'categoria_descricao'
@@ -105,12 +106,13 @@ export interface CategoriaListResponse {
 }
 
 export interface TipoAtendimentoListItem {
-  id:          number
-  descricao:   string
-  duracao_min: number
-  cor:         string
-  valor:       number | null
-  ativo:       boolean
+  id:                number
+  descricao:         string
+  duracao_min:       number
+  cor:               string
+  valor:             number | null
+  ativo:             boolean
+  voa_clinical_type: string | null
 }
 
 export interface TipoAtendimentoListResponse {
@@ -140,6 +142,7 @@ export interface Prontuario {
   alergias:                string | null
   exame_fisico:            string | null
   peso:                    number | null
+  imc:                     number | null
   pressao:                 string | null
   exames:                  string | null
   diagnostico:             string | null
@@ -148,6 +151,16 @@ export interface Prontuario {
   created_by:              string | null
   created_at:              string
   updated_at:              string
+}
+
+export interface ProntuarioAnexo {
+  id:             number
+  agendamento_id: number
+  nome_arquivo:   string
+  tipo_mime:      string | null
+  tamanho_bytes:  number | null
+  created_by:     string | null
+  created_at:     string
 }
 
 export interface ReceitaMedica {
