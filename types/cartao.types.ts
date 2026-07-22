@@ -93,7 +93,7 @@ export type VendaCartaoListItem = Pick<
   | 'qtd_parcelas' | 'valor_bruto' | 'nsu' | 'data_venda' | 'status' | 'status_parcelas'
   | 'percentual_mdr_aplicado'
 > & {
-  proximo_vencimento: string | null
+  ultimo_vencimento:  string | null
   valor_liquido:      string
   pessoa_nome:        string | null
 }

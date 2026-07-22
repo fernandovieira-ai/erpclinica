@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
                  ELSE 'PENDENTE'
                END
                FROM tab_venda_cartao_parcela p WHERE p.venda_cartao_id = v.id) AS status_parcelas,
-              (SELECT TO_CHAR(MIN(p.data_prevista), 'YYYY-MM-DD') FROM tab_venda_cartao_parcela p WHERE p.venda_cartao_id = v.id) AS proximo_vencimento,
+              (SELECT TO_CHAR(MAX(p.data_prevista), 'YYYY-MM-DD') FROM tab_venda_cartao_parcela p WHERE p.venda_cartao_id = v.id) AS ultimo_vencimento,
               (SELECT COALESCE(SUM(p.valor_liquido), 0) FROM tab_venda_cartao_parcela p WHERE p.venda_cartao_id = v.id) AS valor_liquido,
               (SELECT STRING_AGG(DISTINCT pe.nome, ', ' ORDER BY pe.nome)
                FROM tab_recebimento_consulta rc

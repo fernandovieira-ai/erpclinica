@@ -99,7 +99,7 @@ export default function CartaoVendasPage() {
                   <th style={{ width: 90, textAlign: 'right' }}>Taxa</th>
                   <th style={{ width: 130, textAlign: 'right' }}>Valor Líquido</th>
                   <th style={{ width: 150 }}>Data</th>
-                  <th style={{ width: 110 }}>Vencimento</th>
+                  <th style={{ width: 110 }}>Últ. Vencimento</th>
                   <th style={{ width: 100, textAlign: 'center' }}>Status</th>
                 </tr>
               </thead>
@@ -120,7 +120,7 @@ export default function CartaoVendasPage() {
                     <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)', fontSize: 12, color: 'var(--texto-secundario)' }}>{v.percentual_mdr_aplicado ? `${Number(v.percentual_mdr_aplicado).toFixed(2)}%` : '—'}</td>
                     <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)', fontWeight: 600, color: 'var(--cor-sucesso)' }}>{fmtValor(v.valor_liquido)}</td>
                     <td style={{ fontFamily: 'var(--fonte-mono)', color: 'var(--texto-secundario)', fontSize: 12 }}>{fmtDataSimples(v.data_venda)}</td>
-                    <td style={{ fontFamily: 'var(--fonte-mono)', color: 'var(--texto-secundario)', fontSize: 12 }}>{fmtDataSimples(v.proximo_vencimento)}</td>
+                    <td style={{ fontFamily: 'var(--fonte-mono)', color: 'var(--texto-secundario)', fontSize: 12 }}>{fmtDataSimples(v.ultimo_vencimento)}</td>
                     <td style={{ textAlign: 'center' }}>
                       <span style={{ fontSize: 11, fontWeight: 600, color: STATUS_COR[v.status_parcelas] }}>{STATUS_LABEL[v.status_parcelas] ?? v.status_parcelas}</span>
                     </td>
