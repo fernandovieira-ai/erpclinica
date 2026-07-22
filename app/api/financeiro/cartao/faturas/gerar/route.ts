@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
      WHERE v.empresa_id = $1
        AND v.status = 'PENDENTE'
        AND p.status = 'PENDENTE'
-       AND p.data_prevista <= $2
+       AND ($2::date    IS NULL OR p.data_prevista    <= $2)
        AND ($3::date    IS NULL OR p.data_prevista    >= $3)
        AND ($4::date    IS NULL OR v.data_venda::date >= $4)
        AND ($5::date    IS NULL OR v.data_venda::date <= $5)
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
      LIMIT 500`,
     [
       session.empresa_id_ativa,
-      sp.get('data_vencimento_fim') || new Date().toISOString().slice(0, 10),
+      sp.get('data_vencimento_fim') || null,
       sp.get('data_vencimento_inicio') || null,
       sp.get('data_emissao_inicio')    || null,
       sp.get('data_emissao_fim')       || null,

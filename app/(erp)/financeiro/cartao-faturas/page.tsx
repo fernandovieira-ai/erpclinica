@@ -236,7 +236,12 @@ export default function CartaoFaturasPage() {
             </div>
 
             <div style={{ marginTop: 16 }}>
-              <div className="table-wrapper" style={{ maxHeight: 320, overflowY: 'auto', border: '0.5px solid var(--borda-suave)', borderRadius: 6 }}>
+              {!pendentesLoading && pendentes.length > 0 && (
+                <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginBottom: 6 }}>
+                  {pendentes.length} parcela(s) pendente(s) encontrada(s) para o filtro — role a lista pra conferir todas.
+                </div>
+              )}
+              <div className="table-wrapper" style={{ maxHeight: 480, overflowY: 'auto', border: '0.5px solid var(--borda-suave)', borderRadius: 6 }}>
                 <table className="table-base">
                   <thead>
                     <tr>
