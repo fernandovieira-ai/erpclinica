@@ -239,6 +239,8 @@ function Secao({ titulo, children, style }: { titulo: string; children: React.Re
 function FotoCaptura({ foto, onChange }: { foto?: string | null; onChange: (v: string | null) => void }) {
   const [modo,      setModo]      = useState<'idle' | 'camera' | 'preview'>('idle')
   const [capturada, setCapturada] = useState<string | null>(null)
+  const [cameras,   setCameras]   = useState<MediaDeviceInfo[]>([])
+  const [cameraId,  setCameraId]  = useState<string>('')
   const videoRef  = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -250,13 +252,42 @@ function FotoCaptura({ foto, onChange }: { foto?: string | null; onChange: (v: s
 
   useEffect(() => () => pararStream(), [])
 
+  async function iniciarStream(deviceId?: string) {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: deviceId
+        ? { deviceId: { exact: deviceId }, width: 400, height: 400 }
+        : { width: 400, height: 400, facingMode: 'user' },
+    })
+    pararStream()
+    streamRef.current = stream
+    return stream
+  }
+
   async function abrirCamera() {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 400, height: 400, facingMode: 'user' } })
-      streamRef.current = stream
+      await iniciarStream(cameraId || undefined)
       setModo('camera')
+
+      // Labels só ficam disponíveis depois que a permissão é concedida
+      const devices = await navigator.mediaDevices.enumerateDevices()
+      const vids = devices.filter(d => d.kind === 'videoinput')
+      setCameras(vids)
+      if (!cameraId && vids[0]) setCameraId(vids[0].deviceId)
     } catch {
       toast.error('Câmera não disponível ou sem permissão')
+    }
+  }
+
+  async function trocarCamera(id: string) {
+    setCameraId(id)
+    try {
+      await iniciarStream(id)
+      if (videoRef.current && streamRef.current) {
+        videoRef.current.srcObject = streamRef.current
+        videoRef.current.play().catch(() => {})
+      }
+    } catch {
+      toast.error('Não foi possível usar essa câmera')
     }
   }
 
@@ -302,6 +333,23 @@ function FotoCaptura({ foto, onChange }: { foto?: string | null; onChange: (v: s
             <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--texto-principal)', letterSpacing: '0.02em' }}>
               {modo === 'camera' ? 'Posicione o rosto no centro' : 'Confirmar foto'}
             </div>
+            {modo === 'camera' && cameras.length > 1 && (
+              <select
+                value={cameraId}
+                onChange={e => trocarCamera(e.target.value)}
+                style={{
+                  width: 280, padding: '6px 8px', fontSize: 12,
+                  borderRadius: 6, border: '1px solid var(--borda-media)',
+                  backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)',
+                }}
+              >
+                {cameras.map((c, i) => (
+                  <option key={c.deviceId} value={c.deviceId}>
+                    {c.label || `Câmera ${i + 1}`}
+                  </option>
+                ))}
+              </select>
+            )}
             {modo === 'camera' && (
               <video ref={videoRef} autoPlay playsInline muted style={{
                 width: 280, height: 280, objectFit: 'cover', borderRadius: '50%',
