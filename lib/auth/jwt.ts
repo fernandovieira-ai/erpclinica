@@ -1,7 +1,7 @@
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose'
-import type { Session, AdminSession, SelectToken } from '@/types/session'
+import type { Session, AdminSession, SelectToken, PasswordResetToken } from '@/types/session'
 
-export type Payload = Session | AdminSession | SelectToken
+export type Payload = Session | AdminSession | SelectToken | PasswordResetToken
 
 const secret  = new TextEncoder().encode(process.env.JWT_SECRET!)
 const expires = process.env.JWT_EXPIRES_IN ?? '8h'
@@ -33,4 +33,8 @@ export function isSelectToken(p: Payload): p is SelectToken {
 
 export function isSession(p: Payload): p is Session {
   return 'empresa_id_ativa' in p
+}
+
+export function isPasswordResetToken(p: Payload): p is PasswordResetToken {
+  return 'type' in p && p.type === 'password_reset'
 }

@@ -140,18 +140,27 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <label style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              fontSize: 13, color: 'var(--texto-secundario)', cursor: 'pointer', userSelect: 'none',
-            }}>
-              <input
-                type="checkbox"
-                checked={salvarDados}
-                onChange={e => setSalvarDados(e.target.checked)}
-                style={{ width: 14, height: 14, accentColor: 'var(--cor-primaria)', cursor: 'pointer' }}
-              />
-              Salvar dados de acesso
-            </label>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <label style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                fontSize: 13, color: 'var(--texto-secundario)', cursor: 'pointer', userSelect: 'none',
+              }}>
+                <input
+                  type="checkbox"
+                  checked={salvarDados}
+                  onChange={e => setSalvarDados(e.target.checked)}
+                  style={{ width: 14, height: 14, accentColor: 'var(--cor-primaria)', cursor: 'pointer' }}
+                />
+                Salvar dados de acesso
+              </label>
+
+              <a
+                href="/recuperar-senha"
+                style={{ fontSize: 12, color: 'var(--cor-primaria)', textDecoration: 'none' }}
+              >
+                Esqueci minha senha
+              </a>
+            </div>
 
             {erro && (
               <div style={{
