@@ -4,6 +4,12 @@ Ao trabalhar neste projeto, siga SEMPRE os padrões abaixo sem precisar ser lemb
 
 ---
 
+## 0. Idioma: responder sempre em português do Brasil
+
+Todas as respostas ao usuário (texto de conversa, mensagens de commit quando não especificado de outra forma, resumos, explicações) devem ser em **português do Brasil**, independentemente do idioma da pergunta. Comentários e nomes de variáveis no código seguem o idioma já usado no arquivo (geralmente português, ver convenções do projeto).
+
+---
+
 ## 1. Encoding do banco de dados: LATIN1
 
 O banco PostgreSQL do cliente usa encoding **LATIN1**. Qualquer string enviada via query SQL deve conter apenas caracteres LATIN1.
@@ -413,3 +419,39 @@ Volume persistente no Railway, montado em **`/data/uploads`** no serviço do app
 Em dev local (Windows), `.env.local` sobrescreve com `UPLOADS_DIR=./uploads-dev` (pasta relativa, `.gitignore`d) — o path absoluto `/data/uploads` não existe fora do Railway.
 
 **Restrição do volume Railway**: preso a **uma única réplica** — não persiste em ambiente com múltiplas instâncias/escala horizontal do mesmo serviço. Como o serviço hoje é single-instance, sem problema, mas checar isso antes de qualquer decisão de escalar.
+
+---
+
+## 19. Recuperação de senha por e-mail (implementado 2026-07-23)
+
+Portado do padrão do projeto irmão `digitalrf-help` (Resend + JWT stateless), adaptado pro multi-tenant do ERP.
+
+**Diferença-chave vs. `digitalrf-help`:** lá é banco único, aqui cada cliente tem seu próprio database (`tab_instancia.database_name`). O token de reset carrega `database_name` junto (não só `usuario_id`), porque e-mail não é único entre tenants — sem isso não daria pra saber em qual banco fazer o `UPDATE` na hora de redefinir.
+
+**Arquivos:**
+- `lib/email/resend.ts` — client Resend; `EMAIL_FROM`/`EMAIL_REPLY_TO` via env (default `VitaRF <noreply@digitalrf.com.br>`)
+- `lib/email/send.ts` — `emailRecuperacaoSenha({email, nome, token})`, template HTML inline
+- `types/session.ts` — `PasswordResetToken { type:'password_reset', usuario_id, database_name }`
+- `lib/auth/jwt.ts` — `Payload` union ganhou `PasswordResetToken`; guard `isPasswordResetToken()`
+- `POST /api/auth/recuperar-senha` — recebe `{slug, email}` (não só email — precisa do slug pra resolver o tenant via `dbControl`). Sempre responde `{ok:true}` mesmo se slug/e-mail não existir (anti-enumeração), só retorna erro em falha real de envio
+- `POST /api/auth/redefinir-senha` — recebe `{token, senha}`, valida `isPasswordResetToken`, resolve `getDb(database_name)` do payload e faz `UPDATE tab_usuario SET senha_hash`
+- `app/(auth)/recuperar-senha/page.tsx` e `.../redefinir-senha/page.tsx` — telas no estilo do login (`card`/`input-field`/`btn-primary`, ver `app/globals.css`)
+- Link "Esqueci minha senha" adicionado em `app/(auth)/login/page.tsx`
+
+**Env necessárias** (`.env.example`): `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO`. Trocar de domínio/remetente depois é só mudar essas envs, sem tocar código.
+
+**Config atual (dev local, `.env.local`):** reaproveitando a mesma `RESEND_API_KEY` e domínio `digitalrf.com.br` já verificado no `digitalrf-help` — mesma conta Resend. **Atenção:** essa key está num plano com cota baixa (`x-resend-daily-quota: 4`, `x-resend-monthly-quota: 40` visto no header de resposta) — insuficiente pra produção com vários clientes, checar/trocar de plano antes de ir pra produção.
+
+**Não testado ainda:** fluxo feliz ponta-a-ponta (usuário real recebe e-mail → clica → redefine). Testado apenas: páginas carregam, slug/e-mail inexistente não vaza informação, envio Resend funciona (teste manual), token inválido/senha curta retornam 400. Evitei mandar e-mail de teste pro único usuário real do tenant de teste (`hiitcor` / `Josevicente@live.com`) ou criar usuário fake no banco remoto compartilhado sem combinar antes — se for validar o fluxo completo, decidir com o usuário qual conta de teste usar.
+
+**Revisão de segurança/desempenho (2026-07-23) — 2 falhas reais corrigidas:**
+1. **Rate limiting ausente** — nada impedia flood em `/api/auth/recuperar-senha`, e a cota do Resend é de só 4 e-mails/dia (ver acima): um script simples esgotaria o envio pro dia inteiro pra todos os clientes. Corrigido com `lib/rate-limit.ts` (limitador em memória — Map por chave/janela; ok porque o serviço roda numa única réplica no Railway, ver seção 18). Limites aplicados: `recuperar-senha` — 5/15min por IP **e** 3/hora por combinação slug+email; `redefinir-senha` — 10/15min por IP (protege o `bcrypt.hash` de custo de CPU contra flood).
+2. **Token de reset reutilizável** — o JWT stateless valia por 1h inteira mesmo depois de já ter sido usado pra redefinir a senha uma vez; se o e-mail antigo fosse comprometido dentro da janela, dava pra resetar de novo. Corrigido sem precisar de tabela nova: o token agora carrega `pwd_v` (fingerprint sha256 do `senha_hash` no momento da emissão). Ao redefinir, comparamos com o `senha_hash` atual — se já mudou (por este link ou por qualquer outro meio), o token vira inválido automaticamente. Efeito colateral bom: também invalida um link antigo se a senha for trocada por outra via (ex: admin resetou manualmente).
+
+**Risco já conhecido, não corrigido (decisão consciente):** o token de reset é assinado com o mesmo `JWT_SECRET` das sessões de login — que a seção 17 já registra como possivelmente comprometido. Um secret vazado aqui é pior que pra sessão (dá reset de senha = takeover persistente, não só acesso temporário). Rotacionar o `JWT_SECRET` continua pendente de decisão do usuário (invalida sessões ativas).
+
+## 19a. Logo da empresa no agendamento (implementado 2026-07-23) — revisão de carregamento
+
+Primeira versão buscava a logo (`tab_empresa.logo_base64`, data URL ~200KB) embutida no JSON de `GET /api/auth/me` — que é chamado em 3 páginas (`agendamento`, `sala-espera`, `usuarios`), então as outras duas passaram a baixar a logo inteira sem nunca exibi-la, sem cache algum (JSON de sessão não é cacheável).
+
+**Corrigido:** logo agora é servida por endpoint dedicado `GET /api/cadastro/empresas/logo`, que decodifica o data URL e devolve bytes binários com `Content-Type` real + `Cache-Control: private, max-age=300` — o `<img src="/api/cadastro/empresas/logo">` vai direto no JSX (sem fetch/state), o navegador cacheia nativamente entre navegações, e só a página que realmente mostra a logo paga o custo. `/api/auth/me` voltou a ser leve (~200 bytes, era ~200KB). Componente controla exibição com `logoStatus` (`loading|ok|error`) via `onLoad`/`onError` da própria tag — sem logo cadastrada, o bloco inteiro some (não cai pra logo do sistema).
