@@ -1,4 +1,4 @@
-import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from './resend'
+import { getResend, EMAIL_FROM, EMAIL_REPLY_TO } from './resend'
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
@@ -29,7 +29,7 @@ export async function emailRecuperacaoSenha(dados: {
   const urlRedefinir = `${BASE_URL}/redefinir-senha?token=${dados.token}`
   const { subject, html } = templateRecuperacaoSenha({ nome: dados.nome, urlRedefinir })
 
-  return resend.emails.send({
+  return getResend().emails.send({
     from: EMAIL_FROM,
     replyTo: EMAIL_REPLY_TO,
     to: dados.email,
