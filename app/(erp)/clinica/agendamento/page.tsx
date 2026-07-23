@@ -78,9 +78,11 @@ export default function AgendamentoPage() {
   const [agendamentos, setAgendamentos]   = useState<AgendamentoListItem[]>([])
   const [profissionais, setProfissionais] = useState<ProfissionalListItem[]>([])
   const [profFiltro, setProfFiltro]       = useState<number>(0)
+  const [logoStatus, setLogoStatus]       = useState<'loading' | 'ok' | 'error'>('loading')
   const [loading, setLoading]             = useState(false)
   const [calMes, setCalMes]               = useState(new Date())
   const [agsMes, setAgsMes]               = useState<Set<string>>(new Set())
+  const [agsConfirmar, setAgsConfirmar]   = useState<AgendamentoListItem[]>([])
 
   const [modalOpen, setModalOpen]       = useState(false)
   const [editAg, setEditAg]             = useState<AgendamentoListItem | null>(null)
@@ -233,6 +235,22 @@ export default function AgendamentoPage() {
     setAgsMes(dias)
   }, [calMes, profFiltro])
 
+  // Aba "Confirmar" ignora o filtro de data (dia/semana/mês) selecionado:
+  // sempre traz todos os agendamentos com status AGENDADO de hoje em diante.
+  const carregarConfirmar = useCallback(async () => {
+    const sp = new URLSearchParams({
+      inicio: format(startOfDay(new Date()), 'yyyy-MM-dd'),
+      status: 'AGENDADO',
+      order:  'asc',
+      limit:  '500',
+    })
+    if (profFiltro) sp.set('profissional_id', String(profFiltro))
+    const res = await fetch(`/api/clinica/agendamentos?${sp}`)
+    if (!res.ok) return
+    const data = await res.json()
+    setAgsConfirmar(data.dados ?? [])
+  }, [profFiltro])
+
   useEffect(() => {
     fetch('/api/clinica/profissionais').then(r => r.json()).then(d => {
       setProfissionais(d.dados ?? [])
@@ -248,6 +266,7 @@ export default function AgendamentoPage() {
 
   useEffect(() => { carregar() }, [carregar])
   useEffect(() => { carregarMes() }, [carregarMes])
+  useEffect(() => { if (view === 'confirmar') carregarConfirmar() }, [view, carregarConfirmar])
 
   // Dias indisponíveis para o mini calendário lateral (cobre a grade completa do mês)
   const diasIndisponíveisCal = useMemo(() => {
@@ -444,6 +463,7 @@ export default function AgendamentoPage() {
     if (res.ok) {
       toast.success('Agendamento confirmado!')
       carregar()
+      carregarConfirmar()
     } else {
       toast.error('Erro ao confirmar agendamento')
     }
@@ -460,6 +480,7 @@ export default function AgendamentoPage() {
     if (res.ok) {
       toast.success('Agendamento cancelado.')
       carregar()
+      carregarConfirmar()
     } else {
       toast.error('Erro ao cancelar agendamento')
     }
@@ -650,6 +671,29 @@ export default function AgendamentoPage() {
             </div>
           ))}
         </div>
+
+        {/* Logo da empresa (cadastro > Dados Gerais) — empurrada pro rodapé via marginTop: auto */}
+        {logoStatus !== 'error' && (
+          <div style={{
+            marginTop: 'auto',
+            display: 'flex', justifyContent: 'center',
+            padding: '22px 14px',
+            borderTop: '0.5px solid var(--borda-suave)',
+          }}>
+            {/* Img direta na página (não via fetch+state) — o navegador cacheia
+                nativamente entre navegações, sem custo extra de JSON/round-trip */}
+            <img
+              src="/api/cadastro/empresas/logo"
+              alt=""
+              onLoad={() => setLogoStatus('ok')}
+              onError={() => setLogoStatus('error')}
+              style={{
+                maxHeight: 140, maxWidth: '100%', objectFit: 'contain',
+                visibility: logoStatus === 'ok' ? 'visible' : 'hidden',
+              }}
+            />
+          </div>
+        )}
       </div>
     )
   }
@@ -869,7 +913,7 @@ export default function AgendamentoPage() {
                             if (ag.status === 'AGUARDANDO') {
                               marcarChegada(ag, e)
                             } else {
-                              abrirModalPaciente(ag, e)
+                              abrirModalPaciente(ag, e, true)
                             }
                           }}
                           title={ag.status === 'AGUARDANDO' && ag.horario_chegada
@@ -1201,17 +1245,8 @@ export default function AgendamentoPage() {
 
   // ── Visão Confirmar Agendamento ──────────────────────────────
   function renderConfirmar() {
-    const hoje = startOfDay(new Date())
-    // Filtrar agendamentos a partir de hoje com status AGENDADO
-    const agsConfirmar = agendamentos
-      .filter(ag => {
-        const dataAg = startOfDay(parseISO(ag.data_hora_inicio))
-        return dataAg >= hoje && ag.status === 'AGENDADO'
-      })
-      .sort((a, b) =>
-        new Date(a.data_hora_inicio).getTime() - new Date(b.data_hora_inicio).getTime()
-      )
-
+    // Independente do filtro de data (dia/semana/mês) selecionado: sempre
+    // todos os agendamentos AGENDADO de hoje em diante (ver carregarConfirmar).
     if (agsConfirmar.length === 0) {
       return (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--texto-terciario)', fontSize: 14 }}>
@@ -1646,7 +1681,7 @@ export default function AgendamentoPage() {
             <button
               className="btn-ghost"
               style={{ padding: '6px 8px' }}
-              onClick={() => { carregar(); carregarMes() }}
+              onClick={() => { carregar(); carregarMes(); if (view === 'confirmar') carregarConfirmar() }}
               title="Atualizar"
             >
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
@@ -1689,7 +1724,7 @@ export default function AgendamentoPage() {
       <AgendamentoModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        onSaved={() => { carregar(); carregarMes() }}
+        onSaved={() => { carregar(); carregarMes(); carregarConfirmar() }}
         agendamento={editAg}
         dataHoraInicio={slotInicio}
         profissionalPre={profissionais.find(p => p.id === profFiltro) ?? null}
@@ -1701,7 +1736,7 @@ export default function AgendamentoPage() {
         agendamento={agendamentoAtual}
         agendamentos={agendamentosAtuais}
         onClose={fecharModalPaciente}
-        onSaved={carregar}
+        onSaved={() => { carregar(); carregarConfirmar() }}
         ocultarFinalizar={modalPacienteOcultarFinalizar}
       />
     </>
