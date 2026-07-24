@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 
+// getSession() só acessa cookies quando DEV_NO_AUTH !== 'true' — sem essa
+// marcação, o Next.js não detecta a rota como dinâmica e tenta pré-renderizá-la
+// no build (executando a query real contra o banco).
+export const dynamic = 'force-dynamic'
+
 export async function GET(req: NextRequest) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
