@@ -25,12 +25,14 @@ export function getDb(database: string): Pool {
   return pools.get(database)!
 }
 
-// Conexão fixa para o banco de controle SaaS — usado apenas em /admin e no login
+// Conexão fixa para o banco de controle SaaS — usado apenas em /admin e no login.
+// Usuário dedicado (PG_CONTROL_USER) porque o pg_hba.conf do servidor libera
+// cada usuário só nos bancos que ele efetivamente precisa acessar.
 export const dbControl = new Pool({
   host:                    process.env.PG_HOST,
   port:                    Number(process.env.PG_PORT) || 5432,
-  user:                    process.env.PG_USER,
-  password:                process.env.PG_PASSWORD,
+  user:                    process.env.PG_CONTROL_USER,
+  password:                process.env.PG_CONTROL_PASSWORD,
   database:                'saas_control',
   ssl:                     process.env.PG_SSL === 'false' ? false : { rejectUnauthorized: false },
   max:                     3,
