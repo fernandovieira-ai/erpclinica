@@ -290,8 +290,11 @@ END $$;
 ## 9. Prontuário clínico + integração Voa (referência rápida)
 
 - **`tab_prontuario`**: 1:1 com `tab_agendamento` (`UNIQUE(agendamento_id)`), upsert via `ON CONFLICT (agendamento_id) DO UPDATE` em `POST /api/clinica/prontuarios`. Campos clínicos (queixas, HDA, antecedentes, exame físico, diagnóstico, medicação etc.) **não** passam pela regra de maiúsculo da seção 2 — é texto narrativo do profissional, preserva o case original. Tem `peso` (NUMERIC 5,2) e `imc` (NUMERIC 4,2) além dos campos de texto.
+  - **Armadilha já corrigida (2026-07-28):** os campos de texto livre do prontuário vêm de textarea sem restrição de caracteres, mas o banco é LATIN1 (§1) — travessão, aspas curvas, reticências ou emoji colados (Word, celular) quebravam o INSERT com **500 sem corpo de erro**. Corrigido em `lib/validators/prontuario.schema.ts`: a função `paraLatin1()` normaliza os equivalentes tipográficos comuns (`—`→`-`, aspas curvas→retas, `…`→`...`) e descarta qualquer caractere fora do intervalo Latin-1 antes de gravar. Aplica-se a todos os campos de texto do schema, inclusive `pressao`.
 - **Consultas do paciente**: `GET /api/clinica/agendamentos?paciente_id=X&status=ATENDIDO`. UI em `components/clinica/HistoricoClinico.tsx` — timeline expansível dentro da aba "Consultas" do cadastro de pessoas.
+  - `carregar()` busca cada endpoint (agendamentos, prontuários, receitas, receitas-sistema, anexos, atestados) **independentemente** — uma falha isolada em um deles (ex: 500 de permissão numa tabela nova, ver §8) não pode zerar o resto do histórico que carregou normalmente (já aconteceu: anexos derrubava tudo). Ver helper `buscar()` no topo de `carregar()`.
 - **Anexos de exame** (`tab_prontuario_anexo`, 1 agendamento → N anexos): arquivo vai pro volume Railway via `lib/storage.ts` (ver §18), metadado no banco. Rotas `app/api/clinica/prontuarios/anexos/(route.ts|[id]/route.ts)`. Botão "Anexar exame" em `HistoricoClinico.tsx` salva no nosso banco **e**, se a Voa estiver com sessão `ready` naquela consulta, também chama `voaRef.current.uploadFiles([file])` (exposto por `VoaPluginView` via `forwardRef`/`useImperativeHandle`) — mesmo arquivo nos dois lugares, numa ação só.
+  - `tab_prontuario_anexo` foi criada (migration 47) **sem** o GRANT retroativo pra role do tenant — corrigido depois na mesma migration. Se algum dia aparecer 500 mudo nas rotas de anexo, checar `information_schema.role_table_grants` primeiro (armadilha clássica da §8).
 
 ### Integração Voa (assistente de gravação/IA) — `components/clinica/VoaPluginView.tsx`
 
@@ -455,3 +458,47 @@ Portado do padrão do projeto irmão `digitalrf-help` (Resend + JWT stateless), 
 Primeira versão buscava a logo (`tab_empresa.logo_base64`, data URL ~200KB) embutida no JSON de `GET /api/auth/me` — que é chamado em 3 páginas (`agendamento`, `sala-espera`, `usuarios`), então as outras duas passaram a baixar a logo inteira sem nunca exibi-la, sem cache algum (JSON de sessão não é cacheável).
 
 **Corrigido:** logo agora é servida por endpoint dedicado `GET /api/cadastro/empresas/logo`, que decodifica o data URL e devolve bytes binários com `Content-Type` real + `Cache-Control: private, max-age=300` — o `<img src="/api/cadastro/empresas/logo">` vai direto no JSX (sem fetch/state), o navegador cacheia nativamente entre navegações, e só a página que realmente mostra a logo paga o custo. `/api/auth/me` voltou a ser leve (~200 bytes, era ~200KB). Componente controla exibição com `logoStatus` (`loading|ok|error`) via `onLoad`/`onError` da própria tag — sem logo cadastrada, o bloco inteiro some (não cai pra logo do sistema).
+
+---
+
+## 20. Voa — "Contexto do atendimento" (histórico do paciente enviado à IA, implementado 2026-07-28)
+
+**Objetivo:** a Voa grava e transcreve a consulta, mas às vezes é útil dar a ela informação clínica que não vem da fala — histórico de consultas anteriores, alergias, medicação em uso. A própria Voa tem um campo nativo pra isso ("Contexto do atendimento" → "Contexto do paciente"), mas não é óbvio como preenchê-lo programaticamente.
+
+**Duas abordagens investigadas — só uma ficou:**
+
+1. **`window.VoaPlugin.instance.addBackgroundHistory(markdown, sobrescrever)` (frontend, JS do SDK) — abandonada.** Existe de fato (confirmado inspecionando o bundle minificado do `plugin.js`, método não documentado publicamente), mas só funciona se o componente React interno da Voa que registra o callback (`setOnAddBackgroundHistoryCallback`) já estiver **montado** — o que só acontece depois que o profissional abre manualmente a aba "Contexto do atendimento" dentro do próprio widget. Chamar antes disso cai num no-op silencioso da Voa (sem erro, sem efeito). Implementamos e depois **removemos** um mecanismo de retry em intervalo (2s, até 2min) tentando contornar isso — funcionava, mas ficou frágil e substituído pela abordagem 2.
+
+2. **`POST https://integration.voa.health/api/v1/ehr/` com `extra.context` (backend, API REST) — abordagem atual.** Endpoint não documentado publicamente, mas confirmado por teste direto (2026-07-28):
+   - Aceita `{ type, consultation_id, doctor_id, patient_id, extra: { context } }`, autenticado com o mesmo `x-voa-token` (Auth Token de organização) já usado em `/integration/identify/`.
+   - **Idempotente por `consultation_id`**: chamar de novo com o mesmo `consultation_id` reaproveita o mesmo atendimento (`200`, não `201`) e **não sobrescreve** o `extra.context` já salvo (confirmado via `PATCH` também: `PATCH /ehr/{id}/` atualiza `name` normalmente, mas **não** atualiza `extra.context` — é campo write-once na criação). Por isso só vale chamar essa API quando há contexto novo pra mandar (`if (contexto) { ... }`), nunca "pra garantir".
+   - **Ordem importa:** essa chamada precisa terminar **antes** do frontend chamar `mount()`, senão corre risco de a própria Voa criar o atendimento primeiro (sem contexto) quando o widget monta, e nossa chamada chegar depois só reaproveitando o registro já criado sem contexto (write-once). Por isso é `await`ada dentro de `POST /api/voa/token`, no mesmo request que gera o token — não é fire-and-forget.
+
+**Arquivos:**
+- `lib/voa.ts` — `montarContextoHistorico(db, empresaId, pacienteId, agendamentoAtualId)` (monta markdown a partir de `tab_prontuario`, excluindo o próprio agendamento atual, limite de 10 consultas) e `criarAtendimentoVoaComContexto(...)` (o `POST /ehr/` acima; nunca lança — contexto é "nice to have", não bloqueia o fluxo se a Voa falhar).
+- `app/api/voa/token/route.ts` — chama as duas funções acima antes de devolver o token. Aceita `body.contexto` (string, mesmo vazia) vindo do frontend; só cai no histórico automático via `montarContextoHistorico` se o chamador **nem mandar** esse campo (compatibilidade).
+- `app/api/voa/contexto/route.ts` — `GET ?paciente_id=X&agendamento_id=Y`, usado pelo botão "Buscar histórico do paciente" na tela (reexpõe `montarContextoHistorico`).
+- `components/clinica/HistoricoClinico.tsx` — ao clicar em "Gravar com Voa" pela **primeira vez** (não no "Retomar Voa"), abre um painel "Contexto do atendimento" com textarea editável + botão "Buscar histórico do paciente" (preenche automático) antes de montar o widget de fato (`iniciarPreparoVoa`/`preparandoVoaId`). O texto final (editado, digitado do zero, ou vazio de propósito) vai pro `VoaPluginView` via prop `contextoInicial`.
+
+**Performance do início do atendimento (analisado e otimizado 2026-07-28):**
+- `VoaPluginView.tsx`: token (`POST /api/voa/token`) e carregamento do script da Voa (`plugin.js`, ~7MB) agora rodam em **paralelo** (`Promise.all`) — antes eram sequenciais (esperava o token pra só então começar a baixar o script), somando os dois tempos à toa.
+- `preconectarVoa()` (exportado de `VoaPluginView.tsx`) insere um `<link rel="preconnect">` pro CDN da Voa assim que a tela de histórico/atendimento monta (`HistoricoClinico.tsx`, não espera o clique) — aquece DNS/TLS antes da hora H.
+- `POST /api/voa/token`: em `ambiente='producao'`, a pré-criação do atendimento (com contexto) e a troca de token via `/integration/identify/` rodam em paralelo (`Promise.all`) em vez de sequenciais — não se aplica hoje ao tenant de teste (`desenvolvimento`), mas evita somar os dois round-trips quando produção for usada de verdade.
+- Medido: o `POST /ehr/` isolado leva ~200-300ms quando há contexto pra enviar (nada quando não há) — é round-trip real até a Voa, não dá pra cortar sem abrir mão de esperar a criação terminar antes do `mount()` (ver ordem acima).
+- **Não implementado, decisão consciente:** pré-carregar o script da Voa (`modulepreload`) assim que a tela de atendimento abre (antes mesmo do clique em "Gravar com Voa") deixaria o widget pronto mais rápido ainda, mas baixa os ~7MB mesmo se o profissional nunca usar a Voa naquela consulta — trade-off de banda vs. velocidade, não decidido ainda.
+
+---
+
+## 21. Atestado Médico (implementado 2026-07-28)
+
+Botão "Criar Atestado" em `HistoricoClinico.tsx`, ao lado de "Editar prontuário"/"Emitir Receita"/"Emitir Receita Sistema" — segue **exatamente** a arquitetura da Receita Sistema (§ código em `ReceitaSistema.tsx`/`receitaSistemaPrint.ts`), reaproveitando o mesmo endpoint de dados do prescritor/clínica (`GET /api/clinica/receitas-sistema?dados=true&agendamento_id=X`) em vez de duplicar a query.
+
+**Arquivos:**
+- `novos/49_atestado_medico.sql` — `tab_atestado_medico` (`tipo` VARCHAR livre: `AFASTAMENTO`/`COMPARECIMENTO`/`PERSONALIZADO`, `dias_afastamento`, `data_inicio`, `cid` opcional, `texto` — fonte da verdade pra reimpressão). GRANT já incluído na mesma migration (§8).
+- `lib/validators/atestado.schema.ts` — Zod.
+- `app/api/clinica/atestados/route.ts` — GET (`?agendamento_id=` ou `?paciente_id=`) / POST. Sem endpoint de dados próprio — reaproveita o da receita-sistema.
+- `components/clinica/atestadoPrint.ts` — gera o HTML de impressão (mesmo layout A4/cabeçalho/assinatura/rodapé da receita), com corpo de texto justificado, CID opcional e "Cidade, DD de mês de AAAA" por extenso (`dataPorExtenso()`) antes da assinatura.
+- `components/clinica/AtestadoMedico.tsx` — modal com prévia ao vivo. Texto é **auto-gerado** a partir de tipo/dias/data (`gerarTextoPadrao()`), mas totalmente editável — assim que o profissional edita manualmente, para de regenerar sozinho (flag `textoManual`), com botão "Restaurar texto padrão" pra voltar.
+- `types/clinica.types.ts` — `AtestadoMedicoRegistro`.
+
+**CID é opcional por design** — texto de aviso na UI sobre exigir consentimento do paciente (Resolução CFM), nunca preenchido automaticamente.
