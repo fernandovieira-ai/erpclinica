@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
+import { criarAtendimentoVoaComContexto, montarContextoHistorico } from '@/lib/voa'
 
 // Duração do token: cobre a duração média de uma consulta com folga
 const EXPIRATION_SEGUNDOS = 43_200 // 12h
@@ -42,28 +43,56 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // Contexto pra pré-criar o atendimento na Voa em extra.context, antes do widget montar -
+  // ver lib/voa.ts para o porquê disso não poder ser feito só no frontend (addBackgroundHistory
+  // não é confiável). O campo "Contexto do atendimento" na tela (HistoricoClinico) manda o
+  // texto que o profissional revisou/editou/digitou em `body.contexto` - usa exatamente esse
+  // texto, mesmo vazio (decisão explícita de não mandar nada). Só cai no histórico automático
+  // se o chamador nem mandou esse campo (compatibilidade com outros pontos de entrada).
+  //
+  // Na prática isso resolve na hora (o frontend sempre manda `contexto`), então não atrasa
+  // o Promise.all abaixo - só existe await de verdade aqui pro fallback (raro).
+  const contexto = typeof body?.contexto === 'string'
+    ? (body.contexto.trim() || null)
+    : await montarContextoHistorico(db, session.empresa_id_ativa, agendamento.paciente_id, agendamento.id)
+
+  const criarComContexto = () => criarAtendimentoVoaComContexto({
+    authToken,
+    consultationId: String(agendamento.id),
+    doctorId:       String(agendamento.profissional_id),
+    patientId:      String(agendamento.paciente_id),
+    contexto:       contexto!,
+  })
+
   // A Voa documenta o "Auth Token" bruto como modo de desenvolvimento — validado
   // diretamente contra /auth/validate-integration-token/ e reutilizável sem troca por consulta.
   // Pendência: o Bearer Token gerado por /integration/identify/ (fluxo de produção abaixo) não
   // passou nessa validação nos testes (401) — confirmar com integration@voahealth.com antes de
   // usar em produção real.
   if (ambiente !== 'producao') {
+    // Não bloqueia o fluxo se falhar - contexto é um "nice to have", token já foi resolvido.
+    if (contexto) await criarComContexto()
     return NextResponse.json({ token: authToken })
   }
 
   try {
-    const res = await fetch('https://api.voa.health/integration/identify/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-voa-token': authToken },
-      body: JSON.stringify({
-        consultation_id: String(agendamento.id),
-        doctor_id:       String(agendamento.profissional_id),
-        patient_id:      String(agendamento.paciente_id),
-        expiration:      EXPIRATION_SEGUNDOS,
+    // Pré-criação do atendimento (com contexto) e troca do token são chamadas
+    // independentes na Voa - rodar em paralelo evita somar os dois round-trips.
+    const [, res] = await Promise.all([
+      contexto ? criarComContexto() : Promise.resolve(),
+      fetch('https://api.voa.health/integration/identify/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-voa-token': authToken },
+        body: JSON.stringify({
+          consultation_id: String(agendamento.id),
+          doctor_id:       String(agendamento.profissional_id),
+          patient_id:      String(agendamento.paciente_id),
+          expiration:      EXPIRATION_SEGUNDOS,
+        }),
+        signal: AbortSignal.timeout(10_000),
+        cache: 'no-store',
       }),
-      signal: AbortSignal.timeout(10_000),
-      cache: 'no-store',
-    })
+    ])
 
     if (!res.ok) {
       const detalhe = await res.text().catch(() => '')

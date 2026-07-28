@@ -91,6 +91,21 @@ function carregarScript(): Promise<void> {
   return scriptPromise
 }
 
+let preconectado = false
+
+// Aquece DNS/TLS com o CDN da Voa antes mesmo do profissional clicar em "Gravar com
+// Voa" - chamar isso ao montar a tela de atendimento (não precisa esperar o clique)
+// economiza esse handshake na hora H, já que o script em si (~7MB) só é buscado depois.
+export function preconectarVoa(): void {
+  if (preconectado || typeof document === 'undefined') return
+  preconectado = true
+  const link = document.createElement('link')
+  link.rel = 'preconnect'
+  link.href = new URL(SCRIPT_SRC).origin
+  link.crossOrigin = 'anonymous'
+  document.head.appendChild(link)
+}
+
 export type Status = 'loading' | 'ready' | 'error' | 'closed'
 
 // Campo especial $ref: "#/$defs/CID" — vem como { code, description } (ou lista deles).
@@ -144,6 +159,9 @@ interface Props {
   doctorId:          number
   patientId:         number
   voaClinicalType?:  string | null
+  // Texto revisado/editado (ou digitado do zero) pelo profissional no campo "Contexto do
+  // atendimento" da tela, antes de iniciar - mandado como está pro backend, mesmo vazio.
+  contextoInicial?:  string
   onFechar:          () => void
   onDadosExtraidos?: (dados: Record<string, string>) => void
   onDocumentoGerado?: (texto: string) => void
@@ -159,7 +177,7 @@ export interface VoaPluginHandle {
 }
 
 function VoaPluginView(
-  { agendamentoId, doctorId, patientId, voaClinicalType, onFechar, onDadosExtraidos, onDocumentoGerado, onStatusChange, onConsultaCriada }: Props,
+  { agendamentoId, doctorId, patientId, voaClinicalType, contextoInicial, onFechar, onDadosExtraidos, onDocumentoGerado, onStatusChange, onConsultaCriada }: Props,
   ref: React.Ref<VoaPluginHandle>,
 ) {
   const containerRef   = useRef<HTMLDivElement>(null)
@@ -201,16 +219,18 @@ function VoaPluginView(
       try {
         if (cancelado) return
 
-        const res  = await fetch('/api/voa/token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ agendamento_id: agendamentoId }),
-        })
+        // Busca o token e carrega o script (~7MB) em paralelo - são independentes, e
+        // encadear um depois do outro só soma o tempo dos dois à toa.
+        const [res] = await Promise.all([
+          fetch('/api/voa/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ agendamento_id: agendamentoId, contexto: contextoInicial ?? '' }),
+          }),
+          carregarScript(),
+        ])
         const data = await res.json()
         if (!res.ok) throw new Error(data.erro || 'Não foi possível autenticar com a Voa')
-        if (cancelado) return
-
-        await carregarScript()
         if (cancelado || !window.VoaPlugin || !containerRef.current) {
           throw new Error('Plugin da Voa indisponível')
         }
