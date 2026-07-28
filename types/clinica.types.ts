@@ -200,6 +200,19 @@ export interface ReceitaSistemaRegistro {
   itens:          ReceitaSistemaItem[]
 }
 
+export interface AtestadoMedicoRegistro {
+  id:               number
+  agendamento_id:   number
+  paciente_id:      number
+  tipo:             'AFASTAMENTO' | 'COMPARECIMENTO' | 'PERSONALIZADO'
+  dias_afastamento: number | null
+  data_inicio:      string
+  cid:              string | null
+  texto:            string
+  created_by:       string | null
+  created_at:       string
+}
+
 export interface ProfissionalListItem {
   id:              number
   nome:            string

@@ -5,13 +5,15 @@ import { toast } from 'sonner'
 import {
   ChevronDown, ChevronUp, Pencil, Save, X, FileText, Stethoscope, Users, User,
   Activity, AlertTriangle, ClipboardList, Scale, HeartPulse, FlaskConical, Pill, ListChecks, Mic,
-  FileSignature, ExternalLink, Printer, Loader2, Paperclip, Trash2,
+  FileSignature, ExternalLink, Printer, Loader2, Paperclip, Trash2, ClipboardCheck,
 } from 'lucide-react'
-import type { AgendamentoListItem, Prontuario, ProntuarioAnexo, ReceitaMedica, ReceitaSistemaRegistro } from '@/types/clinica.types'
-import VoaPluginView, { type Status as VoaStatus, type VoaPluginHandle } from './VoaPluginView'
+import type { AgendamentoListItem, Prontuario, ProntuarioAnexo, ReceitaMedica, ReceitaSistemaRegistro, AtestadoMedicoRegistro } from '@/types/clinica.types'
+import VoaPluginView, { preconectarVoa, type Status as VoaStatus, type VoaPluginHandle } from './VoaPluginView'
 import MemedPrescricao from './MemedPrescricao'
 import ReceitaSistema from './ReceitaSistema'
+import AtestadoMedico from './AtestadoMedico'
 import { gerarHtmlReceita, type DadosPrescritor } from './receitaSistemaPrint'
+import { gerarHtmlAtestado } from './atestadoPrint'
 
 const STATUS_COLOR: Record<string, string> = {
   AGENDADO:   '#378ADD',
@@ -34,6 +36,13 @@ const STATUS_LABEL: Record<string, string> = {
 const VOA_COR    = '#7C3AED'
 const MEMED_COR  = '#059669'
 const SISTEMA_COR = '#1E7FC3'
+const ATESTADO_COR = '#0F766E'
+
+const TIPO_ATESTADO_LABEL: Record<AtestadoMedicoRegistro['tipo'], string> = {
+  AFASTAMENTO:    'Afastamento',
+  COMPARECIMENTO: 'Comparecimento',
+  PERSONALIZADO:  'Personalizado',
+}
 
 type FormState = {
   queixas:                 string
@@ -224,8 +233,16 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
   // Espelha o status da instância montada da Voa — só pra saber se há algo "vivo"
   // a perder antes de desmontar sem avisar (troca de consulta, fechar, etc.).
   const [voaGravando, setVoaGravando] = useState(false)
+  // Consulta em que o painel "Contexto do atendimento" está aberto, antes de iniciar a
+  // Voa de fato - só aparece na primeira vez (Retomar Voa não passa por aqui de novo).
+  const [preparandoVoaId, setPreparandoVoaId] = useState<number | null>(null)
+  const [contextoVoa, setContextoVoa] = useState<Record<number, string>>({})
+  const [buscandoHistoricoVoaId, setBuscandoHistoricoVoaId] = useState<number | null>(null)
   const [receitaAtivaId, setReceitaAtivaId] = useState<number | null>(null)
   const [receitaSistemaId, setReceitaSistemaId] = useState<number | null>(null)
+  const [atestadoId, setAtestadoId] = useState<number | null>(null)
+  const [atestados, setAtestados] = useState<Record<number, AtestadoMedicoRegistro[]>>({})
+  const [reimprimindoAtestadoId, setReimprimindoAtestadoId] = useState<number | null>(null)
   const [anexos, setAnexos] = useState<Record<number, ProntuarioAnexo[]>>({})
   const [enviandoAnexoId, setEnviandoAnexoId] = useState<number | null>(null)
   const [anexoAlvoId, setAnexoAlvoId] = useState<number | null>(null)
@@ -247,12 +264,13 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
           return { dados: [] }
         }
       }
-      const [dataAg, dataPr, dataRe, dataRs, dataAn] = await Promise.all([
+      const [dataAg, dataPr, dataRe, dataRs, dataAn, dataAt] = await Promise.all([
         buscar(`/api/clinica/agendamentos?${new URLSearchParams({ paciente_id: String(pacienteId), status: 'ATENDIDO' })}`),
         buscar(`/api/clinica/prontuarios?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
         buscar(`/api/clinica/receitas?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
         buscar(`/api/clinica/receitas-sistema?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
         buscar(`/api/clinica/prontuarios/anexos?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
+        buscar(`/api/clinica/atestados?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
       ])
       const lista: AgendamentoListItem[] = [...(dataAg.dados ?? [])]
       if (agendamentoAtual && !lista.some(a => a.id === agendamentoAtual.id)) lista.push(agendamentoAtual)
@@ -271,17 +289,26 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
       for (const a of (dataAn.dados ?? []) as ProntuarioAnexo[]) {
         (mapaAnexos[a.agendamento_id] ??= []).push(a)
       }
+      const mapaAtestados: Record<number, AtestadoMedicoRegistro[]> = {}
+      for (const a of (dataAt.dados ?? []) as AtestadoMedicoRegistro[]) {
+        (mapaAtestados[a.agendamento_id] ??= []).push(a)
+      }
       setConsultas(lista)
       setProntuarios(mapa)
       setReceitas(mapaReceitas)
       setReceitasSistema(mapaReceitasSistema)
       setAnexos(mapaAnexos)
+      setAtestados(mapaAtestados)
     } finally {
       setLoading(false)
     }
   }, [pacienteId, agendamentoAtual])
 
   useEffect(() => { carregar() }, [carregar])
+
+  // Aquece a conexão com a Voa assim que a tela de histórico/atendimento abre, não só
+  // quando clica em "Gravar com Voa" - ganha o tempo do handshake DNS/TLS de graça.
+  useEffect(() => { preconectarVoa() }, [])
 
   function iniciarEdicao(ag: AgendamentoListItem) {
     // Se havia uma sessão da Voa montada em OUTRA consulta, encerra de vez —
@@ -325,6 +352,29 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
     } else {
       setVoaMontadoId(agId)
       setVoaAtivoId(agId)
+    }
+  }
+
+  // "Gravar com Voa" (primeira vez) passa pelo painel de contexto antes de montar o SDK
+  // de fato; "Retomar Voa" (já montado antes) pula direto — o contexto já foi mandado
+  // pra Voa na primeira chamada, não faz sentido pedir de novo.
+  function iniciarPreparoVoa(agId: number) {
+    if (voaMontadoId === agId) { abrirVoa(agId); return }
+    setPreparandoVoaId(agId)
+  }
+
+  async function buscarHistoricoVoa(agId: number) {
+    setBuscandoHistoricoVoaId(agId)
+    try {
+      const res = await fetch(`/api/voa/contexto?${new URLSearchParams({ paciente_id: String(pacienteId), agendamento_id: String(agId) })}`)
+      const data = await res.json()
+      if (!res.ok) { toast.error('Erro ao buscar histórico do paciente'); return }
+      if (!data.contexto) { toast.info('Nenhum histórico anterior encontrado para este paciente'); return }
+      setContextoVoa(prev => ({ ...prev, [agId]: data.contexto }))
+    } catch {
+      toast.error('Erro ao buscar histórico do paciente')
+    } finally {
+      setBuscandoHistoricoVoaId(null)
     }
   }
 
@@ -456,6 +506,22 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
       toast.error('Erro ao gerar receita para impressão')
     } finally {
       setReimprimindoId(null)
+    }
+  }
+
+  async function reimprimirAtestado(reg: AtestadoMedicoRegistro, ag: AgendamentoListItem) {
+    setReimprimindoAtestadoId(reg.id)
+    try {
+      const res = await fetch(`/api/clinica/receitas-sistema?dados=true&agendamento_id=${reg.agendamento_id}`)
+      const d = await res.json()
+      const dados: DadosPrescritor | null = d.dados ?? null
+      const html = gerarHtmlAtestado(reg.texto, reg.cid, reg.data_inicio, dados, ag.paciente_nome, ag.profissional_nome)
+      const win = window.open('', '_blank', 'width=820,height=1050')
+      if (win) { win.document.write(html); win.document.close() }
+    } catch {
+      toast.error('Erro ao gerar atestado para impressão')
+    } finally {
+      setReimprimindoAtestadoId(null)
     }
   }
 
@@ -652,6 +718,19 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
 
                           <button
                             type="button"
+                            onClick={() => setAtestadoId(ag.id)}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 4,
+                              padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
+                              background: 'none', border: `1px solid ${ATESTADO_COR}`, borderRadius: 4,
+                              cursor: 'pointer', color: ATESTADO_COR,
+                            }}
+                          >
+                            <ClipboardCheck size={12} /> Criar Atestado
+                          </button>
+
+                          <button
+                            type="button"
                             onClick={() => abrirSeletorAnexo(ag.id)}
                             disabled={enviandoAnexoId === ag.id}
                             style={{
@@ -725,6 +804,16 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
                           />
                         )}
 
+                        {atestadoId === ag.id && (
+                          <AtestadoMedico
+                            agendamentoId={ag.id}
+                            pacienteNome={ag.paciente_nome}
+                            profissionalNome={ag.profissional_nome}
+                            onFechar={() => setAtestadoId(null)}
+                            onEmitido={() => { setAtestadoId(null); carregar() }}
+                          />
+                        )}
+
                         {!!receitas[ag.id]?.length && (
                           <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
                             <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--texto-terciario)' }}>
@@ -794,6 +883,44 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
                             ))}
                           </div>
                         )}
+
+                        {!!atestados[ag.id]?.length && (
+                          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--texto-terciario)' }}>
+                              Atestados emitidos
+                            </div>
+                            {atestados[ag.id].map(at => (
+                              <div key={at.id} style={{
+                                display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+                                backgroundColor: 'var(--bg-input)', borderRadius: 5, fontSize: 12,
+                              }}>
+                                <ClipboardCheck size={13} style={{ color: ATESTADO_COR, flexShrink: 0 }} />
+                                <span style={{ color: 'var(--texto-terciario)', fontFamily: 'var(--fonte-mono)', fontSize: 11 }}>
+                                  {new Date(at.created_at).toLocaleDateString('pt-BR')}
+                                </span>
+                                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--texto-principal)' }}>
+                                  {TIPO_ATESTADO_LABEL[at.tipo]}{at.tipo === 'AFASTAMENTO' && at.dias_afastamento ? ` — ${at.dias_afastamento} dia(s)` : ''}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => reimprimirAtestado(at, ag)}
+                                  disabled={reimprimindoAtestadoId === at.id}
+                                  style={{
+                                    display: 'flex', alignItems: 'center', gap: 3,
+                                    background: 'none', border: 'none', cursor: 'pointer',
+                                    color: ATESTADO_COR, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
+                                    padding: 0, opacity: reimprimindoAtestadoId === at.id ? 0.6 : 1,
+                                  }}
+                                >
+                                  {reimprimindoAtestadoId === at.id
+                                    ? <Loader2 size={11} />
+                                    : <Printer size={11} />}
+                                  Ver/reimprimir
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -806,6 +933,7 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
                               doctorId={ag.profissional_id}
                               patientId={pacienteId}
                               voaClinicalType={ag.tipo_voa_clinical_type}
+                              contextoInicial={contextoVoa[ag.id]}
                               onFechar={encerrarVoa}
                               onDadosExtraidos={aplicarDadosVoa}
                               onDocumentoGerado={aplicarDocumentoVoa}
@@ -814,11 +942,73 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
                             />
                           </div>
                         )}
-                        {voaAtivoId !== ag.id && (
+                        {preparandoVoaId === ag.id && (
+                          <div style={{
+                            display: 'flex', flexDirection: 'column', gap: 8, padding: 12,
+                            border: `1px solid ${VOA_COR}55`, borderRadius: 8, backgroundColor: 'var(--bg-input)',
+                          }}>
+                            <div style={{ fontSize: 12.5, fontWeight: 700, color: VOA_COR }}>Contexto do atendimento</div>
+                            <div style={{ fontSize: 11.5, color: 'var(--texto-terciario)' }}>
+                              Opcional — busque o histórico do paciente ou digite direto. Esse texto é enviado
+                              pra Voa antes de iniciar a gravação, como informação clínica adicional (não faz parte do que é gravado).
+                            </div>
+                            <textarea
+                              value={contextoVoa[ag.id] ?? ''}
+                              onChange={e => setContextoVoa(prev => ({ ...prev, [ag.id]: e.target.value }))}
+                              placeholder="Ex: medicações em uso, alergias, diagnósticos anteriores..."
+                              rows={5}
+                              style={{
+                                width: '100%', padding: '8px 10px', fontSize: 12.5, fontFamily: 'inherit',
+                                border: '1px solid var(--borda-media)', borderRadius: 5, resize: 'vertical',
+                                backgroundColor: 'var(--bg-card)', color: 'var(--texto-principal)',
+                              }}
+                            />
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <button
+                                type="button"
+                                onClick={() => buscarHistoricoVoa(ag.id)}
+                                disabled={buscandoHistoricoVoaId === ag.id}
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: 5, width: 'fit-content',
+                                  padding: '7px 12px', fontSize: 12, fontWeight: 600,
+                                  background: 'none', border: '1px solid var(--borda-media)', borderRadius: 6,
+                                  cursor: buscandoHistoricoVoaId === ag.id ? 'not-allowed' : 'pointer',
+                                  color: 'var(--texto-secundario)', opacity: buscandoHistoricoVoaId === ag.id ? 0.6 : 1,
+                                }}
+                              >
+                                {buscandoHistoricoVoaId === ag.id ? <Loader2 size={13} /> : <FileText size={13} />}
+                                Buscar histórico do paciente
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { abrirVoa(ag.id); setPreparandoVoaId(null) }}
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: 6, width: 'fit-content',
+                                  padding: '7px 14px', fontSize: 12.5, fontWeight: 700,
+                                  backgroundColor: VOA_COR, border: 'none', borderRadius: 6,
+                                  cursor: 'pointer', color: '#fff',
+                                }}
+                              >
+                                <Mic size={14} /> Iniciar atendimento
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPreparandoVoaId(null)}
+                                style={{
+                                  padding: '7px 12px', fontSize: 12, fontWeight: 600,
+                                  background: 'none', border: 'none', cursor: 'pointer', color: 'var(--texto-terciario)',
+                                }}
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        {voaAtivoId !== ag.id && preparandoVoaId !== ag.id && (
                           <div style={{ display: 'flex', gap: 6 }}>
                             <button
                               type="button"
-                              onClick={() => abrirVoa(ag.id)}
+                              onClick={() => iniciarPreparoVoa(ag.id)}
                               style={{
                                 display: 'flex', alignItems: 'center', gap: 7, width: 'fit-content',
                                 padding: '9px 18px', fontSize: 13.5, fontWeight: 700,
