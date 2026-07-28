@@ -488,6 +488,12 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
 
   async function reimprimirReceitaSistema(reg: ReceitaSistemaRegistro, ag: AgendamentoListItem) {
     setReimprimindoId(reg.id)
+    // Abre a janela ANTES do await - depois de um await, o navegador não reconhece mais
+    // a chamada como resposta direta ao clique do usuário e pode bloquear/atrasar o
+    // window.open (sentido como popup "trava" alguns segundos até o usuário destravar,
+    // ou só atrasa mesmo). Abrindo síncrono, a janela aparece na hora (em branco) e só
+    // preenche o conteúdo quando os dados chegarem.
+    const win = window.open('', '_blank', 'width=820,height=1050')
     try {
       const res = await fetch(`/api/clinica/receitas-sistema?dados=true&agendamento_id=${reg.agendamento_id}`)
       const d = await res.json()
@@ -500,9 +506,9 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
         quantidade:   it.quantidade,
       }))
       const html = gerarHtmlReceita(itens, reg.observacoes, dados, ag.paciente_nome, ag.profissional_nome)
-      const win = window.open('', '_blank', 'width=820,height=1050')
       if (win) { win.document.write(html); win.document.close() }
     } catch {
+      win?.close()
       toast.error('Erro ao gerar receita para impressão')
     } finally {
       setReimprimindoId(null)
@@ -511,14 +517,16 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
 
   async function reimprimirAtestado(reg: AtestadoMedicoRegistro, ag: AgendamentoListItem) {
     setReimprimindoAtestadoId(reg.id)
+    // Ver comentário em reimprimirReceitaSistema — janela abre antes do await de propósito.
+    const win = window.open('', '_blank', 'width=820,height=1050')
     try {
       const res = await fetch(`/api/clinica/receitas-sistema?dados=true&agendamento_id=${reg.agendamento_id}`)
       const d = await res.json()
       const dados: DadosPrescritor | null = d.dados ?? null
       const html = gerarHtmlAtestado(reg.texto, reg.cid, reg.data_inicio, dados, ag.paciente_nome, ag.profissional_nome)
-      const win = window.open('', '_blank', 'width=820,height=1050')
       if (win) { win.document.write(html); win.document.close() }
     } catch {
+      win?.close()
       toast.error('Erro ao gerar atestado para impressão')
     } finally {
       setReimprimindoAtestadoId(null)
