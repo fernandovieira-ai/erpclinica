@@ -235,18 +235,25 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
   const carregar = useCallback(async () => {
     setLoading(true)
     try {
-      const [resAg, resPr, resRe, resRs, resAn] = await Promise.all([
-        fetch(`/api/clinica/agendamentos?${new URLSearchParams({ paciente_id: String(pacienteId), status: 'ATENDIDO' })}`),
-        fetch(`/api/clinica/prontuarios?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
-        fetch(`/api/clinica/receitas?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
-        fetch(`/api/clinica/receitas-sistema?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
-        fetch(`/api/clinica/prontuarios/anexos?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
+      // Cada endpoint é buscado independentemente — uma falha isolada (ex: 500 sem
+      // corpo por permissão faltando numa tabela nova) não pode zerar o resto do
+      // histórico que carregou normalmente (já aconteceu: anexos derrubava tudo).
+      const buscar = async (url: string) => {
+        try {
+          const res = await fetch(url)
+          if (!res.ok) return { dados: [] }
+          return await res.json()
+        } catch {
+          return { dados: [] }
+        }
+      }
+      const [dataAg, dataPr, dataRe, dataRs, dataAn] = await Promise.all([
+        buscar(`/api/clinica/agendamentos?${new URLSearchParams({ paciente_id: String(pacienteId), status: 'ATENDIDO' })}`),
+        buscar(`/api/clinica/prontuarios?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
+        buscar(`/api/clinica/receitas?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
+        buscar(`/api/clinica/receitas-sistema?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
+        buscar(`/api/clinica/prontuarios/anexos?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
       ])
-      const dataAg = await resAg.json()
-      const dataPr = await resPr.json()
-      const dataRe = await resRe.json()
-      const dataRs = await resRs.json()
-      const dataAn = await resAn.json()
       const lista: AgendamentoListItem[] = [...(dataAg.dados ?? [])]
       if (agendamentoAtual && !lista.some(a => a.id === agendamentoAtual.id)) lista.push(agendamentoAtual)
       lista.sort((a, b) => +new Date(b.data_hora_inicio) - +new Date(a.data_hora_inicio))
