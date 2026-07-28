@@ -172,6 +172,21 @@ export default function SalaEsperaPage() {
     }).catch(() => {})
   }, [])
 
+  // Agrupamento por profissional (somente quando "Todos os profissionais" está selecionado)
+  const grupos = useMemo(() => {
+    if (profFiltro || agendamentos.length === 0) return null
+    const map = new Map<number, { nome: string; itens: AgendamentoListItem[] }>()
+    for (const ag of agendamentos) {
+      if (!map.has(ag.profissional_id)) {
+        map.set(ag.profissional_id, { nome: ag.profissional_nome, itens: [] })
+      }
+      map.get(ag.profissional_id)!.itens.push(ag)
+    }
+    return Array.from(map.entries())
+      .map(([id, g]) => ({ id, ...g }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+  }, [agendamentos, profFiltro])
+
   // Estatísticas resumidas
   const stats = useMemo(() => {
     if (!agendamentos.length) return null
@@ -186,6 +201,185 @@ export default function SalaEsperaPage() {
       criticos: waits.filter(w => w >= 30).length,
     }
   }, [agendamentos, agora])
+
+  function renderCard(ag: AgendamentoListItem, idx: number, ocultarProfissional = false) {
+    const chegada  = ag.horario_chegada ? parseISO(ag.horario_chegada) : null
+    const waitMins = chegada ? differenceInMinutes(agora, chegada) : 0
+    const level    = waitLevel(waitMins)
+    const ls       = LEVEL_STYLE[level]
+    const isCrit   = level === 'critico'
+    const posSt    = POSITION_STYLE[idx] ?? null
+    const ini      = initials(ag.paciente_nome)
+    const avColor  = avatarColor(ag.paciente_nome)
+
+    // Chegou antes ou depois do horário agendado?
+    const agendadoMs = new Date(ag.data_hora_inicio).getTime()
+    const chegadaMs  = chegada ? chegada.getTime() : agendadoMs
+    const diffChegada = Math.round((chegadaMs - agendadoMs) / 60000)
+    const chegadaLabel =
+      diffChegada < -1  ? `${Math.abs(diffChegada)}min adiantado`
+      : diffChegada > 5 ? `${diffChegada}min atrasado`
+      : 'no horário'
+
+    return (
+      <div
+        key={ag.id}
+        className={`patient-card${isCrit ? ' card-critico' : ''}`}
+        style={{
+          animationDelay: `${idx * 40}ms`,
+          background: 'var(--bg-card)',
+          border: `0.5px solid var(--borda-suave)`,
+          borderLeft: `4px solid ${ls.border}`,
+          borderRadius: 12,
+          padding: '9px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+        }}
+      >
+        {/* Badge posição */}
+        <div style={{
+          width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
+          background: posSt ? posSt.bg : 'var(--bg-hover)',
+          boxShadow: posSt ? posSt.shadow : 'none',
+          color: posSt ? '#fff' : 'var(--texto-terciario)',
+          fontWeight: 800, fontSize: 13,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          {idx + 1}
+        </div>
+
+        {/* Avatar iniciais */}
+        <div style={{
+          width: 38, height: 38, borderRadius: '50%', flexShrink: 0,
+          background: avColor, color: '#fff',
+          fontWeight: 700, fontSize: 14,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          letterSpacing: 1,
+          boxShadow: `0 2px 8px ${avColor}50`,
+        }}>
+          {ini}
+        </div>
+
+        {/* Informações principais */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Nome + tipo */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+            <span style={{
+              fontSize: 14, fontWeight: 700, color: 'var(--texto-principal)',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              maxWidth: '28ch',
+            }}>
+              {ag.paciente_nome}
+            </span>
+            {ag.tipo_descricao && (
+              <span style={{
+                fontSize: 11, fontWeight: 600,
+                color: ag.tipo_cor ?? 'var(--texto-terciario)',
+                background: (ag.tipo_cor ?? '#888780') + '18',
+                border: `1px solid ${(ag.tipo_cor ?? '#888780') + '30'}`,
+                padding: '1px 8px', borderRadius: 20,
+                whiteSpace: 'nowrap',
+              }}>
+                {ag.tipo_descricao}
+              </span>
+            )}
+            {ag.categoria_descricao && (
+              <span style={{
+                fontSize: 11, fontWeight: 500,
+                color: 'var(--texto-terciario)',
+                background: 'var(--bg-hover)',
+                padding: '1px 8px', borderRadius: 20,
+                whiteSpace: 'nowrap',
+              }}>
+                {ag.categoria_descricao}
+              </span>
+            )}
+          </div>
+
+          {/* Metadados */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center' }}>
+            {!ocultarProfissional && (
+              <span style={{
+                fontSize: 12, color: 'var(--texto-secundario)',
+                display: 'flex', alignItems: 'center', gap: 4,
+              }}>
+                <Stethoscope size={12} style={{ opacity: 0.65, flexShrink: 0 }} />
+                {ag.profissional_nome}
+              </span>
+            )}
+
+            <span style={{
+              fontSize: 12, color: 'var(--texto-terciario)',
+              display: 'flex', alignItems: 'center', gap: 4,
+            }}>
+              <CalendarDays size={12} style={{ opacity: 0.65, flexShrink: 0 }} />
+              Agendado {format(parseISO(ag.data_hora_inicio), 'HH:mm')}
+              {' '}–{' '}
+              {format(parseISO(ag.data_hora_fim), 'HH:mm')}
+            </span>
+
+            {chegada && (
+              <span style={{
+                fontSize: 12, color: 'var(--texto-terciario)',
+                display: 'flex', alignItems: 'center', gap: 4,
+              }}>
+                <UserCheck size={12} style={{ opacity: 0.65, flexShrink: 0 }} />
+                Chegou {format(chegada, 'HH:mm')}
+                <span style={{
+                  fontSize: 10, fontWeight: 600,
+                  color: diffChegada < -1 ? '#1D9E75' : diffChegada > 5 ? '#D97706' : 'var(--texto-terciario)',
+                  background: diffChegada < -1 ? '#E1F5EE' : diffChegada > 5 ? '#FEF3C7' : 'var(--bg-hover)',
+                  padding: '1px 5px', borderRadius: 10, marginLeft: 2,
+                }}>
+                  {chegadaLabel}
+                </span>
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Badge tempo de espera */}
+        <div style={{
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          background: ls.bg, color: ls.text,
+          padding: '7px 12px', borderRadius: 10,
+          flexShrink: 0, gap: 2, minWidth: 72, textAlign: 'center',
+        }}>
+          <Clock size={13} />
+          <span style={{ fontSize: 16, fontWeight: 800, lineHeight: 1.1, letterSpacing: -0.5 }}>
+            {chegada ? fmtWait(waitMins) : '—'}
+          </span>
+          <span style={{
+            fontSize: 8, fontWeight: 700,
+            opacity: 0.75, textTransform: 'uppercase', letterSpacing: 0.5,
+          }}>
+            {ls.label}
+          </span>
+        </div>
+
+        {/* Botão Atendimento */}
+        <button
+          type="button"
+          onClick={() => abrirAtendimento(ag)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            fontSize: 12, fontWeight: 700, color: '#fff',
+            background: 'var(--cor-primaria)',
+            padding: '9px 14px', borderRadius: 8,
+            border: 'none', cursor: 'pointer', flexShrink: 0,
+            whiteSpace: 'nowrap',
+            transition: 'opacity 0.15s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.opacity = '0.85' }}
+          onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
+        >
+          <ClipboardList size={14} /> Atendimento
+        </button>
+      </div>
+    )
+  }
 
   return (
     <>
@@ -370,184 +564,68 @@ export default function SalaEsperaPage() {
             </Link>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {agendamentos.map((ag, idx) => {
-              const chegada  = ag.horario_chegada ? parseISO(ag.horario_chegada) : null
-              const waitMins = chegada ? differenceInMinutes(agora, chegada) : 0
-              const level    = waitLevel(waitMins)
-              const ls       = LEVEL_STYLE[level]
-              const isCrit   = level === 'critico'
-              const posSt    = POSITION_STYLE[idx] ?? null
-              const ini      = initials(ag.paciente_nome)
-              const avColor  = avatarColor(ag.paciente_nome)
-
-              // Chegou antes ou depois do horário agendado?
-              const agendadoMs = new Date(ag.data_hora_inicio).getTime()
-              const chegadaMs  = chegada ? chegada.getTime() : agendadoMs
-              const diffChegada = Math.round((chegadaMs - agendadoMs) / 60000)
-              const chegadaLabel =
-                diffChegada < -1  ? `${Math.abs(diffChegada)}min adiantado`
-                : diffChegada > 5 ? `${diffChegada}min atrasado`
-                : 'no horário'
-
-              return (
-                <div
-                  key={ag.id}
-                  className={`patient-card${isCrit ? ' card-critico' : ''}`}
-                  style={{
-                    animationDelay: `${idx * 40}ms`,
-                    background: 'var(--bg-card)',
-                    border: `0.5px solid var(--borda-suave)`,
-                    borderLeft: `4px solid ${ls.border}`,
-                    borderRadius: 12,
-                    padding: '9px 16px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                  }}
-                >
-                  {/* Badge posição */}
-                  <div style={{
-                    width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
-                    background: posSt ? posSt.bg : 'var(--bg-hover)',
-                    boxShadow: posSt ? posSt.shadow : 'none',
-                    color: posSt ? '#fff' : 'var(--texto-terciario)',
-                    fontWeight: 800, fontSize: 13,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    {idx + 1}
-                  </div>
-
-                  {/* Avatar iniciais */}
-                  <div style={{
-                    width: 38, height: 38, borderRadius: '50%', flexShrink: 0,
-                    background: avColor, color: '#fff',
-                    fontWeight: 700, fontSize: 14,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    letterSpacing: 1,
-                    boxShadow: `0 2px 8px ${avColor}50`,
-                  }}>
-                    {ini}
-                  </div>
-
-                  {/* Informações principais */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    {/* Nome + tipo */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
-                      <span style={{
-                        fontSize: 14, fontWeight: 700, color: 'var(--texto-principal)',
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        maxWidth: '28ch',
-                      }}>
-                        {ag.paciente_nome}
-                      </span>
-                      {ag.tipo_descricao && (
-                        <span style={{
-                          fontSize: 11, fontWeight: 600,
-                          color: ag.tipo_cor ?? 'var(--texto-terciario)',
-                          background: (ag.tipo_cor ?? '#888780') + '18',
-                          border: `1px solid ${(ag.tipo_cor ?? '#888780') + '30'}`,
-                          padding: '1px 8px', borderRadius: 20,
-                          whiteSpace: 'nowrap',
-                        }}>
-                          {ag.tipo_descricao}
-                        </span>
-                      )}
-                      {ag.categoria_descricao && (
-                        <span style={{
-                          fontSize: 11, fontWeight: 500,
-                          color: 'var(--texto-terciario)',
-                          background: 'var(--bg-hover)',
-                          padding: '1px 8px', borderRadius: 20,
-                          whiteSpace: 'nowrap',
-                        }}>
-                          {ag.categoria_descricao}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Metadados */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center' }}>
-                      <span style={{
-                        fontSize: 12, color: 'var(--texto-secundario)',
-                        display: 'flex', alignItems: 'center', gap: 4,
-                      }}>
-                        <Stethoscope size={12} style={{ opacity: 0.65, flexShrink: 0 }} />
-                        {ag.profissional_nome}
-                      </span>
-
-                      <span style={{
-                        fontSize: 12, color: 'var(--texto-terciario)',
-                        display: 'flex', alignItems: 'center', gap: 4,
-                      }}>
-                        <CalendarDays size={12} style={{ opacity: 0.65, flexShrink: 0 }} />
-                        Agendado {format(parseISO(ag.data_hora_inicio), 'HH:mm')}
-                        {' '}–{' '}
-                        {format(parseISO(ag.data_hora_fim), 'HH:mm')}
-                      </span>
-
-                      {chegada && (
-                        <span style={{
-                          fontSize: 12, color: 'var(--texto-terciario)',
-                          display: 'flex', alignItems: 'center', gap: 4,
-                        }}>
-                          <UserCheck size={12} style={{ opacity: 0.65, flexShrink: 0 }} />
-                          Chegou {format(chegada, 'HH:mm')}
-                          <span style={{
-                            fontSize: 10, fontWeight: 600,
-                            color: diffChegada < -1 ? '#1D9E75' : diffChegada > 5 ? '#D97706' : 'var(--texto-terciario)',
-                            background: diffChegada < -1 ? '#E1F5EE' : diffChegada > 5 ? '#FEF3C7' : 'var(--bg-hover)',
-                            padding: '1px 5px', borderRadius: 10, marginLeft: 2,
-                          }}>
-                            {chegadaLabel}
-                          </span>
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Badge tempo de espera */}
-                  <div style={{
-                    display: 'flex', flexDirection: 'column',
-                    alignItems: 'center', justifyContent: 'center',
-                    background: ls.bg, color: ls.text,
-                    padding: '7px 12px', borderRadius: 10,
-                    flexShrink: 0, gap: 2, minWidth: 72, textAlign: 'center',
-                  }}>
-                    <Clock size={13} />
-                    <span style={{ fontSize: 16, fontWeight: 800, lineHeight: 1.1, letterSpacing: -0.5 }}>
-                      {chegada ? fmtWait(waitMins) : '—'}
-                    </span>
-                    <span style={{
-                      fontSize: 8, fontWeight: 700,
-                      opacity: 0.75, textTransform: 'uppercase', letterSpacing: 0.5,
+          grupos ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
+              {grupos.map(g => {
+                const gColor = avatarColor(g.nome)
+                const gCritico = g.itens.some(ag => {
+                  const chegada = ag.horario_chegada ? parseISO(ag.horario_chegada) : null
+                  return chegada && waitLevel(differenceInMinutes(agora, chegada)) === 'critico'
+                })
+                return (
+                  <div key={g.id}>
+                    {/* Cabeçalho do grupo por profissional */}
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '6px 4px 10px',
+                      borderBottom: '2px solid var(--borda-suave)',
+                      marginBottom: 10,
                     }}>
-                      {ls.label}
-                    </span>
-                  </div>
+                      <div style={{
+                        width: 32, height: 32, borderRadius: 9, flexShrink: 0,
+                        background: gColor, color: '#fff',
+                        fontWeight: 700, fontSize: 12.5, letterSpacing: 0.5,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        boxShadow: `0 2px 8px ${gColor}50`,
+                      }}>
+                        {initials(g.nome)}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                        <span style={{
+                          fontSize: 14.5, fontWeight: 700, color: 'var(--texto-principal)',
+                          letterSpacing: '0.01em',
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
+                          {g.nome}
+                        </span>
+                        <Stethoscope size={13} style={{ color: 'var(--texto-terciario)', opacity: 0.6, flexShrink: 0 }} />
+                      </div>
+                      {gCritico && (
+                        <AlertTriangle size={13} style={{ color: '#DC2626', flexShrink: 0 }} />
+                      )}
+                      <span style={{
+                        fontSize: 11, fontWeight: 700,
+                        color: 'var(--cor-primaria)',
+                        background: 'var(--cor-primaria-light)',
+                        padding: '3px 11px', borderRadius: 20,
+                        flexShrink: 0, whiteSpace: 'nowrap',
+                      }}>
+                        {g.itens.length} {g.itens.length === 1 ? 'paciente' : 'pacientes'}
+                      </span>
+                    </div>
 
-                  {/* Botão Atendimento */}
-                  <button
-                    type="button"
-                    onClick={() => abrirAtendimento(ag)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 6,
-                      fontSize: 12, fontWeight: 700, color: '#fff',
-                      background: 'var(--cor-primaria)',
-                      padding: '9px 14px', borderRadius: 8,
-                      border: 'none', cursor: 'pointer', flexShrink: 0,
-                      whiteSpace: 'nowrap',
-                      transition: 'opacity 0.15s',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.opacity = '0.85' }}
-                    onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
-                  >
-                    <ClipboardList size={14} /> Atendimento
-                  </button>
-                </div>
-              )
-            })}
-          </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {g.itens.map((ag, idx) => renderCard(ag, idx, true))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {agendamentos.map((ag, idx) => renderCard(ag, idx))}
+            </div>
+          )
         )}
 
         {/* Rodapé */}
