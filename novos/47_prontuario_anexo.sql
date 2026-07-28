@@ -25,3 +25,12 @@ CREATE INDEX IF NOT EXISTS idx_prontuario_anexo_empresa     ON tab_prontuario_an
 
 COMMENT ON TABLE tab_prontuario_anexo IS 'Anexos (exames/laudos) de uma consulta — arquivo em disco, caminho_arquivo relativo a UPLOADS_DIR';
 COMMENT ON COLUMN tab_prontuario_anexo.caminho_arquivo IS 'Caminho relativo dentro do volume de uploads, ex: prontuario/123/1690000000000-laudo.pdf';
+
+DO $$
+DECLARE
+  app_role text := current_database();
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = app_role) THEN
+    EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON tab_prontuario_anexo TO %I', app_role);
+  END IF;
+END $$;
