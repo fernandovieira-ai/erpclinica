@@ -83,10 +83,13 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
 
   const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<AgendamentoTipoInput>({
     resolver: zodResolver(agendamentoTipoSchema),
-    defaultValues: { duracao_min: 30, cor: '#0EA5E9', ativo: true },
+    defaultValues: { duracao_min: 30, cor: '#0EA5E9', ativo: true, percentual_profissional: 100 },
   })
 
   const corAtual = watch('cor')
+  const percentualProfissionalRaw = watch('percentual_profissional')
+  const percentualProfissional = Number.isFinite(percentualProfissionalRaw) ? percentualProfissionalRaw : 100
+  const percentualClinica = 100 - percentualProfissional
 
   useEffect(() => {
     if (!tipo) return
@@ -96,6 +99,7 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
       cor:               tipo.cor,
       valor:             tipo.valor != null ? parseFloat(String(tipo.valor)) : undefined,
       voa_clinical_type: tipo.voa_clinical_type ?? undefined,
+      percentual_profissional: tipo.percentual_profissional != null ? parseFloat(String(tipo.percentual_profissional)) : 100,
       ativo:             tipo.ativo,
     })
   }, [tipo, reset])
@@ -253,6 +257,26 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
               style={{ width: 110, padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: errors.valor ? '1px solid var(--cor-erro)' : '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, textAlign: 'right' }}
             />
             {errors.valor && <span style={{ fontSize: 11, color: 'var(--cor-erro)' }}>{errors.valor.message}</span>}
+          </Row>
+
+          {/* Repasse profissional x clínica */}
+          <Row label="Repasse profissional:">
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              {...register('percentual_profissional', { valueAsNumber: true })}
+              style={{ width: 70, padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: errors.percentual_profissional ? '1px solid var(--cor-erro)' : '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, textAlign: 'right' }}
+            />
+            <span style={{ fontSize: 12, color: 'var(--texto-secundario)' }}>%</span>
+            {errors.percentual_profissional && <span style={{ fontSize: 11, color: 'var(--cor-erro)' }}>{errors.percentual_profissional.message}</span>}
+          </Row>
+          <Row label="">
+            <span style={{ fontSize: 10.5, color: 'var(--texto-terciario)' }}>
+              Do valor recebido nesse atendimento: <strong style={{ color: 'var(--texto-secundario)' }}>{Math.round(percentualClinica)}%</strong> fica com a clínica e{' '}
+              <strong style={{ color: 'var(--texto-secundario)' }}>{Math.round(percentualProfissional)}%</strong> fica com o profissional executante.
+            </span>
           </Row>
 
           {/* Modelo Voa */}
