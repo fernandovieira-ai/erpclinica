@@ -65,7 +65,9 @@ export async function POST(req: NextRequest) {
   const nome = (String(body.nome ?? '')).trim().toUpperCase()
   if (!nome) return NextResponse.json({ erro: 'Nome é obrigatório' }, { status: 400 })
 
-  const cpfCnpj = body.cpf_cnpj ? String(body.cpf_cnpj).trim() : null
+  // Sempre grava so digitos - mascara e responsabilidade da exibicao (ver formatCpfCnpj),
+  // salvar com mascara faz a trigger de duplicidade nao pegar o mesmo CPF em formatos diferentes
+  const cpfCnpj = body.cpf_cnpj ? (String(body.cpf_cnpj).replace(/\D/g, '') || null) : null
   const db = getDb(session.database_name)
 
   try {
