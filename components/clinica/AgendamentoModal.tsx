@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { toast } from 'sonner'
-import { X, Search, User, Stethoscope, Phone, Smartphone, MapPin, Mail, UserPlus, ChevronRight, CheckCircle2, Undo2 } from 'lucide-react'
+import { X, Search, User, Stethoscope, Phone, Smartphone, MapPin, Mail, UserPlus, ChevronRight, CheckCircle2, Undo2, AlertTriangle } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { AgendamentoListItem, AgendamentoTipo, CategoriaListItem, ProfissionalListItem } from '@/types/clinica.types'
@@ -16,6 +16,18 @@ interface Paciente {
   cidade:    string | null
   uf:        string | null
   email:     string | null
+}
+
+interface PacienteDuplicado {
+  id:              number
+  nome:            string
+  cpf_cnpj:        string | null
+  celular:         string | null
+  telefone:        string | null
+  data_nascimento: string | null
+  score:           number
+  nivel:           'ALTA' | 'MEDIA'
+  motivos:         string[]
 }
 
 interface Props {
@@ -106,6 +118,9 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
   const [formCad, setFormCad] = useState({ nome: '', data_nascimento: '', cpf_cnpj: '', celular: '' })
   const [cpfJaCadastrado, setCpfJaCadastrado] = useState<Paciente | null>(null)
   const [verificandoCpf,  setVerificandoCpf]  = useState(false)
+  const [duplicados,      setDuplicados]      = useState<PacienteDuplicado[]>([])
+  const [verificandoDuplicidade, setVerificandoDuplicidade] = useState(false)
+  const [confirmarNaoDuplicado,  setConfirmarNaoDuplicado]  = useState(false)
 
   const [form, setForm] = useState({
     paciente_id:     0,
@@ -235,6 +250,8 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
     }
     setShowCadRapido(false)
     setFormCad({ nome: '', data_nascimento: '', cpf_cnpj: '', celular: '' })
+    setDuplicados([])
+    setConfirmarNaoDuplicado(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, agendamento, dataHoraInicio, profissionalPre])
 
@@ -275,6 +292,8 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
   function abrirCadRapido() {
     setFormCad({ nome: buscaPaciente.trim(), data_nascimento: '', cpf_cnpj: '', celular: '' })
     setCpfJaCadastrado(null)
+    setDuplicados([])
+    setConfirmarNaoDuplicado(false)
     setShowCadRapido(true)
     setPacientes([])
   }
@@ -299,6 +318,34 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
     }
   }
 
+  // Sem CPF obrigatório, a defesa contra cadastro duplicado passa a ser nome +
+  // telefone + data de nascimento — dispara com debounce enquanto o usuário digita.
+  async function verificarDuplicidade() {
+    setVerificandoDuplicidade(true)
+    try {
+      const params = new URLSearchParams({ nome: formCad.nome.trim() })
+      if (formCad.data_nascimento) params.set('data_nascimento', formCad.data_nascimento)
+      if (formCad.celular.trim())  params.set('celular', formCad.celular.trim())
+      const res  = await fetch(`/api/clinica/pacientes/checar-duplicidade?${params}`)
+      if (!res.ok) { setDuplicados([]); return }
+      const data = await res.json()
+      setDuplicados(data.dados ?? [])
+    } catch { /* silencia erro de rede */ }
+    finally {
+      setVerificandoDuplicidade(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!showCadRapido || formCad.nome.trim().length < 3) { setDuplicados([]); return }
+    setConfirmarNaoDuplicado(false)
+    const t = setTimeout(() => verificarDuplicidade(), 500)
+    return () => clearTimeout(t)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showCadRapido, formCad.nome, formCad.data_nascimento, formCad.celular])
+
+  const temDuplicataAlta = duplicados.some(d => d.nivel === 'ALTA')
+
   async function handleCadastroRapido() {
     // Se verificação já encontrou o paciente (banner amarelo), usa direto
     if (cpfJaCadastrado) {
@@ -309,27 +356,32 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
       return
     }
 
-    if (!formCad.nome.trim())              { toast.error('Informe o nome do paciente'); return }
-    if (!formCad.data_nascimento)          { toast.error('Informe a data de nascimento'); return }
-    if (!formCad.cpf_cnpj.trim())          { toast.error('Informe o CPF / CNPJ'); return }
-    if (!validarCpfCnpj(formCad.cpf_cnpj)) { toast.error('CPF / CNPJ inválido'); return }
-    if (!formCad.celular.trim())           { toast.error('Informe o celular'); return }
+    if (!formCad.nome.trim())     { toast.error('Informe o nome do paciente'); return }
+    if (!formCad.data_nascimento) { toast.error('Informe a data de nascimento'); return }
+    if (!formCad.celular.trim())  { toast.error('Informe o celular'); return }
+    if (formCad.cpf_cnpj.trim() && !validarCpfCnpj(formCad.cpf_cnpj)) { toast.error('CPF / CNPJ inválido'); return }
+    if (temDuplicataAlta && !confirmarNaoDuplicado) {
+      toast.error('Confirme que não é um cadastro duplicado antes de continuar')
+      return
+    }
 
     // Verificação de CPF no momento do submit — cobre casos em que o onChange não terminou
     setSalvandoCad(true)
     try {
       const digits = formCad.cpf_cnpj.replace(/\D/g, '')
-      const checkRes  = await fetch(`/api/clinica/pacientes?cpf=${encodeURIComponent(digits)}`)
-      const checkData = checkRes.ok ? await checkRes.json() : { dados: [] }
-      const existente = (checkData.dados ?? []).find(
-        (p: Paciente) => p.cpf_cnpj?.replace(/\D/g, '') === digits
-      )
-      if (existente) {
-        selecionarPaciente(existente)
-        setShowCadRapido(false)
-        setCpfJaCadastrado(null)
-        toast.info(`Paciente já cadastrado: ${existente.nome}`)
-        return
+      if (digits) {
+        const checkRes  = await fetch(`/api/clinica/pacientes?cpf=${encodeURIComponent(digits)}`)
+        const checkData = checkRes.ok ? await checkRes.json() : { dados: [] }
+        const existente = (checkData.dados ?? []).find(
+          (p: Paciente) => p.cpf_cnpj?.replace(/\D/g, '') === digits
+        )
+        if (existente) {
+          selecionarPaciente(existente)
+          setShowCadRapido(false)
+          setCpfJaCadastrado(null)
+          toast.info(`Paciente já cadastrado: ${existente.nome}`)
+          return
+        }
       }
 
       const res  = await fetch('/api/clinica/pacientes', {
@@ -691,7 +743,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                     </div>
                     <div>
                       <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--texto-terciario)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>
-                        CPF / CNPJ<span style={{ color: 'var(--cor-erro)', marginLeft: 2 }}>*</span>
+                        CPF / CNPJ <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(opcional)</span>
                       </div>
                       <input
                         value={formCad.cpf_cnpj}
@@ -733,6 +785,62 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                     </div>
                   )}
 
+                  {/* Banner: possível cadastro duplicado (nome + telefone + nascimento) */}
+                  {!cpfJaCadastrado && verificandoDuplicidade && (
+                    <div style={{ fontSize: 10, color: 'var(--texto-terciario)' }}>Verificando cadastros parecidos...</div>
+                  )}
+                  {!cpfJaCadastrado && duplicados.length > 0 && (
+                    <div style={{
+                      display: 'flex', flexDirection: 'column', gap: 8,
+                      padding: '8px 10px',
+                      background: temDuplicataAlta ? 'var(--cor-erro-light, #FEE2E2)' : 'var(--cor-aviso-light, #FEF3C7)',
+                      border: `1px solid ${temDuplicataAlta ? 'var(--cor-erro, #EF4444)' : 'var(--cor-aviso, #F59E0B)'}`,
+                      borderRadius: 6,
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                        <AlertTriangle size={14} style={{ color: temDuplicataAlta ? 'var(--cor-erro, #EF4444)' : 'var(--cor-aviso, #F59E0B)', flexShrink: 0, marginTop: 1 }} />
+                        <div style={{ fontSize: 11, fontWeight: 700, color: temDuplicataAlta ? '#7F1D1D' : '#92400E' }}>
+                          {temDuplicataAlta ? 'Provável cadastro duplicado' : 'Cadastro parecido encontrado — confira antes de continuar'}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {duplicados.map(d => (
+                          <div key={d.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '5px 8px', background: 'var(--bg-card)', borderRadius: 4 }}>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--texto-principal)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.nome}</div>
+                              <div style={{ fontSize: 10, color: 'var(--texto-terciario)' }}>
+                                {d.motivos.join(' · ')}
+                                {d.celular ? ` · ${d.celular}` : ''}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => {
+                                selecionarPaciente({ id: d.id, nome: d.nome, cpf_cnpj: d.cpf_cnpj, celular: d.celular, telefone: d.telefone, cidade: null, uf: null, email: null })
+                                setShowCadRapido(false)
+                                setDuplicados([])
+                              }}
+                              style={{ flexShrink: 0, padding: '4px 8px', fontSize: 11, fontWeight: 600, background: 'var(--cor-primaria)', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+                            >
+                              Usar este
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      {temDuplicataAlta && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#7F1D1D', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={confirmarNaoDuplicado}
+                            onChange={e => setConfirmarNaoDuplicado(e.target.checked)}
+                          />
+                          Confirmo que é uma pessoa diferente, não é cadastro duplicado
+                        </label>
+                      )}
+                    </div>
+                  )}
+
                   {/* Celular */}
                   {!cpfJaCadastrado && (
                   <div>
@@ -763,14 +871,18 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                     </button>
                     <button
                       onClick={handleCadastroRapido}
-                      disabled={salvandoCad || verificandoCpf || (!cpfJaCadastrado && (!formCad.nome.trim() || !formCad.data_nascimento || !formCad.cpf_cnpj.trim() || !formCad.celular.trim()))}
+                      disabled={
+                        salvandoCad || verificandoCpf || verificandoDuplicidade ||
+                        (!cpfJaCadastrado && (!formCad.nome.trim() || !formCad.data_nascimento || !formCad.celular.trim())) ||
+                        (temDuplicataAlta && !confirmarNaoDuplicado)
+                      }
                       style={{
                         display: 'flex', alignItems: 'center', gap: 6,
                         padding: '6px 18px', fontSize: 12, fontWeight: 600,
                         background: 'var(--cor-primaria)',
                         color: '#fff', border: 'none', borderRadius: 5,
                         cursor: 'pointer',
-                        opacity: salvandoCad || verificandoCpf ? 0.7 : 1,
+                        opacity: salvandoCad || verificandoCpf || verificandoDuplicidade ? 0.7 : 1,
                       }}
                     >
                       <UserPlus size={13} />
