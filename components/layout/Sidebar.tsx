@@ -9,7 +9,7 @@ import {
   Building2, UserCircle, Banknote, FolderTree,
   BookOpen, Tag, Stethoscope,
   CalendarDays, UserCog, HeartPulse, ClipboardList,
-  BarChart3, Activity,
+  Activity, ClipboardCheck,
   FileOutput, FileInput, FileUp, FileDown,
   ListTree, MinusCircle, PlusCircle, CalendarClock,
   Timer, RefreshCcw,
@@ -43,7 +43,7 @@ const NAV: NavItem[] = [
   {
     label: 'Gerencial', icon: <TrendingUp size={16} />,
     children: [
-      { label: 'DRE',            href: '/gerencial/dre',         icon: <BarChart3 size={14} /> },
+      { label: 'Fechamento Diário', href: '/gerencial/fechamento-diario', icon: <ClipboardCheck size={14} /> },
       { label: 'Fluxo de Caixa', href: '/gerencial/fluxo-caixa', icon: <Activity size={14} /> },
     ],
   },

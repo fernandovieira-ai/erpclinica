@@ -4,7 +4,7 @@ import { z } from 'zod'
 // profissional vem livre do textarea e pode trazer travessao/aspas curvas/emoji colados
 // do Word ou do celular, o que quebra o INSERT com 500 sem corpo de erro. Normaliza os
 // equivalentes tipograficos comuns e descarta o que sobrar fora do intervalo Latin-1.
-function paraLatin1(v: string): string {
+export function paraLatin1(v: string): string {
   return v
     .replace(/[—–]/g, '-')
     .replace(/[‘’]/g, "'")

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
+import { addDias, obterTipoReceitaPadrao } from '@/lib/clinica/recebimento-helpers'
 
 interface RecebimentoItem {
   agendamento_id: number
@@ -53,8 +54,8 @@ export async function POST(req: NextRequest) {
     }
 
     const { rows: condRows } = await client.query(
-      'SELECT tipo_pagamento, conta_banco_pix_id, conta_banco_cartao_id, num_parcelas, intervalo_dias, entrada_pct FROM tab_condicao_pagamento WHERE id = $1',
-      [payload.condicao_pagamento_id],
+      'SELECT tipo_pagamento, conta_banco_pix_id, conta_banco_cartao_id, num_parcelas, intervalo_dias, entrada_pct FROM tab_condicao_pagamento WHERE id = $1 AND empresa_id = $2',
+      [payload.condicao_pagamento_id, session.empresa_id_ativa],
     )
     if (condRows.length === 0) {
       await client.query('ROLLBACK')
@@ -278,23 +279,3 @@ export async function POST(req: NextRequest) {
   }
 }
 
-function addDias(dateStr: string, dias: number): string {
-  const [y, m, d] = dateStr.split('-').map(Number)
-  const date = new Date(Date.UTC(y, m - 1, d))
-  date.setUTCDate(date.getUTCDate() + dias)
-  return date.toISOString().split('T')[0]
-}
-
-async function obterTipoReceitaPadrao(client: any): Promise<number> {
-  try {
-    const { rows } = await client.query(
-      `SELECT id FROM tab_tipo_receita WHERE descricao ILIKE $1 OR descricao ILIKE $2 LIMIT 1`,
-      ['%Consul%', '%Serviço%'],
-    )
-    if (rows.length > 0) return rows[0].id
-    const { rows: fallback } = await client.query('SELECT id FROM tab_tipo_receita ORDER BY id ASC LIMIT 1')
-    return fallback[0]?.id || 1
-  } catch {
-    return 1
-  }
-}
