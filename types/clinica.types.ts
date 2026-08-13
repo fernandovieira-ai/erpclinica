@@ -46,6 +46,9 @@ export interface Agendamento {
   paciente_cpf:          string | null
   profissional_id:       number
   profissional_nome:     string
+  profissional_eh_clinica: boolean
+  medico_solicitante_id:   number | null
+  medico_solicitante_nome: string | null
   tipo_id:               number | null
   tipo_descricao:        string | null
   tipo_cor:              string | null
@@ -71,7 +74,8 @@ export interface Agendamento {
 export type AgendamentoListItem = Pick<
   Agendamento,
   | 'id' | 'paciente_id' | 'paciente_nome' | 'paciente_celular'
-  | 'profissional_id' | 'profissional_nome'
+  | 'profissional_id' | 'profissional_nome' | 'profissional_eh_clinica'
+  | 'medico_solicitante_id' | 'medico_solicitante_nome'
   | 'tipo_id' | 'tipo_descricao' | 'tipo_cor' | 'tipo_voa_clinical_type'
   | 'especialidade_id' | 'especialidade_descricao'
   | 'data_hora_inicio' | 'data_hora_fim' | 'status' | 'motivo' | 'observacao'
@@ -217,6 +221,7 @@ export interface AtestadoMedicoRegistro {
 export interface ProfissionalListItem {
   id:              number
   nome:            string
+  eh_clinica?:     boolean
   especialidades:  { id: number; descricao: string; cor: string }[]
   agenda:          AgendaProfissional[]
 }

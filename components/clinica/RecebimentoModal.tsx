@@ -34,6 +34,17 @@ interface FormRecebimento {
   parcelas_cartao: number
 }
 
+interface ProfissionalOpcao {
+  id: number
+  nome: string
+  eh_clinica?: boolean
+}
+
+interface ExecutorDef {
+  medico_solicitante_id: number
+  medico_executor_id: number
+}
+
 function fmtValor(v: number) {
   return Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
@@ -54,6 +65,8 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
   const [saving, setSaving] = useState(false)
   const [condicoes, setCondicoes] = useState<CondicaoPagamento[]>([])
   const [loadingCondicoes, setLoadingCondicoes] = useState(false)
+  const [profissionais, setProfissionais] = useState<ProfissionalOpcao[]>([])
+  const [executores, setExecutores] = useState<Record<number, Partial<ExecutorDef>>>({})
 
   const [form, setForm] = useState<FormRecebimento>({
     condicao_pagamento_id: 0,
@@ -80,8 +93,22 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
   useEffect(() => {
     if (open) {
       carregarCondicoesPagamento()
+      carregarProfissionais()
+    } else {
+      setExecutores({})
     }
   }, [open])
+
+  async function carregarProfissionais() {
+    try {
+      const res = await fetch('/api/clinica/profissionais')
+      if (!res.ok) return
+      const data = await res.json()
+      setProfissionais((data.dados ?? []).filter((p: ProfissionalOpcao) => !p.eh_clinica))
+    } catch (error) {
+      console.error('Erro ao carregar profissionais:', error)
+    }
+  }
 
   // Recalcula valor ao abrir (valor à vista como base inicial)
   useEffect(() => {
@@ -148,6 +175,15 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
       return
     }
 
+    for (const ag of listaAgs) {
+      if (!ag.profissional_eh_clinica) continue
+      const def = executores[ag.id]
+      if (!def?.medico_solicitante_id || !def?.medico_executor_id) {
+        toast.error(`Informe o médico solicitante e o médico executor do exame de ${ag.paciente_nome}`)
+        return
+      }
+    }
+
     setSaving(true)
     try {
       const isPrazo = condicaoSelecionada?.tipo === 'P'
@@ -167,6 +203,7 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
         const desconto_ag = form.desconto * proporcao
         const acrescimo_ag = form.acrescimo * proporcao
         const total_ag = valorRecebido_ag - desconto_ag + acrescimo_ag
+        const def = ag.profissional_eh_clinica ? executores[ag.id] : undefined
         return {
           agendamento_id: ag.id,
           paciente_id: ag.paciente_id,
@@ -176,6 +213,8 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
           valor_recebido: valorRecebido_ag,
           total_recebimento: total_ag,
           data_recebimento: format(parseISO(ag.data_hora_inicio), 'yyyy-MM-dd'),
+          medico_solicitante_id: def?.medico_solicitante_id ?? null,
+          medico_executor_id: def?.medico_executor_id ?? null,
         }
       })
 
@@ -360,6 +399,58 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
               </div>
             )}
           </div>
+
+          {/* Exame agendado sem executor definido: exige solicitante + executor */}
+          {listaAgs.filter(ag => ag.profissional_eh_clinica).map(ag => (
+            <div key={ag.id} style={{
+              background: 'var(--bg-card)',
+              border: '0.5px solid var(--borda-suave)',
+              borderRadius: 8,
+              padding: 12,
+              marginBottom: 20,
+            }}>
+              <Label>
+                Exame — {ag.tipo_descricao || 'Atendimento'}
+                {listaAgs.length > 1 ? ` (${ag.paciente_nome}, ${format(parseISO(ag.data_hora_inicio), 'HH:mm')})` : ''}
+              </Label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+                <Field>
+                  <Label>Médico Solicitante</Label>
+                  <select
+                    value={executores[ag.id]?.medico_solicitante_id ?? 0}
+                    onChange={e => setExecutores(prev => ({
+                      ...prev,
+                      [ag.id]: { ...prev[ag.id], medico_solicitante_id: Number(e.target.value) || undefined },
+                    }))}
+                    className="input-field"
+                    style={{ fontSize: 13, padding: '8px 10px' }}
+                  >
+                    <option value={0}>Selecione...</option>
+                    {profissionais.map(p => (
+                      <option key={p.id} value={p.id}>{p.nome}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field>
+                  <Label>Médico Executor</Label>
+                  <select
+                    value={executores[ag.id]?.medico_executor_id ?? 0}
+                    onChange={e => setExecutores(prev => ({
+                      ...prev,
+                      [ag.id]: { ...prev[ag.id], medico_executor_id: Number(e.target.value) || undefined },
+                    }))}
+                    className="input-field"
+                    style={{ fontSize: 13, padding: '8px 10px' }}
+                  >
+                    <option value={0}>Selecione...</option>
+                    {profissionais.map(p => (
+                      <option key={p.id} value={p.id}>{p.nome}</option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+            </div>
+          ))}
 
           {/* Condição de Pagamento */}
           <Field style={{ marginBottom: 20 }}>

@@ -502,3 +502,24 @@ Botão "Criar Atestado" em `HistoricoClinico.tsx`, ao lado de "Editar prontuári
 - `types/clinica.types.ts` — `AtestadoMedicoRegistro`.
 
 **CID é opcional por design** — texto de aviso na UI sobre exigir consentimento do paciente (Resolução CFM), nunca preenchido automaticamente.
+
+---
+
+## 22. Médico Solicitante/Executor em exames (implementado 2026-08-13)
+
+**Problema:** no agendamento de exame, quem pede o exame (médico solicitante) é conhecido na hora de marcar, mas quem vai efetivamente executar/laudar o exame muitas vezes só é decidido no dia (escala/disponibilidade) — e `tab_agendamento.profissional_id` é `NOT NULL` e já fazia triplo papel (dono do slot da agenda, quem aparece na grade, quem recebe o repasse via `tab_agendamento_tipo.percentual_profissional`).
+
+**Solução escolhida (a mais barata das avaliadas — ver histórico de decisão se precisar entender as alternativas descartadas):** nenhuma mudança na criação/edição do agendamento. Continua exigindo `profissional_id`. Pra exame sem executor definido ainda, a recepção agenda usando um cadastro **placeholder** que representa a própria clínica (`tab_pessoa.eh_clinica = true`) como `profissional_id`. O par solicitante/executor só é exigido depois, **no recebimento**, e só quando o `profissional_id` atual do agendamento é esse placeholder.
+
+**Arquivos:**
+- `novos/53_medico_solicitante_exame.sql` — `tab_pessoa.eh_clinica` (boolean) + `tab_agendamento.medico_solicitante_id` (FK nullable). Aditiva/idempotente (`ADD COLUMN IF NOT EXISTS`). **Já aplicada no banco remoto compartilhado (`hiitcor`)** em 2026-08-13.
+- `lib/validators/pessoa.schema.ts` / `app/api/cadastro/pessoas/(route.ts|[id]/route.ts)` — campo `eh_clinica` no schema e nos INSERT/UPDATE de `tab_pessoa` (adicionado como última coluna/parâmetro pra não precisar renumerar os `$N` existentes).
+- `components/cadastro/PessoaFormPage.tsx` — checkbox "Representa a Clínica" na seção Classificação, junto dos outros `ind_*`.
+- `app/api/clinica/agendamentos/route.ts` (GET) — expõe `profissional_eh_clinica` (join com `tab_pessoa`) e `medico_solicitante_id`/`nome`.
+- `app/api/clinica/profissionais/route.ts` — expõe `eh_clinica` (usado pelo front pra excluir o placeholder dos dropdowns de solicitante/executor).
+- `app/api/clinica/recebimentos/route.ts` (POST) — pro cada item do lote, se `profissional_id` do agendamento tem `eh_clinica=true`, exige `medico_solicitante_id`+`medico_executor_id` no payload (400 se faltar, antes de qualquer INSERT). No fim da transação, `UPDATE tab_agendamento SET medico_solicitante_id=..., profissional_id=<executor>` — o executor substitui o placeholder, então a partir daí fechamento diário/repasse (que leem `profissional_id`, ver §3) já enxergam o médico certo sem precisar de nenhuma mudança nessas outras rotas.
+- `components/clinica/RecebimentoModal.tsx` — pra cada agendamento do lote com `profissional_eh_clinica`, renderiza um bloco com 2 selects (solicitante/executor) alimentados por `/api/clinica/profissionais` (filtrando `eh_clinica` fora da lista). Bloqueia o "Confirmar Recebimento" se faltar preencher.
+
+**Armadilha encontrada e corrigida na mesma implementação:** a tela de edição de pessoa (`app/(erp)/cadastro/pessoas/[id]/page.tsx`) tem sua **própria** query direta no banco pra montar os dados iniciais do form — não usa a rota `GET /api/cadastro/pessoas/[id]`. As duas queries são independentes e precisam ser mantidas em sincronia manualmente: o `SELECT` da rota de API foi atualizado primeiro, mas o da page.tsx ficou esquecido, então salvar `eh_clinica=true` funcionava (confirmado direto no banco), mas reabrir a tela sempre mostrava desmarcado — o form nunca via a coluna. **Ao adicionar qualquer coluna nova em `tab_pessoa`, checar as duas queries**, não só a rota de API.
+
+**Risco conhecido, não corrigido (decisão consciente, mesmo padrão já existente em `profissional_id`):** o `UPDATE tab_agendamento` no recebimento grava `medico_solicitante_id`/`profissional_id` a partir de IDs vindos direto do payload do cliente, sem checar se essas pessoas pertencem à `empresa_id_ativa` da sessão — igual ao que já acontecia (antes desta feature) na criação de agendamento com `profissional_id`. Revisão de segurança feita em 2026-08-13 não reportou como finding por ser padrão pré-existente replicado, não uma superfície nova; endurecer isso é trabalho futuro que vale aplicar de uma vez em todos os campos `*_id` que referenciam `tab_pessoa`, não só nestes dois.

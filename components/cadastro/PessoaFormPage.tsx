@@ -697,6 +697,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
       ind_cliente: false, ind_fornecedor: false,
       ind_banco: false, ind_transportador: false,
       ind_paciente: papelInicial === 'paciente', ind_profissional: papelInicial === 'profissional',
+      eh_clinica: false,
       limite_credito: 0, cod_tipo_cobranca: null, contribuinte_icms: false, optante_simples: false,
     },
   })
@@ -743,6 +744,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
       ind_transportador: pessoa.ind_transportador,
       ind_paciente:      pessoa.ind_paciente,
       ind_profissional:  pessoa.ind_profissional,
+      eh_clinica:        pessoa.eh_clinica ?? false,
       cep:               pessoa.cep ?? '',
       logradouro:        pessoa.logradouro ?? '',
       numero:            pessoa.numero ?? '',
@@ -1340,7 +1342,13 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
             <Check label="Transportador" checked={!!watch('ind_transportador')} onChange={e => setValue('ind_transportador', e.target.checked)} />
             <Check label="Paciente"      checked={!!watch('ind_paciente')}      onChange={e => setValue('ind_paciente',      e.target.checked)} />
             <Check label="Profissional"  checked={!!watch('ind_profissional')}  onChange={e => setValue('ind_profissional',  e.target.checked)} />
+            <Check label="Representa a Clínica" checked={!!watch('eh_clinica')} onChange={e => setValue('eh_clinica', e.target.checked)} />
           </div>
+          {watch('eh_clinica') && (
+            <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginTop: 6 }}>
+              Cadastro placeholder usado no agendamento de exames quando ainda não se sabe qual médico vai executar. Não deve ser selecionado como solicitante/executor no recebimento.
+            </div>
+          )}
         </Secao>
         </>)}
 

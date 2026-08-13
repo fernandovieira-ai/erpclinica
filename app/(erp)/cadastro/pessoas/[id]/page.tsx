@@ -22,7 +22,7 @@ export default async function EditarPessoaPage({ params, searchParams }: Props) 
             conjuge_pessoa_id, conjuge_nome, conjuge_paciente,
             indicacao_pessoa_id, indicacao_nome, indicacao_fone, indicacao_ligacao,
             rg_ie, im, crm, crm_uf,
-            ind_cliente, ind_fornecedor, ind_banco, ind_transportador, ind_paciente, ind_profissional,
+            ind_cliente, ind_fornecedor, ind_banco, ind_transportador, ind_paciente, ind_profissional, eh_clinica,
             cep, logradouro, numero, complemento, bairro, cidade, uf, cod_ibge,
             telefone, celular, whatsapp, email, email_nfe,
             limite_credito, cod_tipo_cobranca, banco_nome, banco_agencia, banco_conta, banco_tipo, chave_pix,

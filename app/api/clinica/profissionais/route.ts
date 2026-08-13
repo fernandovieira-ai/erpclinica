@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
   }
 
   const { rows: profissionais } = await db.query(
-    `SELECT p.id, p.nome, p.celular, p.email
+    `SELECT p.id, p.nome, p.celular, p.email, p.eh_clinica
      FROM tab_pessoa p
      WHERE p.empresa_id = $1 AND p.ind_profissional = true AND p.ativo = true
      ${buscaCond}

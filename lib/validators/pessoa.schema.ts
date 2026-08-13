@@ -48,6 +48,7 @@ export const pessoaSchema = z.object({
   ind_transportador:  z.boolean().default(false),
   ind_paciente:       z.boolean().default(false),
   ind_profissional:   z.boolean().default(false),
+  eh_clinica:         z.boolean().default(false),
 
   // Endereço
   cep:                z.string().max(9).optional().nullable(),

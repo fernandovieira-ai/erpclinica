@@ -12,6 +12,8 @@ interface RecebimentoItem {
   valor_recebido: number
   total_recebimento: number
   data_recebimento: string
+  medico_solicitante_id?: number | null
+  medico_executor_id?: number | null
 }
 
 interface RecebimentoPayload {
@@ -42,14 +44,35 @@ export async function POST(req: NextRequest) {
 
     await client.query('BEGIN')
 
+    // agendamento_id -> { medico_solicitante_id, medico_executor_id } dos itens que
+    // precisam definir solicitante/executor antes de confirmar (profissional_id atual = placeholder da clínica)
+    const definicoesExecutor = new Map<number, { medico_solicitante_id: number; medico_executor_id: number }>()
+
     for (const item of payload.itens) {
       const { rows } = await client.query(
-        'SELECT id FROM tab_agendamento WHERE id = $1 AND empresa_id = $2',
+        `SELECT ag.id, pro.eh_clinica AS profissional_eh_clinica
+         FROM tab_agendamento ag
+           JOIN tab_pessoa pro ON pro.id = ag.profissional_id
+         WHERE ag.id = $1 AND ag.empresa_id = $2`,
         [item.agendamento_id, session.empresa_id_ativa],
       )
       if (rows.length === 0) {
         await client.query('ROLLBACK')
         return NextResponse.json({ erro: `Agendamento ${item.agendamento_id} não encontrado` }, { status: 404 })
+      }
+
+      if (rows[0].profissional_eh_clinica) {
+        if (!item.medico_solicitante_id || !item.medico_executor_id) {
+          await client.query('ROLLBACK')
+          return NextResponse.json(
+            { erro: `Agendamento ${item.agendamento_id}: informe o médico solicitante e o médico executor antes de confirmar o recebimento` },
+            { status: 400 },
+          )
+        }
+        definicoesExecutor.set(item.agendamento_id, {
+          medico_solicitante_id: item.medico_solicitante_id,
+          medico_executor_id: item.medico_executor_id,
+        })
       }
     }
 
@@ -255,6 +278,17 @@ export async function POST(req: NextRequest) {
        WHERE id = ANY($1::int[]) AND empresa_id = $2`,
       [ids, session.empresa_id_ativa],
     )
+
+    // Exames marcados com o placeholder da clínica: grava o solicitante e substitui
+    // profissional_id pelo executor agora que ambos são conhecidos.
+    for (const [agendamentoId, def] of definicoesExecutor) {
+      await client.query(
+        `UPDATE tab_agendamento
+         SET medico_solicitante_id = $1, profissional_id = $2, updated_at = NOW()
+         WHERE id = $3 AND empresa_id = $4`,
+        [def.medico_solicitante_id, def.medico_executor_id, agendamentoId, session.empresa_id_ativa],
+      )
+    }
 
     await client.query('COMMIT')
 

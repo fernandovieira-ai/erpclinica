@@ -82,6 +82,8 @@ export async function GET(req: NextRequest) {
        pac.id   AS paciente_id,    pac.nome  AS paciente_nome,
        pac.celular AS paciente_celular, pac.cpf_cnpj AS paciente_cpf,
        pro.id   AS profissional_id, pro.nome AS profissional_nome,
+       pro.eh_clinica AS profissional_eh_clinica,
+       a.medico_solicitante_id, sol.nome AS medico_solicitante_nome,
        tp.id    AS tipo_id,         tp.descricao AS tipo_descricao,
        tp.cor   AS tipo_cor,        tp.duracao_min AS tipo_duracao_min,
        tp.voa_clinical_type AS tipo_voa_clinical_type,
@@ -94,6 +96,7 @@ export async function GET(req: NextRequest) {
      FROM tab_agendamento a
        JOIN tab_pessoa pac  ON pac.id = a.paciente_id
        JOIN tab_pessoa pro  ON pro.id = a.profissional_id
+       LEFT JOIN tab_pessoa sol ON sol.id = a.medico_solicitante_id
        LEFT JOIN tab_agendamento_tipo tp  ON tp.id = a.tipo_id
        LEFT JOIN tab_agendamento_tipo_categoria atc ON atc.tipo_id = a.tipo_id AND atc.categoria_id = a.categoria_id
        LEFT JOIN tab_especialidade    esp ON esp.id = a.especialidade_id

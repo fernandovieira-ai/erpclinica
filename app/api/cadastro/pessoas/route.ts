@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
       `SELECT p.id, p.tipo_pessoa, p.nome, p.nome_fantasia, p.cpf_cnpj,
               p.cidade, p.uf, p.telefone, p.celular, p.email,
               p.ind_cliente, p.ind_fornecedor, p.ind_banco, p.ind_transportador,
-              p.ind_paciente, p.ind_profissional,
+              p.ind_paciente, p.ind_profissional, p.eh_clinica,
               p.ativo
        FROM tab_pessoa p ${where}
        ORDER BY p.nome
@@ -84,12 +84,12 @@ export async function POST(req: NextRequest) {
        mae_pessoa_id, mae_nome, mae_paciente,
        conjuge_pessoa_id, conjuge_nome, conjuge_paciente,
        indicacao_pessoa_id, indicacao_nome, indicacao_fone, indicacao_ligacao,
-       profissao, altura, peso, crm, crm_uf
+       profissao, altura, peso, crm, crm_uf, eh_clinica
      ) VALUES (
        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
        $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,
        $37,$38,$39,$40,$41,
-       $42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56,$57,$58,$59
+       $42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56,$57,$58,$59,$60
      ) RETURNING id`,
     [
       session.empresa_id_ativa, d.tipo_pessoa, up(d.nome), up(d.nome_fantasia),
@@ -109,6 +109,7 @@ export async function POST(req: NextRequest) {
       d.conjuge_pessoa_id ?? null, up(d.conjuge_nome), d.conjuge_paciente ?? false,
       d.indicacao_pessoa_id ?? null, up(d.indicacao_nome), d.indicacao_fone ?? null, up(d.indicacao_ligacao),
       up(d.profissao), d.altura ?? null, d.peso ?? null, up(d.crm), up(d.crm_uf),
+      d.eh_clinica ?? false,
     ],
   )
 
