@@ -66,6 +66,12 @@ declare global {
         addMessageListener: (cb: (msg: VoaMessage) => void) => void
         removeMessageListener: (cb: (msg: VoaMessage) => void) => void
         uploadFiles: (files: File[]) => void
+        // Método novo do SDK (não documentado publicamente, confirmado inspecionando o
+        // bundle em 2026-08-14) — diferente de addBackgroundHistory: registra o callback
+        // no mesmo componente interno (editor de história pregressa), então herda a mesma
+        // ressalva - só funciona se esse componente já estiver montado do lado da Voa. Sem
+        // evento de confirmação de recebimento; testar ao vivo antes de confiar cegamente.
+        appendContext: (text: string) => void
       }
     }
   }
@@ -186,6 +192,12 @@ function VoaPluginView(
   const [tentativa,    setTentativa]    = useState(0)
   const [showContainer, setShowContainer] = useState(false)
 
+  // Envio de contexto adicional já com o atendimento em andamento (status 'ready') -
+  // diferente do contextoInicial (só antes de montar). Painel próprio, some ao enviar.
+  const [mostrarContexto, setMostrarContexto] = useState(false)
+  const [textoContexto,   setTextoContexto]   = useState('')
+  const [enviandoContexto, setEnviandoContexto] = useState(false)
+
   // Ref para não reiniciar o plugin a cada re-render do formulário (o callback muda de
   // identidade a cada keystroke do pai, mas isso não deve remontar o widget da Voa).
   const onDadosExtraidosRef = useRef(onDadosExtraidos)
@@ -207,6 +219,24 @@ function VoaPluginView(
       return true
     },
   }), [status])
+
+  function enviarContexto() {
+    const texto = textoContexto.trim()
+    if (!texto || !window.VoaPlugin || status !== 'ready') return
+    setEnviandoContexto(true)
+    try {
+      window.VoaPlugin.instance.appendContext(texto)
+      // Sem evento de confirmação da Voa pra esse método - avisa como "enviado", mas
+      // vale conferir na própria tela da Voa se o texto realmente apareceu.
+      toast.success('Contexto enviado para a Voa — confira na tela da Voa se foi incorporado')
+      setTextoContexto('')
+      setMostrarContexto(false)
+    } catch (e) {
+      toast.error('Falha ao enviar contexto para a Voa: ' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setEnviandoContexto(false)
+    }
+  }
 
   useEffect(() => {
     let cancelado = false
@@ -403,6 +433,21 @@ function VoaPluginView(
           {status === 'closed'  && '· sessão encerrada'}
           {status === 'error'   && '· erro'}
         </span>
+        {status === 'ready' && (
+          <button
+            type="button"
+            onClick={() => setMostrarContexto(v => !v)}
+            title="Enviar informação clínica adicional para a Voa com o atendimento já em andamento"
+            style={{
+              marginLeft: 8, display: 'flex', alignItems: 'center', gap: 4,
+              padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
+              background: 'none', border: `1px solid ${VOA_COR}`, borderRadius: 5,
+              cursor: 'pointer', color: VOA_COR,
+            }}
+          >
+            + Contexto
+          </button>
+        )}
         <button
           type="button"
           onClick={() => {
@@ -422,6 +467,56 @@ function VoaPluginView(
           <X size={14} /> Fechar
         </button>
       </div>
+
+      {mostrarContexto && status === 'ready' && (
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 10px',
+          borderBottom: `1px solid ${VOA_COR}55`, backgroundColor: 'var(--bg-input)',
+        }}>
+          <div style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>
+            Informação clínica adicional a incorporar ao atendimento já em andamento (ex: resultado de exame
+            que chegou agora, orientação a incluir na receita). Não é gravado como fala do paciente/profissional.
+          </div>
+          <textarea
+            value={textoContexto}
+            onChange={e => setTextoContexto(e.target.value)}
+            placeholder="Ex: resultado do exame X confirma..."
+            rows={3}
+            autoFocus
+            style={{
+              width: '100%', padding: '7px 9px', fontSize: 12.5, fontFamily: 'inherit',
+              border: '1px solid var(--borda-media)', borderRadius: 5, resize: 'vertical',
+              backgroundColor: 'var(--bg-card)', color: 'var(--texto-principal)',
+            }}
+          />
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              type="button"
+              onClick={enviarContexto}
+              disabled={!textoContexto.trim() || enviandoContexto}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5, width: 'fit-content',
+                padding: '6px 12px', fontSize: 12, fontWeight: 700,
+                backgroundColor: VOA_COR, border: 'none', borderRadius: 5,
+                cursor: (!textoContexto.trim() || enviandoContexto) ? 'not-allowed' : 'pointer',
+                color: '#fff', opacity: (!textoContexto.trim() || enviandoContexto) ? 0.6 : 1,
+              }}
+            >
+              {enviandoContexto ? <Loader2 size={12} className="spin" /> : null} Enviar
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMostrarContexto(false); setTextoContexto('') }}
+              style={{
+                padding: '6px 10px', fontSize: 12, fontWeight: 600,
+                background: 'none', border: 'none', cursor: 'pointer', color: 'var(--texto-terciario)',
+              }}
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
 
       {status === 'loading' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: 20, fontSize: 12, color: 'var(--texto-terciario)' }}>
