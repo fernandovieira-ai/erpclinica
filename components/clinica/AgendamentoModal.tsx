@@ -2,10 +2,11 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { toast } from 'sonner'
-import { X, Search, User, Stethoscope, Phone, Smartphone, MapPin, Mail, UserPlus, ChevronRight, CheckCircle2, Undo2, AlertTriangle } from 'lucide-react'
+import { X, Search, User, Stethoscope, Phone, Smartphone, MapPin, Mail, UserPlus, ChevronRight, CheckCircle2, Undo2, AlertTriangle, CalendarClock } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { AgendamentoListItem, AgendamentoTipo, CategoriaListItem, ProfissionalListItem } from '@/types/clinica.types'
+import NovoHorarioModal from '@/components/clinica/NovoHorarioModal'
 
 interface Paciente {
   id:        number
@@ -112,6 +113,8 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
   const [loadingSlot,   setLoadingSlot]   = useState(false)
   const [saving,        setSaving]        = useState(false)
   const [estornando,    setEstornando]    = useState(false)
+
+  const [horarioPickerOpen, setHorarioPickerOpen] = useState(false)
 
   const [showCadRapido,   setShowCadRapido]   = useState(false)
   const [salvandoCad,     setSalvandoCad]     = useState(false)
@@ -412,6 +415,24 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
   }
 
   // Quando muda o tipo, ajusta a duração
+  function handleSelecionarHorario(data: string, hora: string) {
+    const tipo = tipos.find(t => t.id === form.tipo_id)
+    let duracao = tipo?.duracao_min ?? 0
+
+    if (!duracao && form.hora_inicio && form.hora_fim) {
+      const [h1, m1] = form.hora_inicio.split(':').map(Number)
+      const [h2, m2] = form.hora_fim.split(':').map(Number)
+      duracao = (h2 * 60 + m2) - (h1 * 60 + m1)
+    }
+    if (!duracao || duracao <= 0) duracao = 30
+
+    const [h, m]  = hora.split(':').map(Number)
+    const totalFim = h * 60 + m + duracao
+    const horaFim  = `${String(Math.floor(totalFim / 60) % 24).padStart(2, '0')}:${String(totalFim % 60).padStart(2, '0')}`
+
+    setForm(f => ({ ...f, data, hora_inicio: hora, hora_fim: horaFim }))
+  }
+
   function handleTipo(tipoId: number | null) {
     const tipo = tipos.find(t => t.id === tipoId)
     if (tipo && form.hora_inicio) {
@@ -550,6 +571,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
   const statusAtual = STATUS_OPTIONS.find(s => s.value === form.status)
 
   return (
+    <>
     <div style={{
       position: 'fixed', inset: 0, zIndex: 50,
       background: 'rgba(0,0,0,0.5)',
@@ -992,6 +1014,22 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                 />
               </Field>
             </div>
+
+            {form.profissional_id > 0 && (
+              <button
+                type="button"
+                onClick={() => setHorarioPickerOpen(true)}
+                style={{
+                  marginTop: 8,
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '4px 10px', fontSize: 11, fontWeight: 600,
+                  background: 'none', border: '1px dashed var(--cor-primaria)', borderRadius: 5,
+                  color: 'var(--cor-primaria)', cursor: 'pointer',
+                }}
+              >
+                <CalendarClock size={12} /> Ver horários disponíveis do profissional
+              </button>
+            )}
           </fieldset>
 
           {/* ── Tipo de Atendimento + Status ────────────────────────────── */}
@@ -1124,5 +1162,16 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
         </div>
       </div>
     </div>
+
+    <NovoHorarioModal
+      open={horarioPickerOpen}
+      onClose={() => setHorarioPickerOpen(false)}
+      profissionalId={form.profissional_id || undefined}
+      duracaoMin={tipos.find(t => t.id === form.tipo_id)?.duracao_min}
+      profissionalNome={profissionais.find(p => p.id === form.profissional_id)?.nome}
+      tipoDescricao={tipos.find(t => t.id === form.tipo_id)?.descricao}
+      onSelecionar={handleSelecionarHorario}
+    />
+    </>
   )
 }

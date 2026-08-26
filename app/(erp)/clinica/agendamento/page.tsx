@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ChevronLeft, ChevronRight, Plus, CalendarDays, LayoutGrid, List,
-  Stethoscope, RefreshCw, UserCheck,
+  Stethoscope, RefreshCw, UserCheck, Search,
 } from 'lucide-react'
 import {
   format, startOfWeek, endOfWeek, addWeeks, subWeeks,
@@ -16,6 +16,8 @@ import { ptBR } from 'date-fns/locale'
 import { toast } from 'sonner'
 import type { AgendamentoListItem, ProfissionalListItem } from '@/types/clinica.types'
 import AgendamentoModal from '@/components/clinica/AgendamentoModal'
+import NovoHorarioModal from '@/components/clinica/NovoHorarioModal'
+import BuscaPacienteAgendamentosModal from '@/components/clinica/BuscaPacienteAgendamentosModal'
 import PacienteCheckInFormModal from '@/components/clinica/PacienteCheckInFormModal'
 
 type ViewMode = 'dia' | 'semana' | 'mes' | 'lista' | 'confirmar'
@@ -87,6 +89,8 @@ export default function AgendamentoPage() {
   const [modalOpen, setModalOpen]       = useState(false)
   const [editAg, setEditAg]             = useState<AgendamentoListItem | null>(null)
   const [slotInicio, setSlotInicio]     = useState<Date | null>(null)
+  const [novoHorarioAg, setNovoHorarioAg] = useState<AgendamentoListItem | null>(null)
+  const [buscaPacienteOpen, setBuscaPacienteOpen] = useState(false)
   const [buscandoSlot, setBuscandoSlot] = useState(false)
   const [diasIndisponíveis, setDiasIndisponíveis] = useState<Set<string>>(new Set())
   const [agendaSemanaRaw, setAgendaSemanaRaw]     = useState<Map<number, boolean>>(new Map())
@@ -438,6 +442,18 @@ export default function AgendamentoPage() {
     setModalOpen(true)
   }
 
+  function abrirNovoHorario(ag: AgendamentoListItem, e: React.MouseEvent) {
+    e.stopPropagation()
+    setNovoHorarioAg(ag)
+  }
+
+  function abrirAgendamentoDaConsultaPaciente(ag: AgendamentoListItem) {
+    setBuscaPacienteOpen(false)
+    setEditAg(ag)
+    setSlotInicio(null)
+    setModalOpen(true)
+  }
+
   async function marcarChegada(ag: AgendamentoListItem, e: React.MouseEvent) {
     e.stopPropagation()
     const novoStatus = ag.status === 'AGUARDANDO' ? 'CONFIRMADO' : 'AGUARDANDO'
@@ -670,6 +686,19 @@ export default function AgendamentoPage() {
               {v}
             </div>
           ))}
+
+          <button
+            onClick={() => setBuscaPacienteOpen(true)}
+            style={{
+              width: '100%', marginTop: 6,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              padding: '7px 10px', fontSize: 11.5, fontWeight: 600,
+              background: 'none', border: '1px dashed var(--cor-primaria)', borderRadius: 5,
+              color: 'var(--cor-primaria)', cursor: 'pointer',
+            }}
+          >
+            <Search size={12} /> Consultar Paciente
+          </button>
         </div>
 
         {/* Logo da empresa (cadastro > Dados Gerais) — empurrada pro rodapé via marginTop: auto */}
@@ -1384,7 +1413,7 @@ export default function AgendamentoPage() {
                         Cancelar
                       </button>
                       <button
-                        onClick={e => abrirEditar(ag, e)}
+                        onClick={e => abrirNovoHorario(ag, e)}
                         style={{
                           display: 'flex', alignItems: 'center', gap: 4,
                           padding: '4px 10px', borderRadius: 20,
@@ -1728,6 +1757,19 @@ export default function AgendamentoPage() {
         agendamento={editAg}
         dataHoraInicio={slotInicio}
         profissionalPre={profissionais.find(p => p.id === profFiltro) ?? null}
+      />
+
+      <NovoHorarioModal
+        open={!!novoHorarioAg}
+        agendamento={novoHorarioAg}
+        onClose={() => setNovoHorarioAg(null)}
+        onSaved={() => { carregar(); carregarMes(); carregarConfirmar() }}
+      />
+
+      <BuscaPacienteAgendamentosModal
+        open={buscaPacienteOpen}
+        onClose={() => setBuscaPacienteOpen(false)}
+        onAbrirAgendamento={abrirAgendamentoDaConsultaPaciente}
       />
 
       <PacienteCheckInFormModal
