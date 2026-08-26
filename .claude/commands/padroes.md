@@ -8,6 +8,8 @@ Ao trabalhar neste projeto, siga SEMPRE os padrões abaixo sem precisar ser lemb
 
 Todas as respostas ao usuário (texto de conversa, mensagens de commit quando não especificado de outra forma, resumos, explicações) devem ser em **português do Brasil**, independentemente do idioma da pergunta. Comentários e nomes de variáveis no código seguem o idioma já usado no arquivo (geralmente português, ver convenções do projeto).
 
+**Inclui saídas de skills/subagentes invocados** (ex: `/code-review`, `security-review`, relatórios de `ReportFindings`): mesmo que o skill gere o relatório internamente em inglês (é o padrão de vários skills embutidos), o resumo apresentado ao usuário deve ser traduzido/reescrito em português do Brasil antes de ser exibido — nunca colar o relatório em inglês diretamente na resposta.
+
 ---
 
 ## 1. Encoding do banco de dados: LATIN1
