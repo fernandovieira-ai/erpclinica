@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 import { agendamentoSchema } from '@/lib/validators/agendamento.schema'
+import { registrarAuditoria } from '@/lib/auditoria'
 
 type Params = { params: { id: string } }
 
@@ -44,11 +45,20 @@ export async function PUT(req: NextRequest, { params }: Params) {
   const body = agendamentoSchema.safeParse(await req.json())
   if (!body.success) return NextResponse.json({ erro: body.error.flatten() }, { status: 400 })
 
-  const d      = body.data
-  const client = await getDb(session.database_name).connect()
+  const d  = body.data
+  const db = getDb(session.database_name)
+  const client = await db.connect()
+
+  let antesRows: Record<string, unknown>[] = []
+  let depoisRows: Record<string, unknown>[] = []
 
   try {
     await client.query('BEGIN')
+
+    antesRows = (await client.query(
+      `SELECT * FROM tab_agendamento WHERE id = $1 AND empresa_id = $2 FOR UPDATE`,
+      [params.id, session.empresa_id_ativa],
+    )).rows
 
     // Verificar conflito excluindo o próprio registro (dentro da transação para evitar race condition)
     const { rows: conflito } = await client.query(
@@ -67,12 +77,13 @@ export async function PUT(req: NextRequest, { params }: Params) {
       )
     }
 
-    const { rowCount } = await client.query(
+    depoisRows = (await client.query(
       `UPDATE tab_agendamento SET
          paciente_id=$1, profissional_id=$2, tipo_id=$3, especialidade_id=$4,
          data_hora_inicio=$5, data_hora_fim=$6, status=$7, motivo=$8, observacao=$9,
          categoria_id=$10
-       WHERE id=$11 AND empresa_id=$12`,
+       WHERE id=$11 AND empresa_id=$12
+       RETURNING *`,
       [
         d.paciente_id, d.profissional_id,
         d.tipo_id ?? null, d.especialidade_id ?? null,
@@ -81,11 +92,20 @@ export async function PUT(req: NextRequest, { params }: Params) {
         d.categoria_id ?? null,
         params.id, session.empresa_id_ativa,
       ],
-    )
+    )).rows
 
     await client.query('COMMIT')
 
-    if (!rowCount) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
+    if (!depoisRows.length) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
+
+    await registrarAuditoria(db, session, {
+      tabela: 'tab_agendamento',
+      registroId: Number(params.id),
+      acao: 'UPDATE',
+      dadosAntes: antesRows[0] ?? null,
+      dadosDepois: depoisRows[0],
+    })
+
     return NextResponse.json({ ok: true })
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {})
@@ -122,12 +142,13 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     extraSql = ', horario_inicio_atendimento = COALESCE(horario_inicio_atendimento, NOW())'
   }
 
-  const { rowCount } = await db.query(
-    `UPDATE tab_agendamento SET status=$1${extraSql} WHERE id=$2 AND empresa_id=$3`,
+  const { rows } = await db.query(
+    `UPDATE tab_agendamento SET status=$1${extraSql} WHERE id=$2 AND empresa_id=$3 RETURNING *`,
     [status, params.id, session.empresa_id_ativa],
   )
 
-  if (!rowCount) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
+  if (!rows.length) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
+  await registrarAuditoria(db, session, { tabela: 'tab_agendamento', registroId: Number(params.id), acao: 'UPDATE', dadosDepois: rows[0] })
   return NextResponse.json({ ok: true })
 }
 
@@ -136,11 +157,12 @@ export async function DELETE(req: NextRequest, { params }: Params) {
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
 
   const db = getDb(session.database_name)
-  const { rowCount } = await db.query(
-    `DELETE FROM tab_agendamento WHERE id=$1 AND empresa_id=$2`,
+  const { rows } = await db.query(
+    `DELETE FROM tab_agendamento WHERE id=$1 AND empresa_id=$2 RETURNING *`,
     [params.id, session.empresa_id_ativa],
   )
 
-  if (!rowCount) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
+  if (!rows.length) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
+  await registrarAuditoria(db, session, { tabela: 'tab_agendamento', registroId: Number(params.id), acao: 'DELETE', dadosAntes: rows[0] })
   return NextResponse.json({ ok: true })
 }

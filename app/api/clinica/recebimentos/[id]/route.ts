@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
+import { registrarAuditoria } from '@/lib/auditoria'
 
 interface EstornoPayload {
   motivo_estorno: string
@@ -61,7 +62,8 @@ export async function DELETE(
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
 
-  const client = await getDb(session.database_name).connect()
+  const db     = getDb(session.database_name)
+  const client = await db.connect()
 
   try {
     const { id } = await params
@@ -172,6 +174,21 @@ export async function DELETE(
     }
 
     await client.query('COMMIT')
+
+    await registrarAuditoria(db, session, {
+      tabela: 'tab_recebimento_consulta',
+      registroId: recebimentoId,
+      acao: 'DELETE',
+      dadosAntes: {
+        motivo_estorno: payload.motivo_estorno,
+        batch_agendamento_id: batchAgendamentoId,
+        recebimentos_estornados: todosRecIds,
+        titulos_receber_estornados: tituloIds,
+        movimentos_caixa_estornados: allMovCaixaIds,
+        movimentos_banco_estornados: allMovBancoIds,
+        vendas_cartao_estornadas: vendaCartaoIds,
+      },
+    })
 
     return NextResponse.json({
       sucesso: true,
