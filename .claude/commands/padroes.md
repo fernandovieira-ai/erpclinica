@@ -541,7 +541,7 @@ Botão "Criar Atestado" em `HistoricoClinico.tsx`, ao lado de "Editar prontuári
 - Mapeamento completo grupo→itens está no próprio script (fonte da verdade pra reabrir/ajustar) — não duplicar a lista aqui, ela desatualiza.
 
 **Deixado de fora de propósito — retomar depois:**
-1. **Repasse médico por percentual** (Jose Vicente, Joao Antonio, Wendell, Elio Neto e demais médicos não-sócios; regra: sócio fica com 100% da consulta, médico não-sócio 70%/clínica 30%, exame 35% pro médico executante/65% clínica) — cliente pediu explicitamente pra deixar de fora deste cadastro e tratar "em outra parte", porque o cálculo do rateio já existe (`tab_agendamento_tipo.percentual_profissional`, ver §22 sobre solicitante/executor). **Gap real identificado:** hoje esse percentual é definido por tipo de atendimento, igual pra todo mundo — não diferencia sócio de não-sócio pro mesmo tipo de atendimento. Pra automatizar o repasse de verdade (e não só categorizar lançamento manual) falta resolver isso: ou `ind_socio` em `tab_pessoa` + regra fixa (sócio=100%, ignora o percentual cadastrado), ou tabela nova de percentual por par profissional+tipo_atendimento (mais flexível). Ainda não decidido qual caminho.
+1. **Repasse médico por percentual** — ✅ **RESOLVIDO 2026-08-27, ver §25** (tabela `tab_profissional_tipo_percentual` por par profissional×tipo; aba "Atendimentos" no cadastro do profissional). Falta só o relatório mensal de repasse (fase 2 na §25).
 2. **Fornecedores recorrentes** (Amazon, Mercado Livre, contabilidade, assessoria jurídica, Unimed, etc.) — ainda não cadastrados como `tab_pessoa` (`ind_fornecedor=true`). Sem isso, os lançamentos de despesa não têm o fornecedor vinculado, só o tipo de despesa.
 3. **Relatório de DRE gerencial** — não existe rota que agrupe `tab_despesa`/`tab_titulo_pagar` por essa hierarquia de `tab_tipo_despesa` (o Fluxo de Caixa Gerencial atual agrupa por origem do módulo, não por tipo de despesa). É essa rota que reproduziria a planilha (totais por grupo + detalhe por item, igual ao resumo que a planilha do cliente já tem).
 4. **Cartão de crédito corporativo como forma de pagamento de despesa** — não precisa de módulo novo (o módulo `tab_venda_cartao`/fatura existente é pra venda/recebimento, não serve aqui). Só lançar `tab_despesa`/`tab_titulo_pagar` normal com `cod_tipo_cobranca = CARTÃO DE CRÉDITO`; a "fatura" da planilha é só o agrupamento por mês de competência no relatório do item 3.
@@ -579,3 +579,32 @@ Botão "Criar Atestado" em `HistoricoClinico.tsx`, ao lado de "Editar prontuári
 - Falta índice em `usuario_id` — só adicionar quando existir uma tela/consulta por "o que esse usuário fez" (hoje a tela filtra por módulo/ação/período/nome, não por usuário específico via índice).
 - `CAMPOS_SENSIVEIS_TITULO` em `log-auditoria/route.ts` é uma lista fixa — se o schema de título ganhar outro campo sensível de boleto no futuro, precisa lembrar de atualizar essa lista.
 - Enquanto `DEV_NO_AUTH` estiver ativo (§17), todo registro fica em nome de `usuario_id=1`/`nome='Dev'` — passa a refletir usuários reais quando o login for reativado.
+
+---
+
+## 25. Repasse do profissional por (profissional × tipo) + tipos que o profissional realiza (implementado 2026-08-27)
+
+**Resolve o item 1 da PENDÊNCIA §23.** O percentual de repasse deixou de ser por tipo de atendimento (`tab_agendamento_tipo.percentual_profissional` — **coluna removida** na migração 55) e passou a ser por par **(profissional × tipo)**.
+
+**`tab_profissional_tipo_percentual` (migração `novos/55_...`, já aplicada no `hiitcor` com `user_dba`) tem DUPLO papel — não separar em duas tabelas/colunas:**
+1. **Linha existe = o profissional realiza aquele tipo de atendimento.** Sem linha = não realiza.
+2. `percentual_profissional` (NOT NULL, 0–100) = a parte do valor recebido que fica com esse profissional nesse tipo; a clínica fica com o resto.
+
+- Migração **semeou** todo par (profissional `ativo=true` × tipo) com o valor que estava no tipo (consulta/retorno=100, exames=35). Profissional **inativo** não recebeu linhas — se for reativado, começa sem atendimento nenhum habilitado até configurar.
+- Snapshot congelado em `tab_recebimento_consulta`: `percentual_profissional`, `valor_profissional`, `valor_clinica` — gravado no `POST /api/clinica/recebimentos` **depois** de resolver executor/placeholder (§22: o executor é quem recebe o repasse do exame). `reclassificar` só copia o snapshot antigo. **Recebimentos anteriores à migração 55 ficam com snapshot NULL** — o Fechamento Diário mostra `repasse=0 / clínica=total` pra eles (fallback), e o relatório da fase 2 **não deve** recalcular retroativo com a config atual (estaria errado) — mostrar "sem rateio".
+- Resolver: `lib/clinica/repasse.ts` — `percentualRepasse(db, profId, tipoId)` retorna **100 como fallback** se não houver linha (então um recebimento de um par não-configurado paga 100% silenciosamente); `dividirRepasse(total, pct)` (soma sempre = total).
+- `GET /api/clinica/profissionais` expõe `tipo_ids: number[]`; `AgendamentoModal` filtra o dropdown de tipo por esse array (dropdown travado até escolher o profissional; ao editar, injeta o tipo já gravado mesmo se depois foi desabilitado; trocar de profissional limpa o tipo se ele não fizer aquele).
+- `PUT /api/clinica/profissionais/[id]/percentuais` recebe o **conjunto completo** de tipos habilitados — tipo ausente do payload é DELETADO. UI: aba **"Atendimentos"** no cadastro da pessoa (`PessoaFormPage.tsx`, só se `ind_profissional`), checkbox "Realiza" + % por tipo + botões "Marcar/Desmarcar todos".
+- Visualização fase 1: colunas Repasse / Clínica por profissional no Fechamento Diário (`por_profissional` + `total_repasse`/`total_clinica` nos KPIs).
+
+**PRÓXIMO AJUSTE — fase 2: relatório "Repasse Médico" em Gerencial** (filtro período + profissional; substitui a planilha do cliente). Antes de começar, resolver:
+- **Falta índice** pra consulta "repasse de um médico no mês": hoje seria `tab_recebimento_consulta` JOIN `tab_agendamento` por `profissional_id`, e não há índice em `tab_recebimento_consulta(agendamento_id)`.
+- Tratar recebimentos pré-migração 55 (snapshot NULL) como "sem rateio".
+- Modelo visual pronto: as colunas Repasse/Clínica do Fechamento Diário.
+
+**Achados de segurança (não corrigidos — decidir na fase 2):**
+- `PUT .../percentuais` **não checa `perfil` e não passa pelo log de auditoria (§24)** — qualquer usuário autenticado altera % de repasse (dado financeiro) e a lista de atendimentos do médico. Consistente com as outras rotas de config de clínica, mas essa mexe em dinheiro. Exigir `perfil==='admin'` ou instrumentar `registrarAuditoria` na `tab_profissional_tipo_percentual`.
+- Filtro de tipo por profissional é **só client-side** — `POST /api/clinica/agendamentos` não valida que `tipo_id` está na lista do profissional. Integridade de dados, não brecha de auth. Validar no POST se virar requisito.
+- `medico_executor_id` do payload de recebimento segue sem validação de empresa (pré-existente, §22) — o cálculo de repasse herda isso; impacto novo nulo (fallback 100%, id já era gravado antes).
+
+**Achado de desempenho (não corrigido):** `POST /api/clinica/recebimentos` chama `percentualRepasse` **1 query por item, sequencial, dentro da transação**. Lotes pequenos (1-5) hoje. Se lista de espera com muitos itens virar comum, trocar por 1 query só buscando todos os pares antes do loop.
