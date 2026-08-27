@@ -14,7 +14,7 @@ import {
   ListTree, MinusCircle, PlusCircle, CalendarClock,
   Timer, RefreshCcw,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Session } from '@/types/session'
 
 interface Props { session: Session }
@@ -104,6 +104,15 @@ export default function Sidebar({ session }: Props) {
       }))
       .map(item => item.label),
   )
+  const [logoEmpresa, setLogoEmpresa] = useState<'loading' | 'ok' | 'error'>('loading')
+  const logoRef = useRef<HTMLImageElement>(null)
+
+  // A logo pode terminar de carregar antes da hidratacao (vem no HTML do SSR),
+  // caso em que o onLoad nunca dispara — checa o estado ja concluido no mount.
+  useEffect(() => {
+    const img = logoRef.current
+    if (img?.complete) setLogoEmpresa(img.naturalWidth > 0 ? 'ok' : 'error')
+  }, [])
 
   function toggleGroup(label: string) {
     setOpen(prev =>
@@ -135,9 +144,26 @@ export default function Sidebar({ session }: Props) {
 
   return (
     <aside className="sidebar">
-      {/* Logo */}
+      {/* Logo — da empresa quando cadastrada (cadastro > Dados Gerais), senão do sistema */}
       <div className="sidebar-logo">
-        <img src="/brand/logo-horizontal-branca.svg" alt="VitaRF" height={28} style={{ display: 'block' }} />
+        {logoEmpresa !== 'error' && (
+          <span
+            className="sidebar-logo-chip"
+            style={{ display: logoEmpresa === 'ok' ? 'inline-flex' : 'none' }}
+          >
+            <img
+              ref={logoRef}
+              src="/api/cadastro/empresas/logo"
+              alt=""
+              onLoad={() => setLogoEmpresa('ok')}
+              onError={() => setLogoEmpresa('error')}
+              style={{ maxHeight: 44, maxWidth: 176, objectFit: 'contain', display: 'block' }}
+            />
+          </span>
+        )}
+        {logoEmpresa !== 'ok' && (
+          <img src="/brand/logo-horizontal-branca.svg" alt="VitaRF" height={28} style={{ display: 'block' }} />
+        )}
       </div>
 
       {/* Nav */}
