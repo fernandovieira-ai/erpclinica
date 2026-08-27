@@ -548,7 +548,7 @@ Botão "Criar Atestado" em `HistoricoClinico.tsx`, ao lado de "Editar prontuári
 
 ---
 
-## 24. Log de auditoria genérico (fase 1: usuários/permissões + financeiro, implementado 2026-08-27)
+## 24. Log de auditoria genérico (fases 1-3: usuários/permissões, financeiro, clínica e tela de consulta — implementado 2026-08-27)
 
 **Objetivo:** o sistema não tinha trilha de auditoria — `created_by` existe na criação de alguns registros, mas edição e exclusão não deixavam rastro de quem fez. Decisão: tabela genérica de auditoria (não `updated_by` por tabela), porque captura histórico completo com snapshot antes/depois em JSONB e cobre UPDATE **e** DELETE com a mesma estrutura.
 
@@ -566,7 +566,16 @@ Botão "Criar Atestado" em `HistoricoClinico.tsx`, ao lado de "Editar prontuári
 
 **Armadilha encontrada durante o teste manual (não é bug da auditoria, é comportamento pré-existente das rotas):** `titulos-pagar`/`titulos-receber` (e as demais rotas financeiras) fazem PATCH **full-replace** — campo omitido no body vira `NULL` na coluna, não é ignorado. Testando manualmente, um PATCH sem `despesa_id`/`receita_id` no body zerou esse vínculo de verdade (o título ficou "órfão", sem cascade de exclusão junto com a despesa-pai). Ao testar (ou integrar no front), sempre reenviar o objeto **completo** — buscar via GET antes de montar o PATCH, nunca só os campos que mudaram.
 
-**Pendências conhecidas, não bloqueantes (ver revisão de segurança/performance de 2026-08-27):**
-- Quando existir endpoint de leitura do log, filtrar `linha_digitavel`/`codigo_barras`/`nosso_numero` de `tab_titulo_receber` do JSONB antes de servir ao front (dado de boleto, não deveria vazar pra quem só tem acesso ao log).
-- Falta índice em `usuario_id` — só adicionar quando existir uma tela/consulta por "o que esse usuário fez".
+**Fase 2 — clínica (agendamentos e recebimentos, 2026-08-27):** mesmo padrão da fase 1, aplicado em `app/api/clinica/agendamentos/[id]/route.ts` (PUT completo com transação+`FOR UPDATE`, PATCH de status, DELETE) e `app/api/clinica/recebimentos/[id]/route.ts`. Recebimento **não tem PATCH de edição** — só POST (criação, já tem `created_by`, fora de escopo) e o `DELETE`, que na verdade é um **estorno em lote** (reverte todos os recebimentos/títulos/movimentos/venda-cartão do mesmo `batch_agendamento_id`, não só a linha clicada). Decisão: uma única linha de auditoria por estorno (`tabela: 'tab_recebimento_consulta'`, `registroId` = o recebimento clicado), com `dadosAntes` resumindo tudo que foi afetado (`recebimentos_estornados`, `titulos_receber_estornados`, `movimentos_caixa_estornados`, `movimentos_banco_estornados`, `vendas_cartao_estornadas`) — em vez de uma linha por registro revertido (mais simples de ler, e resolve de graça uma lacuna real: **`motivo_estorno` era exigido no payload mas nunca era salvo em lugar nenhum antes disso**, só validado e descartado).
+
+**Fase 3 — tela de consulta em Configurações (2026-08-27):** `app/(erp)/configuracoes/log-auditoria/page.tsx` + `app/api/configuracoes/log-auditoria/route.ts` (GET paginado, filtros de módulo/ação/período/usuário) + `components/configuracoes/DetalheAuditoriaModal.tsx` (mostra antes/depois lado a lado, destaca o que mudou) + `types/log-auditoria.types.ts`. Item de menu abaixo de "Empresas" em `components/layout/Sidebar.tsx`.
+- **Restrita a `perfil === 'admin'`** — tanto a API (403) quanto a página (bloqueio visual "Acesso restrito", mesmo padrão de `app/(erp)/usuarios/page.tsx`). A API é a barreira real; a UI é só cosmética.
+- **Resolvida a pendência da fase 1**: a API filtra `linha_digitavel`/`codigo_barras`/`nosso_numero` do JSONB antes de responder, para `tab_titulo_pagar` **e** `tab_titulo_receber` (a fase 1 tinha citado só titulo_receber, mas titulo_pagar tem os mesmos campos de boleto).
+- **Filtros só valem depois de clicar em "Filtrar"** (ou Enter) — não a cada tecla/seleção. Motivo: a tabela de log só cresce, então buscar a cada mudança de filtro (ou sem filtro nenhum) bateria o banco sem necessidade. Estado dividido em `rascunho` (o que o usuário está digitando) e `filtros` (o que foi de fato aplicado, do qual o fetch depende) — paginação continua instantânea, não exige clicar em Filtrar de novo.
+- **Padrão de período: últimos 7 dias por padrão** (no primeiro carregamento e no botão "Limpar") — evita consulta sem limite de data logo na abertura da tela.
+- **Armadilha de fuso horário ao formatar datas dentro do snapshot JSON** (`DetalheAuditoriaModal.tsx`): colunas `DATE` puras (ex: `data_vencimento`) chegam do driver `pg` como timestamp `T00:00:00.000Z` — convertê-las direto pro fuso local com `toLocaleDateString` pode "voltar" um dia (mesma raiz do problema já documentado em memória "pg DATE precisa de TO_CHAR"). A função `formatarValor` detecta isso: se a hora for exatamente `00:00:00Z`, extrai o `dd/mm/aaaa` direto da string (sem conversão de fuso); senão, usa `toLocaleString('pt-BR')` normalmente (formato `dd/mm/aaaa, HH:mm:ss`).
+
+**Pendências conhecidas, não bloqueantes (ver revisões de segurança/performance de 2026-08-27):**
+- Falta índice em `usuario_id` — só adicionar quando existir uma tela/consulta por "o que esse usuário fez" (hoje a tela filtra por módulo/ação/período/nome, não por usuário específico via índice).
+- `CAMPOS_SENSIVEIS_TITULO` em `log-auditoria/route.ts` é uma lista fixa — se o schema de título ganhar outro campo sensível de boleto no futuro, precisa lembrar de atualizar essa lista.
 - Enquanto `DEV_NO_AUTH` estiver ativo (§17), todo registro fica em nome de `usuario_id=1`/`nome='Dev'` — passa a refletir usuários reais quando o login for reativado.

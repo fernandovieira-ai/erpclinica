@@ -86,6 +86,7 @@ const NAV: NavItem[] = [
     label: 'Configurações', icon: <Settings size={16} />,
     children: [
       { label: 'Empresas', href: '/configuracoes/empresas', icon: <Building2 size={14} /> },
+      { label: 'Log de Auditoria', href: '/configuracoes/log-auditoria', icon: <ClipboardList size={14} /> },
     ],
   },
   { label: 'Usuários',      icon: <Users size={16} />,   href: '/usuarios' },
