@@ -213,7 +213,7 @@ export default function Sidebar({ session }: Props) {
       </nav>
 
       {/* Rodapé — usuário + logout */}
-      <div style={{ borderTop: '0.5px solid var(--sidebar-border)', padding: '12px 8px' }}>
+      <div className="sidebar-footer" style={{ borderTop: '0.5px solid var(--sidebar-border)', padding: '12px 8px' }}>
         <div style={{ padding: '8px 12px', marginBottom: 4 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--sidebar-fg)' }}>
             {session.nome}

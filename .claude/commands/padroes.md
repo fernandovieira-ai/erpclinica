@@ -637,3 +637,12 @@ Duas exibições distintas da logo, com fontes e endpoints diferentes — **não
 **Não implementado / decisões conscientes:**
 - Nenhuma das rotas faz downscale da imagem — a logo do `hiitcor` tem ~150KB (data URL). Aceitável: no login só carrega quando um slug válido é digitado (cache 600s); na sidebar é exibida em todas as telas mas com cache de 300s e agora é de fato usada (diferente do cenário da §19a). Se virar problema, redimensionar no endpoint.
 - A rota pública de branding, como a `/api/auth/login`, permite descobrir se um slug existe pela latência (query real vs. rejeição por regex) — não pelo status code. Não endurecido; consistente com o que o login já expõe.
+
+## 27. Layout da sidebar — rodapé (usuário + Sair) sempre visível (ajustado 2026-08-27)
+
+`.sidebar` ([app/globals.css](app/globals.css)) é `display: flex; flex-direction: column` com 3 filhos: `.sidebar-logo`, `<nav class="sidebar-section">` e o rodapé `.sidebar-footer` (nome do usuário + botão **Sair**). Vale para `Sidebar.tsx` e `AdminSidebar.tsx` (mesma marcação).
+
+- **Regra:** o scroll fica **só no `<nav>`**, nunca no `<aside>`. `.sidebar` usa `height: 100dvh` + `overflow: hidden`; `.sidebar-logo` e `.sidebar-footer` são `flex-shrink: 0`; `.sidebar-section` é `flex: 1; min-height: 0; overflow-y: auto` (o `min-height: 0` é o que permite o nav encolher e rolar dentro do flex).
+- **Armadilha corrigida:** antes `.sidebar` era `min-height: 100vh` + `overflow-y: auto` no aside inteiro. Com todos os grupos de menu expandidos o `<nav>` crescia além da viewport e empurrava o rodapé pra baixo da dobra — o botão **Sair** ficava inacessível sem rolar a barra toda. Não usar `min-height` nem scroll no `<aside>`.
+- Scrollbar fina customizada no `.sidebar-section` (`scrollbar-width: thin` + `::-webkit-scrollbar` 6px, thumb em `--sidebar-border`).
+- Qualquer filho novo direto do `.sidebar` que deva ficar fixo (topo ou base) precisa de `flex-shrink: 0`.

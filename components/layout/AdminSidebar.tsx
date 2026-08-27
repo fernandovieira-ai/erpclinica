@@ -43,7 +43,7 @@ export default function AdminSidebar({ admin }: Props) {
       </nav>
 
       {/* Rodapé */}
-      <div style={{ borderTop: '0.5px solid rgba(255,255,255,0.06)', padding: '12px 8px' }}>
+      <div className="sidebar-footer" style={{ borderTop: '0.5px solid rgba(255,255,255,0.06)', padding: '12px 8px' }}>
         <div style={{ padding: '8px 12px', marginBottom: 4 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: '#F9FAFB' }}>{admin.nome}</div>
           <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>{admin.email}</div>
