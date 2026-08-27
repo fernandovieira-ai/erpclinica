@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 import { tituloReceberSchema } from '@/lib/validators/titulo-receber.schema'
+import { registrarAuditoria } from '@/lib/auditoria'
 
 // GET /api/financeiro/titulos-receber/[id]
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
@@ -59,10 +60,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (!STATUS_TITULO_RECEBER.includes(raw.status)) {
       return NextResponse.json({ erro: 'Status inválido' }, { status: 400 })
     }
-    await db.query(
-      `UPDATE tab_titulo_receber SET status=$1, updated_at=NOW() WHERE id=$2 AND empresa_id=$3`,
+    const { rows } = await db.query(
+      `UPDATE tab_titulo_receber SET status=$1, updated_at=NOW() WHERE id=$2 AND empresa_id=$3 RETURNING status`,
       [raw.status, params.id, session.empresa_id_ativa],
     )
+    if (rows.length) {
+      await registrarAuditoria(db, session, { tabela: 'tab_titulo_receber', registroId: Number(params.id), acao: 'UPDATE', dadosDepois: rows[0] })
+    }
     return NextResponse.json({ ok: true })
   }
 
@@ -72,8 +76,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const d  = body.data
   const dt = (v?: string | null) => (v && v.trim() ? v : null)
 
-  await db.query(
-    `UPDATE tab_titulo_receber SET
+  const client = await db.connect()
+  let antesRows: Record<string, unknown>[]
+  let depoisRows: Record<string, unknown>[]
+  try {
+    await client.query('BEGIN')
+
+    antesRows = (await client.query(
+      `SELECT * FROM tab_titulo_receber WHERE id = $1 AND empresa_id = $2 FOR UPDATE`,
+      [params.id, session.empresa_id_ativa],
+    )).rows
+
+    depoisRows = (await client.query(
+      `UPDATE tab_titulo_receber SET
        pessoa_id          = $1,
        tipo_receita_id    = $2,
        cod_tipo_cobranca  = $3,
@@ -99,7 +114,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
        nosso_numero       = $23,
        observacao         = $24,
        updated_at         = NOW()
-     WHERE id = $25 AND empresa_id = $26`,
+     WHERE id = $25 AND empresa_id = $26
+     RETURNING *`,
     [
       d.pessoa_id,
       d.tipo_receita_id   ?? null,
@@ -128,7 +144,25 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       params.id,
       session.empresa_id_ativa,
     ],
-  )
+    )).rows
+
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+
+  if (depoisRows.length) {
+    await registrarAuditoria(db, session, {
+      tabela: 'tab_titulo_receber',
+      registroId: Number(params.id),
+      acao: 'UPDATE',
+      dadosAntes: antesRows[0] ?? null,
+      dadosDepois: depoisRows[0],
+    })
+  }
 
   return NextResponse.json({ ok: true })
 }
@@ -142,9 +176,9 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   const client = await db.connect()
 
   try {
-    // Verifica existência antes de apagar
+    // Verifica existência antes de apagar (linha completa vira snapshot da auditoria)
     const { rows } = await client.query(
-      `SELECT id FROM tab_titulo_receber WHERE id=$1 AND empresa_id=$2`,
+      `SELECT * FROM tab_titulo_receber WHERE id=$1 AND empresa_id=$2`,
       [params.id, session.empresa_id_ativa],
     )
     if (!rows.length) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
@@ -161,6 +195,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     )
     await client.query('COMMIT')
 
+    await registrarAuditoria(db, session, { tabela: 'tab_titulo_receber', registroId: Number(params.id), acao: 'DELETE', dadosAntes: rows[0] })
     return NextResponse.json({ ok: true })
   } catch (error) {
     try { await client.query('ROLLBACK') } catch { /* já finalizada */ }

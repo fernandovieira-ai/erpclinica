@@ -545,3 +545,28 @@ Botão "Criar Atestado" em `HistoricoClinico.tsx`, ao lado de "Editar prontuári
 2. **Fornecedores recorrentes** (Amazon, Mercado Livre, contabilidade, assessoria jurídica, Unimed, etc.) — ainda não cadastrados como `tab_pessoa` (`ind_fornecedor=true`). Sem isso, os lançamentos de despesa não têm o fornecedor vinculado, só o tipo de despesa.
 3. **Relatório de DRE gerencial** — não existe rota que agrupe `tab_despesa`/`tab_titulo_pagar` por essa hierarquia de `tab_tipo_despesa` (o Fluxo de Caixa Gerencial atual agrupa por origem do módulo, não por tipo de despesa). É essa rota que reproduziria a planilha (totais por grupo + detalhe por item, igual ao resumo que a planilha do cliente já tem).
 4. **Cartão de crédito corporativo como forma de pagamento de despesa** — não precisa de módulo novo (o módulo `tab_venda_cartao`/fatura existente é pra venda/recebimento, não serve aqui). Só lançar `tab_despesa`/`tab_titulo_pagar` normal com `cod_tipo_cobranca = CARTÃO DE CRÉDITO`; a "fatura" da planilha é só o agrupamento por mês de competência no relatório do item 3.
+
+---
+
+## 24. Log de auditoria genérico (fase 1: usuários/permissões + financeiro, implementado 2026-08-27)
+
+**Objetivo:** o sistema não tinha trilha de auditoria — `created_by` existe na criação de alguns registros, mas edição e exclusão não deixavam rastro de quem fez. Decisão: tabela genérica de auditoria (não `updated_by` por tabela), porque captura histórico completo com snapshot antes/depois em JSONB e cobre UPDATE **e** DELETE com a mesma estrutura.
+
+**Arquivos:**
+- `novos/54_log_auditoria.sql` — `tab_log_auditoria` (`empresa_id` nullable — ações em `tab_usuario` não têm empresa única —, `usuario_id`, `usuario_nome` denormalizado tipo `created_by`, `tabela`, `registro_id` INT, `acao` CHECK IN INSERT/UPDATE/DELETE, `dados_antes`/`dados_depois` JSONB, índices em `(tabela, registro_id)` e `(empresa_id, created_at DESC)`). GRANT incluído na mesma migration (§8). **Já aplicada no banco remoto compartilhado (`hiitcor`)** em 2026-08-27.
+- `lib/auditoria.ts` — `registrarAuditoria(db, session, params)`. **Nunca lança exceção** (try/catch interno, só `console.error`) — logging é best-effort e não pode derrubar a ação principal do usuário.
+- Instrumentado em `app/api/cadastro/usuarios/[id]/route.ts` e `app/api/financeiro/{despesas,receitas,titulos-pagar,titulos-receber}/[id]/route.ts` (PATCH e DELETE). Rotas de criação (POST) e o fechamento diário (que já tem log próprio em `tab_reclassificacao_recebimento`, §17/§18) ficaram de fora, fora de escopo desta fase.
+
+**Padrão de instrumentação (repetir em qualquer PATCH/DELETE novo que precise de auditoria):**
+- **DELETE**: trocar `DELETE ... WHERE ...` por `... RETURNING *` — captura a linha apagada numa query só, vira `dadosAntes`.
+- **PATCH com `{status}` ou `{ativo}` isolado (atalho)**: `RETURNING` no UPDATE pra pegar o valor novo, loga só `dadosDepois` (sem SELECT extra) — suficiente pra saber quem mudou o quê.
+- **PATCH completo**: o SELECT de "antes" e o UPDATE (`RETURNING *`) **sempre dentro da mesma transação** (`client.connect()` + `BEGIN`/`COMMIT`), com `FOR UPDATE` no SELECT — nunca como duas queries soltas no `Pool`. Motivo: sem isso há uma janela real entre o SELECT e o UPDATE onde outra conexão pode alterar a linha, e o `dados_antes` gravado não reflete o estado imediatamente anterior (achado em revisão de segurança/performance de 2026-08-27, aplicado retroativamente nas 5 rotas da fase 1 — inclusive nas que já usavam transação pro próprio UPDATE, porque o SELECT de antes tinha ficado fora do `BEGIN`).
+- A chamada a `registrarAuditoria` roda **depois do `COMMIT`**, usando o `Pool` (`db`), não o `client` da transação — como nunca lança erro, não precisa estar dentro dela.
+- Nunca incluir `senha_hash` (ou equivalente) no snapshot — em `tab_usuario`, `antes`/`depois` usam lista explícita de colunas, nunca `SELECT *`/`RETURNING *`.
+
+**Armadilha encontrada durante o teste manual (não é bug da auditoria, é comportamento pré-existente das rotas):** `titulos-pagar`/`titulos-receber` (e as demais rotas financeiras) fazem PATCH **full-replace** — campo omitido no body vira `NULL` na coluna, não é ignorado. Testando manualmente, um PATCH sem `despesa_id`/`receita_id` no body zerou esse vínculo de verdade (o título ficou "órfão", sem cascade de exclusão junto com a despesa-pai). Ao testar (ou integrar no front), sempre reenviar o objeto **completo** — buscar via GET antes de montar o PATCH, nunca só os campos que mudaram.
+
+**Pendências conhecidas, não bloqueantes (ver revisão de segurança/performance de 2026-08-27):**
+- Quando existir endpoint de leitura do log, filtrar `linha_digitavel`/`codigo_barras`/`nosso_numero` de `tab_titulo_receber` do JSONB antes de servir ao front (dado de boleto, não deveria vazar pra quem só tem acesso ao log).
+- Falta índice em `usuario_id` — só adicionar quando existir uma tela/consulta por "o que esse usuário fez".
+- Enquanto `DEV_NO_AUTH` estiver ativo (§17), todo registro fica em nome de `usuario_id=1`/`nome='Dev'` — passa a refletir usuários reais quando o login for reativado.

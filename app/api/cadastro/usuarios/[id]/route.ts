@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 import { usuarioUpdateSchema } from '@/lib/validators/usuario.schema'
+import { registrarAuditoria } from '@/lib/auditoria'
 
 // GET /api/cadastro/usuarios/[id]
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
@@ -45,8 +46,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (id === session.usuario_id && json.ativo === false) {
       return NextResponse.json({ erro: 'Você não pode desativar seu próprio usuário' }, { status: 400 })
     }
-    const result = await db.query(`UPDATE tab_usuario SET ativo=$1, updated_at=NOW() WHERE id=$2`, [json.ativo, id])
+    const result = await db.query(`UPDATE tab_usuario SET ativo=$1, updated_at=NOW() WHERE id=$2 RETURNING ativo`, [json.ativo, id])
     if (result.rowCount === 0) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
+    await registrarAuditoria(db, session, { tabela: 'tab_usuario', registroId: id, acao: 'UPDATE', dadosDepois: result.rows[0] })
     return NextResponse.json({ ok: true })
   }
 
@@ -68,6 +70,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const client = await db.connect()
   try {
     await client.query('BEGIN')
+
+    const { rows: antesRows } = await client.query(
+      `SELECT nome, email, perfil, trocar_senha, ativo, profissional_id FROM tab_usuario WHERE id = $1 FOR UPDATE`,
+      [id],
+    )
 
     if (d.senha) {
       const senhaHash = await bcrypt.hash(d.senha, 10)
@@ -98,6 +105,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
 
     await client.query('COMMIT')
+    await registrarAuditoria(db, session, {
+      tabela: 'tab_usuario',
+      registroId: id,
+      acao: 'UPDATE',
+      dadosAntes: antesRows[0] ?? null,
+      dadosDepois: { nome: d.nome.toUpperCase(), email: d.email, perfil: d.perfil, trocar_senha: d.trocar_senha, ativo: d.ativo, profissional_id: d.profissional_id || null },
+    })
     return NextResponse.json({ ok: true })
   } catch (err) {
     await client.query('ROLLBACK')
@@ -125,10 +139,15 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   try {
     await client.query('BEGIN')
     await client.query(`DELETE FROM tab_usuario_empresa WHERE usuario_id = $1`, [id])
-    const result = await client.query(`DELETE FROM tab_usuario WHERE id = $1`, [id])
+    const result = await client.query(
+      `DELETE FROM tab_usuario WHERE id = $1
+       RETURNING id, nome, email, perfil, trocar_senha, ativo, profissional_id, created_at, updated_at`,
+      [id],
+    )
     await client.query('COMMIT')
 
     if (result.rowCount === 0) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
+    await registrarAuditoria(db, session, { tabela: 'tab_usuario', registroId: id, acao: 'DELETE', dadosAntes: result.rows[0] })
     return NextResponse.json({ ok: true })
   } catch (err) {
     await client.query('ROLLBACK')

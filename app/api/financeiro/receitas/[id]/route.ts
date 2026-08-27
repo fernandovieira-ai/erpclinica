@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 import { receitaSchema } from '@/lib/validators/receita.schema'
+import { registrarAuditoria } from '@/lib/auditoria'
 
 // GET /api/financeiro/receitas/[id]
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
@@ -67,10 +68,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   // Atualização rápida de status apenas
   if ('status' in raw && Object.keys(raw).length === 1) {
-    await db.query(
-      `UPDATE tab_receita SET status=$1, updated_at=NOW() WHERE id=$2 AND empresa_id=$3`,
+    const { rows } = await db.query(
+      `UPDATE tab_receita SET status=$1, updated_at=NOW() WHERE id=$2 AND empresa_id=$3 RETURNING status`,
       [raw.status, params.id, session.empresa_id_ativa],
     )
+    if (rows.length) {
+      await registrarAuditoria(db, session, { tabela: 'tab_receita', registroId: Number(params.id), acao: 'UPDATE', dadosDepois: rows[0] })
+    }
     return NextResponse.json({ ok: true })
   }
 
@@ -94,6 +98,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   try {
     await client.query('BEGIN')
 
+    const { rows: antesRows } = await client.query(
+      `SELECT * FROM tab_receita WHERE id = $1 AND empresa_id = $2 FOR UPDATE`,
+      [params.id, session.empresa_id_ativa],
+    )
+
     const result = await client.query(
       `UPDATE tab_receita SET
          pessoa_id=$1, tipo_receita_id=$2, cod_tipo_cobranca=$3, centro_custo_id=$4,
@@ -101,7 +110,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
          data_receita=$8, data_competencia=$9, data_recebimento=$10, documento=$11,
          valor=$12, num_parcelas=$13, intervalo_dias=$14, status=$15, observacao=$16,
          updated_at=NOW()
-       WHERE id=$17 AND empresa_id=$18`,
+       WHERE id=$17 AND empresa_id=$18
+       RETURNING *`,
       [
         d.pessoa_id,
         d.tipo_receita_id,
@@ -145,6 +155,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
 
     await client.query('COMMIT')
+    await registrarAuditoria(db, session, {
+      tabela: 'tab_receita',
+      registroId: Number(params.id),
+      acao: 'UPDATE',
+      dadosAntes: antesRows[0] ?? null,
+      dadosDepois: result.rows[0],
+    })
     return NextResponse.json({ ok: true })
   } catch (err) {
     await client.query('ROLLBACK')
@@ -165,7 +182,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     await client.query('BEGIN')
 
     const { rows } = await client.query(
-      `SELECT id FROM tab_receita WHERE id=$1 AND empresa_id=$2`,
+      `SELECT * FROM tab_receita WHERE id=$1 AND empresa_id=$2`,
       [params.id, session.empresa_id_ativa],
     )
     if (!rows.length) {
@@ -210,6 +227,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     await client.query(`DELETE FROM tab_receita WHERE id=$1`, [params.id])
 
     await client.query('COMMIT')
+    await registrarAuditoria(db, session, { tabela: 'tab_receita', registroId: Number(params.id), acao: 'DELETE', dadosAntes: rows[0] })
     return NextResponse.json({ ok: true })
   } catch (err) {
     await client.query('ROLLBACK')
