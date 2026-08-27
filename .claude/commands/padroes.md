@@ -608,3 +608,28 @@ Botão "Criar Atestado" em `HistoricoClinico.tsx`, ao lado de "Editar prontuári
 - `medico_executor_id` do payload de recebimento segue sem validação de empresa (pré-existente, §22) — o cálculo de repasse herda isso; impacto novo nulo (fallback 100%, id já era gravado antes).
 
 **Achado de desempenho (não corrigido):** `POST /api/clinica/recebimentos` chama `percentualRepasse` **1 query por item, sequencial, dentro da transação**. Lotes pequenos (1-5) hoje. Se lista de espera com muitos itens virar comum, trocar por 1 query só buscando todos os pares antes do loop.
+
+---
+
+## 26. Logo do cliente/empresa nas marcas do sistema (implementado 2026-08-27)
+
+Duas exibições distintas da logo, com fontes e endpoints diferentes — **não confundir**:
+
+### 26a. Tela de login — logo pelo identificador digitado (rota pública)
+
+- **`GET /api/auth/branding/logo?slug=<slug>`** ([app/api/auth/branding/logo/route.ts](app/api/auth/branding/logo/route.ts)) — **rota pública, sem sessão** (é a tela de login). Resolve `slug` → `tab_instancia` (só `status ativo`/`trial`) → `getDb(database_name)` → `SELECT logo_base64 FROM tab_empresa WHERE ativo=true AND logo_base64 IS NOT NULL ORDER BY id LIMIT 1`. Decodifica o data URL e devolve **bytes binários** com `Content-Type` real + `Cache-Control: public, max-age=600`.
+  - **Qualquer falha responde `404` seco** (sem corpo) — slug inválido, inexistente, instância suspensa, empresa sem logo. Não confirma/nega existência de cliente pra quem tenta enumerar slugs (mesmo princípio de `/api/auth/recuperar-senha`).
+  - Validação do slug por regex `^[a-z0-9-]{2,50}$`; rate-limit `60/min` por IP (`lib/rate-limit`), protege criação de pool de conexão.
+  - `dynamic = 'force-dynamic'` obrigatório (usa `dbControl`/`getDb`, não pode pré-renderizar).
+- **`app/(auth)/login/page.tsx`**: o identificador digitado é *debounced* (500ms) → `slugLogo` → `<img key={url} src="/api/auth/branding/logo?slug=...">`. `onLoad` → mostra a logo do cliente no lugar da `logo-horizontal.svg`; `onError`/enquanto carrega → mantém a marca VitaRF. Quando mostra a logo do cliente, aparece "com tecnologia VitaRF" abaixo (`.auth-brand-powered`).
+- CSS em `app/globals.css` sob `/* Marca exibida no topo do card de login */`: `.auth-brand` (container, `min-height` reserva espaço pra não haver salto), `.auth-brand-cliente` (`max-height: 128px; max-width: 320px; object-fit: contain`), `@keyframes authBrandIn` (fade-in). **O card de login é branco** — logo com fundo transparente/escuro renderiza bem direto, sem chip.
+
+### 26b. Cabeçalho da sidebar (app autenticado) — logo da empresa ativa
+
+- Usa a rota **já existente** `GET /api/cadastro/empresas/logo` (autenticada, empresa ativa da sessão — ver §19a), **não** a rota pública de branding.
+- **`components/layout/Sidebar.tsx`**: estado `logoEmpresa: 'loading'|'ok'|'error'`. A logo vai dentro de um **chip branco** (`.sidebar-logo-chip`, `width: 100%`, `background: #fff`, `border-radius`) porque a sidebar tem fundo **verde escuro** (`--sidebar-bg: #0B3A35`) e a maioria das logos (ex: HiitCor, verde escuro) ficaria ilegível direto sobre ele. `.sidebar-logo-chip img { width: 100%; max-height: 88px; object-fit: contain }` — ocupa quase toda a largura do cabeçalho. Sem logo (`error`) → marca `logo-horizontal-branca.svg` centralizada.
+- **Armadilha corrigida — `onLoad` não dispara pós-hidratação:** o `<img>` da logo vem no HTML do SSR e pode terminar de carregar **antes** do React hidratar e anexar o handler `onLoad` — nesse caso o estado nunca sai de `'loading'` e a logo fica escondida (chip `display:none`) pra sempre. Solução: `useRef` no `<img>` + `useEffect(() => { if (img.complete) setLogoEmpresa(img.naturalWidth > 0 ? 'ok' : 'error') }, [])` no mount, **além** do `onLoad`/`onError` (que cobrem o caso não-cacheado). A tela de agendamento (§19a) não tinha esse problema porque lá o `<img>` só renderiza depois de um fetch client-side, nunca no SSR.
+
+**Não implementado / decisões conscientes:**
+- Nenhuma das rotas faz downscale da imagem — a logo do `hiitcor` tem ~150KB (data URL). Aceitável: no login só carrega quando um slug válido é digitado (cache 600s); na sidebar é exibida em todas as telas mas com cache de 300s e agora é de fato usada (diferente do cenário da §19a). Se virar problema, redimensionar no endpoint.
+- A rota pública de branding, como a `/api/auth/login`, permite descobrir se um slug existe pela latência (query real vs. rejeição por regex) — não pelo status code. Não endurecido; consistente com o que o login já expõe.
