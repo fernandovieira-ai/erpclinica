@@ -17,6 +17,11 @@ export default function LoginPage() {
   const [mostrarSenha, setMostrarSenha] = useState(false)
   const [salvarDados, setSalvarDados] = useState(false)
 
+  // Logo do cliente: buscada pelo identificador digitado (com debounce) e
+  // exibida no lugar da logo do sistema quando o cliente tem uma cadastrada.
+  const [slugLogo, setSlugLogo] = useState('')
+  const [logoCliente, setLogoCliente] = useState<'idle' | 'carregando' | 'ok' | 'erro'>('idle')
+
   useEffect(() => {
     const salvo = localStorage.getItem(STORAGE_KEY)
     if (salvo) {
@@ -30,6 +35,24 @@ export default function LoginPage() {
       }
     }
   }, [])
+
+  useEffect(() => {
+    const s = slug.trim()
+    if (s.length < 2) {
+      setSlugLogo('')
+      setLogoCliente('idle')
+      return
+    }
+    const t = setTimeout(() => setSlugLogo(s), 500)
+    return () => clearTimeout(t)
+  }, [slug])
+
+  useEffect(() => {
+    if (slugLogo) setLogoCliente('carregando')
+  }, [slugLogo])
+
+  const logoClienteUrl = slugLogo ? `/api/auth/branding/logo?slug=${encodeURIComponent(slugLogo)}` : ''
+  const mostrarLogoCliente = logoCliente === 'ok'
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -77,12 +100,26 @@ export default function LoginPage() {
       <div className="card">
         <div className="card-body" style={{ padding: 32 }}>
 
-          {/* Logo */}
-          <div style={{ textAlign: 'center', marginBottom: 28 }}>
-            <img src="/brand/logo-horizontal.svg" alt="VitaRF" height={36} style={{ display: 'inline-block' }} />
-            <div style={{ fontSize: 13, color: 'var(--texto-terciario)', marginTop: 8 }}>
-              Acesse sua conta
-            </div>
+          {/* Marca — logo do cliente quando disponível, senão a do sistema */}
+          <div className="auth-brand">
+            {slugLogo && (
+              <img
+                key={logoClienteUrl}
+                src={logoClienteUrl}
+                alt=""
+                className="auth-brand-cliente"
+                onLoad={() => setLogoCliente('ok')}
+                onError={() => setLogoCliente('erro')}
+                style={{ display: mostrarLogoCliente ? 'block' : 'none' }}
+              />
+            )}
+            {!mostrarLogoCliente && (
+              <img src="/brand/logo-horizontal.svg" alt="VitaRF" height={36} style={{ display: 'inline-block' }} />
+            )}
+            <div className="auth-brand-legenda">Acesse sua conta</div>
+            {mostrarLogoCliente && (
+              <div className="auth-brand-powered">com tecnologia VitaRF</div>
+            )}
           </div>
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
