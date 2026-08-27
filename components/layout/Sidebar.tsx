@@ -157,7 +157,7 @@ export default function Sidebar({ session }: Props) {
               alt=""
               onLoad={() => setLogoEmpresa('ok')}
               onError={() => setLogoEmpresa('error')}
-              style={{ maxHeight: 44, maxWidth: 176, objectFit: 'contain', display: 'block' }}
+              style={{ maxHeight: 64, maxWidth: 184, objectFit: 'contain', display: 'block' }}
             />
           </span>
         )}
