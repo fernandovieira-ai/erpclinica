@@ -250,18 +250,25 @@
     color: var(--sidebar-fg);
   }
   .sidebar-logo {
-    padding: 16px 12px;
+    padding: 12px 10px;
     border-bottom: 0.5px solid var(--sidebar-border);
     font-size: 14px; font-weight: 700; color: var(--sidebar-fg);
     display: flex; align-items: center; justify-content: center;
   }
   /* Logo da empresa vai num chip claro — garante contraste sobre o verde escuro */
   .sidebar-logo-chip {
+    width: 100%;
     align-items: center;
     justify-content: center;
-    padding: 10px 14px;
+    padding: 12px;
     background: #fff;
     border-radius: var(--radius-md);
+  }
+  .sidebar-logo-chip img {
+    width: 100%;
+    max-height: 88px;
+    object-fit: contain;
+    display: block;
   }
   .sidebar-section { padding: 6px 8px; }
   .sidebar-label {

@@ -149,7 +149,7 @@ export default function Sidebar({ session }: Props) {
         {logoEmpresa !== 'error' && (
           <span
             className="sidebar-logo-chip"
-            style={{ display: logoEmpresa === 'ok' ? 'inline-flex' : 'none' }}
+            style={{ display: logoEmpresa === 'ok' ? 'flex' : 'none' }}
           >
             <img
               ref={logoRef}
@@ -157,7 +157,6 @@ export default function Sidebar({ session }: Props) {
               alt=""
               onLoad={() => setLogoEmpresa('ok')}
               onError={() => setLogoEmpresa('error')}
-              style={{ maxHeight: 64, maxWidth: 184, objectFit: 'contain', display: 'block' }}
             />
           </span>
         )}
