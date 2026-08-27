@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 import { addDias, obterTipoReceitaPadrao } from '@/lib/clinica/recebimento-helpers'
+import { percentualRepasse, dividirRepasse } from '@/lib/clinica/repasse'
 
 interface RecebimentoItem {
   agendamento_id: number
@@ -47,10 +48,12 @@ export async function POST(req: NextRequest) {
     // agendamento_id -> { medico_solicitante_id, medico_executor_id } dos itens que
     // precisam definir solicitante/executor antes de confirmar (profissional_id atual = placeholder da clínica)
     const definicoesExecutor = new Map<number, { medico_solicitante_id: number; medico_executor_id: number }>()
+    // agendamento_id -> { tipo_id, profissional_id } — usado pra calcular o repasse
+    const infoAgendamento = new Map<number, { tipo_id: number | null; profissional_id: number }>()
 
     for (const item of payload.itens) {
       const { rows } = await client.query(
-        `SELECT ag.id, pro.eh_clinica AS profissional_eh_clinica
+        `SELECT ag.id, ag.tipo_id, ag.profissional_id, pro.eh_clinica AS profissional_eh_clinica
          FROM tab_agendamento ag
            JOIN tab_pessoa pro ON pro.id = ag.profissional_id
          WHERE ag.id = $1 AND ag.empresa_id = $2`,
@@ -60,6 +63,11 @@ export async function POST(req: NextRequest) {
         await client.query('ROLLBACK')
         return NextResponse.json({ erro: `Agendamento ${item.agendamento_id} não encontrado` }, { status: 404 })
       }
+
+      infoAgendamento.set(item.agendamento_id, {
+        tipo_id: rows[0].tipo_id ?? null,
+        profissional_id: rows[0].profissional_id,
+      })
 
       if (rows[0].profissional_eh_clinica) {
         if (!item.medico_solicitante_id || !item.medico_executor_id) {
@@ -254,13 +262,22 @@ export async function POST(req: NextRequest) {
 
     const statusRecebimento = 'PAGO'
     for (const item of payload.itens) {
+      const info = infoAgendamento.get(item.agendamento_id)
+      // Exame com placeholder da clínica: quem recebe o repasse é o executor definido agora.
+      const profissionalRepasse = definicoesExecutor.get(item.agendamento_id)?.medico_executor_id
+        ?? info?.profissional_id
+        ?? null
+      const pct = await percentualRepasse(client, profissionalRepasse, info?.tipo_id ?? null)
+      const { valor_profissional, valor_clinica } = dividirRepasse(item.total_recebimento, pct)
+
       await client.query(
         `INSERT INTO tab_recebimento_consulta (
           empresa_id, agendamento_id, paciente_id, condicao_pagamento_id,
           valor_original, valor_desconto, valor_acrescimo, valor_recebido, total_recebimento,
           batch_agendamento_id, movimento_caixa_id, movimento_banco_id, venda_cartao_id,
-          data_recebimento, status_recebimento, observacao, created_by
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+          data_recebimento, status_recebimento, observacao, created_by,
+          percentual_profissional, valor_profissional, valor_clinica
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
         [
           session.empresa_id_ativa, item.agendamento_id, item.paciente_id, payload.condicao_pagamento_id,
           item.valor_original, item.valor_desconto, item.valor_acrescimo,
@@ -269,6 +286,7 @@ export async function POST(req: NextRequest) {
           item.data_recebimento, statusRecebimento,
           payload.observacao || null,
           session.nome ?? 'sistema',
+          pct, valor_profissional, valor_clinica,
         ],
       )
     }

@@ -117,7 +117,13 @@ export interface TipoAtendimentoListItem {
   valor:             number | null
   ativo:             boolean
   voa_clinical_type: string | null
-  percentual_profissional: number
+}
+
+export interface ProfissionalTipoPercentualItem {
+  tipo_id:                  number
+  descricao:                string
+  ativo:                    boolean
+  percentual_profissional:  number | null
 }
 
 export interface TipoAtendimentoListResponse {
@@ -224,4 +230,5 @@ export interface ProfissionalListItem {
   eh_clinica?:     boolean
   especialidades:  { id: number; descricao: string; cor: string }[]
   agenda:          AgendaProfissional[]
+  tipo_ids?:       number[]
 }

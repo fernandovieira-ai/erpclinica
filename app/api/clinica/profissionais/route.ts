@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
 
   const ids = profissionais.map(p => p.id)
 
-  const [{ rows: especialidades }, { rows: agenda }] = await Promise.all([
+  const [{ rows: especialidades }, { rows: agenda }, { rows: tiposProf }] = await Promise.all([
     db.query(
       `SELECT pe.pessoa_id, e.id, e.descricao, e.cor
        FROM tab_profissional_especialidade pe
@@ -48,10 +48,21 @@ export async function GET(req: NextRequest) {
        ORDER BY ag.profissional_id, ag.dia_semana`,
       [ids],
     ),
+    db.query(
+      `SELECT profissional_id, tipo_id
+       FROM tab_profissional_tipo_percentual
+       WHERE profissional_id = ANY($1)`,
+      [ids],
+    ),
   ])
 
   const espMap  = new Map<number, typeof especialidades>()
   const agMap   = new Map<number, typeof agenda>()
+  const tipoMap = new Map<number, number[]>()
+  for (const t of tiposProf) {
+    if (!tipoMap.has(t.profissional_id)) tipoMap.set(t.profissional_id, [])
+    tipoMap.get(t.profissional_id)!.push(t.tipo_id)
+  }
 
   for (const e of especialidades) {
     if (!espMap.has(e.pessoa_id)) espMap.set(e.pessoa_id, [])
@@ -66,6 +77,7 @@ export async function GET(req: NextRequest) {
     ...p,
     especialidades: espMap.get(p.id) ?? [],
     agenda:         agMap.get(p.id)  ?? [],
+    tipo_ids:       tipoMap.get(p.id) ?? [],
   }))
 
   return NextResponse.json({ dados })

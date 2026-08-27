@@ -53,11 +53,14 @@ interface FechamentoDiarioResponse {
     total_cancelados: number
     taxa_comparecimento: number
     total_recebido: number
+    total_repasse: number
+    total_clinica: number
     ticket_medio: number
     por_forma: { dinheiro: number; pix: number; debito: number; credito: number; a_prazo: number }
     por_profissional: Array<{
       profissional_id: number; profissional_nome: string
       total_agendados: number; atendidos: number; faltas: number; total_recebido: number
+      total_repasse: number; total_clinica: number
     }>
   }
 }
@@ -352,15 +355,17 @@ export default function FechamentoDiarioPage() {
                   <thead>
                     <tr>
                       <th>Profissional</th>
-                      <th style={{ textAlign: 'center', width: 100 }}>Agendados</th>
-                      <th style={{ textAlign: 'center', width: 90 }}>Atendidos</th>
-                      <th style={{ textAlign: 'center', width: 80 }}>Faltas</th>
-                      <th style={{ textAlign: 'right', width: 140 }}>Total Recebido</th>
+                      <th style={{ textAlign: 'center', width: 90 }}>Agendados</th>
+                      <th style={{ textAlign: 'center', width: 85 }}>Atendidos</th>
+                      <th style={{ textAlign: 'center', width: 70 }}>Faltas</th>
+                      <th style={{ textAlign: 'right', width: 130 }}>Total Recebido</th>
+                      <th style={{ textAlign: 'right', width: 130 }}>Repasse</th>
+                      <th style={{ textAlign: 'right', width: 130 }}>Clínica</th>
                     </tr>
                   </thead>
                   <tbody>
                     {kpis.por_profissional.length === 0 && (
-                      <tr><td colSpan={5} style={{ textAlign: 'center', padding: 20, color: 'var(--texto-terciario)', fontSize: 13 }}>Nenhum agendamento no dia</td></tr>
+                      <tr><td colSpan={7} style={{ textAlign: 'center', padding: 20, color: 'var(--texto-terciario)', fontSize: 13 }}>Nenhum agendamento no dia</td></tr>
                     )}
                     {kpis.por_profissional.map(p => (
                       <tr key={p.profissional_id}>
@@ -369,8 +374,19 @@ export default function FechamentoDiarioPage() {
                         <td style={{ textAlign: 'center', color: 'var(--cor-sucesso)', fontWeight: 600 }}>{p.atendidos}</td>
                         <td style={{ textAlign: 'center', color: p.faltas > 0 ? 'var(--cor-erro)' : 'var(--texto-terciario)' }}>{p.faltas}</td>
                         <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)', fontWeight: 600 }}>{formatBRL(p.total_recebido)}</td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)' }}>{formatBRL(p.total_repasse)}</td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)', color: 'var(--texto-secundario)' }}>{formatBRL(p.total_clinica)}</td>
                       </tr>
                     ))}
+                    {kpis.por_profissional.length > 0 && (
+                      <tr style={{ borderTop: '2px solid var(--borda-media)', fontWeight: 700 }}>
+                        <td>Total</td>
+                        <td></td><td></td><td></td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)' }}>{formatBRL(kpis.total_recebido)}</td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)' }}>{formatBRL(kpis.total_repasse)}</td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)' }}>{formatBRL(kpis.total_clinica)}</td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>

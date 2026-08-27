@@ -37,6 +37,7 @@ export async function GET(req: NextRequest) {
        pro.id AS profissional_id, pro.nome AS profissional_nome,
        tp.descricao AS tipo_descricao,
        rc.id AS recebimento_id, rc.status_recebimento, rc.total_recebimento,
+       rc.percentual_profissional, rc.valor_profissional, rc.valor_clinica,
        rc.batch_agendamento_id, rc.condicao_pagamento_id,
        cp.tipo_pagamento, cp.descricao AS condicao_descricao
      FROM tab_agendamento a
@@ -58,18 +59,25 @@ export async function GET(req: NextRequest) {
   const porProfissionalMap = new Map<number, {
     profissional_id: number; profissional_nome: string
     total_agendados: number; atendidos: number; faltas: number; total_recebido: number
+    total_repasse: number; total_clinica: number
   }>()
 
   let totalAtendidos = 0, totalFaltas = 0, totalCancelados = 0, totalRecebido = 0
+  let totalRepasse = 0, totalClinica = 0
 
   for (const ag of agendamentos) {
     if (ag.status === 'ATENDIDO') totalAtendidos++
     else if (ag.status === 'FALTOU') totalFaltas++
     else if (ag.status === 'CANCELADO') totalCancelados++
 
+    const repasse = Number(ag.valor_profissional) || 0
+    const clinica = ag.valor_clinica != null ? Number(ag.valor_clinica) : ((Number(ag.total_recebimento) || 0) - repasse)
+
     if (ag.status_recebimento === 'PAGO') {
       const valor = Number(ag.total_recebimento) || 0
       totalRecebido += valor
+      totalRepasse += repasse
+      totalClinica += clinica
       if (ag.tipo_pagamento && TIPOS_PAGAMENTO.includes(ag.tipo_pagamento)) {
         porForma[ag.tipo_pagamento as string] += valor
       }
@@ -77,13 +85,17 @@ export async function GET(req: NextRequest) {
 
     let prof = porProfissionalMap.get(ag.profissional_id)
     if (!prof) {
-      prof = { profissional_id: ag.profissional_id, profissional_nome: ag.profissional_nome, total_agendados: 0, atendidos: 0, faltas: 0, total_recebido: 0 }
+      prof = { profissional_id: ag.profissional_id, profissional_nome: ag.profissional_nome, total_agendados: 0, atendidos: 0, faltas: 0, total_recebido: 0, total_repasse: 0, total_clinica: 0 }
       porProfissionalMap.set(ag.profissional_id, prof)
     }
     prof.total_agendados++
     if (ag.status === 'ATENDIDO') prof.atendidos++
     if (ag.status === 'FALTOU') prof.faltas++
-    if (ag.status_recebimento === 'PAGO') prof.total_recebido += Number(ag.total_recebimento) || 0
+    if (ag.status_recebimento === 'PAGO') {
+      prof.total_recebido += Number(ag.total_recebimento) || 0
+      prof.total_repasse  += repasse
+      prof.total_clinica  += clinica
+    }
   }
 
   const totalAgendados     = agendamentos.length
@@ -104,6 +116,8 @@ export async function GET(req: NextRequest) {
       total_cancelados: totalCancelados,
       taxa_comparecimento: taxaComparecimento,
       total_recebido: totalRecebido,
+      total_repasse: totalRepasse,
+      total_clinica: totalClinica,
       ticket_medio: ticketMedio,
       por_forma: porForma,
       por_profissional: porProfissional,

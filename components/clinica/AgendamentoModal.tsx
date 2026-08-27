@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
 import { X, Search, User, Stethoscope, Phone, Smartphone, MapPin, Mail, UserPlus, ChevronRight, CheckCircle2, Undo2, AlertTriangle, CalendarClock } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
@@ -413,6 +413,20 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
       setSalvandoCad(false)
     }
   }
+
+  // Tipos de atendimento que o profissional selecionado realiza.
+  // Ao editar, garante que o tipo já gravado apareça mesmo se foi desabilitado depois.
+  const tiposDisponiveis = useMemo(() => {
+    if (!form.profissional_id) return []
+    const prof = profissionais.find(p => p.id === form.profissional_id)
+    const permitidos = prof?.tipo_ids ?? []
+    let lista = tipos.filter(t => permitidos.includes(t.id))
+    if (form.tipo_id && !lista.some(t => t.id === form.tipo_id)) {
+      const atual = tipos.find(t => t.id === form.tipo_id)
+      if (atual) lista = [...lista, atual]
+    }
+    return lista
+  }, [form.profissional_id, form.tipo_id, tipos, profissionais])
 
   // Quando muda o tipo, ajusta a duração
   function handleSelecionarHorario(data: string, hora: string) {
@@ -956,7 +970,13 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                   value={form.profissional_id}
                   onChange={e => {
                     const id = Number(e.target.value)
-                    setForm(f => ({ ...f, profissional_id: id }))
+                    const prof = profissionais.find(p => p.id === id)
+                    const permitidos = prof?.tipo_ids ?? []
+                    setForm(f => ({
+                      ...f,
+                      profissional_id: id,
+                      tipo_id: f.tipo_id && permitidos.includes(f.tipo_id) ? f.tipo_id : null,
+                    }))
                     if (!isEdit && id && !dataHoraInicio) {
                       buscarProximoHorario(id, form.data || undefined)
                     }
@@ -1039,13 +1059,21 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
               <select
                 value={form.tipo_id ?? ''}
                 onChange={e => handleTipo(e.target.value ? Number(e.target.value) : null)}
+                disabled={!form.profissional_id}
                 style={{ padding: '5px 6px', fontSize: 12, backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3 }}
               >
-                <option value="">Selecione o tipo...</option>
-                {tipos.map(t => (
+                <option value="">
+                  {!form.profissional_id ? 'Selecione o profissional primeiro' : 'Selecione o tipo...'}
+                </option>
+                {tiposDisponiveis.map(t => (
                   <option key={t.id} value={t.id}>{t.descricao} ({t.duracao_min}min)</option>
                 ))}
               </select>
+              {form.profissional_id > 0 && tiposDisponiveis.length === 0 && (
+                <span style={{ fontSize: 10.5, color: 'var(--cor-erro)', marginTop: 3 }}>
+                  Nenhum tipo de atendimento habilitado para este profissional. Configure no cadastro dele (aba Atendimentos).
+                </span>
+              )}
             </Field>
 
             <Field>

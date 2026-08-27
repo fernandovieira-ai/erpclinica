@@ -504,7 +504,7 @@ function mascaraCpfCnpj(valor: string, pj: boolean): string {
     .replace(/\.(\d{3})(\d{1,2})$/, '.$1-$2')
 }
 
-const ABAS_PESSOA = ['Principal', 'Financeiro', 'Fiscal / Obs', 'Agenda', 'Consultas'] as const
+const ABAS_PESSOA = ['Principal', 'Financeiro', 'Fiscal / Obs', 'Agenda', 'Atendimentos', 'Consultas'] as const
 type AbaPessoa = typeof ABAS_PESSOA[number]
 
 export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
@@ -556,6 +556,57 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
   useEffect(() => {
     if (aba === 'Agenda' && pessoa?.id) carregarAgenda()
   }, [aba, carregarAgenda, pessoa?.id])
+
+  // ── Atendimentos que o profissional realiza + % de repasse ─
+  const [percTipos,   setPercTipos]   = useState<{ tipo_id: number; descricao: string; ativo: boolean }[]>([])
+  const [percRealiza, setPercRealiza] = useState<Record<number, boolean>>({})
+  const [percEdit,    setPercEdit]    = useState<Record<number, string>>({})
+  const [loadingPerc, setLoadingPerc] = useState(false)
+  const [savingPerc,  setSavingPerc]  = useState(false)
+
+  const carregarPercentuais = useCallback(async () => {
+    if (!pessoa?.id) return
+    setLoadingPerc(true)
+    try {
+      const res = await fetch(`/api/clinica/profissionais/${pessoa.id}/percentuais`)
+      const json = await res.json()
+      const dados: { tipo_id: number; descricao: string; ativo: boolean; percentual_profissional: number | null }[] = json.dados ?? []
+      setPercTipos(dados.map(d => ({ tipo_id: d.tipo_id, descricao: d.descricao, ativo: d.ativo })))
+      const realiza: Record<number, boolean> = {}
+      const edit: Record<number, string> = {}
+      dados.forEach(d => {
+        realiza[d.tipo_id] = d.percentual_profissional != null
+        edit[d.tipo_id] = d.percentual_profissional != null ? String(Number(d.percentual_profissional)) : '100'
+      })
+      setPercRealiza(realiza)
+      setPercEdit(edit)
+    } finally { setLoadingPerc(false) }
+  }, [pessoa?.id])
+
+  useEffect(() => {
+    if (aba === 'Atendimentos' && pessoa?.id) carregarPercentuais()
+  }, [aba, carregarPercentuais, pessoa?.id])
+
+  async function salvarPercentuais() {
+    if (!pessoa?.id) return
+    setSavingPerc(true)
+    try {
+      const percentuais = percTipos
+        .filter(t => percRealiza[t.tipo_id])
+        .map(t => {
+          const v = percEdit[t.tipo_id]?.trim()
+          return { tipo_id: t.tipo_id, percentual: v === '' || v === undefined ? null : Number(v) }
+        })
+      const res = await fetch(`/api/clinica/profissionais/${pessoa.id}/percentuais`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ percentuais }),
+      })
+      if (!res.ok) { toast.error('Erro ao salvar'); return }
+      toast.success('Atendimentos do profissional salvos')
+      carregarPercentuais()
+    } finally { setSavingPerc(false) }
+  }
 
   // Estado local da grade (7 dias)
   const [grade, setGrade] = useState<Record<number, { hora_inicio: string; hora_fim: string; intervalo_min: number; ativo: boolean; id?: number }>>(() => ({}))
@@ -872,6 +923,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
 
   useEffect(() => {
     if (aba === 'Agenda' && !indProfissional) setAba('Principal')
+    if (aba === 'Atendimentos' && !indProfissional) setAba('Principal')
     if (aba === 'Consultas' && !indPaciente) setAba('Principal')
   }, [aba, indProfissional, indPaciente])
 
@@ -952,6 +1004,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
       }}>
         {ABAS_PESSOA.filter(t => {
           if (t === 'Agenda')    return indProfissional
+          if (t === 'Atendimentos') return indProfissional
           if (t === 'Consultas') return indPaciente
           return true
         }).map(t => {
@@ -1837,6 +1890,106 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
               </Secao>
             )}
           </>
+        )}
+
+        {aba === 'Atendimentos' && (
+          <Secao titulo="Atendimentos do Profissional">
+            {!pessoa?.id ? (
+              <div style={{ padding: '12px 4px', fontSize: 12, color: 'var(--texto-secundario)' }}>
+                Salve o cadastro primeiro para configurar os atendimentos do profissional.
+              </div>
+            ) : loadingPerc ? (
+              <div style={{ fontSize: 12, color: 'var(--texto-terciario)', padding: 4 }}>Carregando...</div>
+            ) : percTipos.length === 0 ? (
+              <div style={{ padding: '12px 4px', fontSize: 12, color: 'var(--texto-secundario)' }}>
+                Nenhum tipo de atendimento cadastrado. Cadastre em <strong>Clínica → Tipos de Atendimento</strong> primeiro.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 560 }}>
+                <div style={{ fontSize: 11.5, color: 'var(--texto-terciario)' }}>
+                  Marque os tipos de atendimento que este profissional realiza — só eles aparecem no
+                  agendamento dele. Para cada um, o <strong>% Profissional</strong> é a parte do valor
+                  recebido que fica com ele (em branco = 100%); o restante fica com a clínica.
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    type="button"
+                    onClick={() => setPercRealiza(Object.fromEntries(percTipos.map(t => [t.tipo_id, true])))}
+                    style={{ padding: '3px 10px', fontSize: 11, background: 'none', border: '1px solid var(--borda-media)', borderRadius: 3, cursor: 'pointer', color: 'var(--texto-secundario)' }}
+                  >
+                    Marcar todos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPercRealiza(Object.fromEntries(percTipos.map(t => [t.tipo_id, false])))}
+                    style={{ padding: '3px 10px', fontSize: 11, background: 'none', border: '1px solid var(--borda-media)', borderRadius: 3, cursor: 'pointer', color: 'var(--texto-secundario)' }}
+                  >
+                    Desmarcar todos
+                  </button>
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--borda-media)' }}>
+                      <th style={{ textAlign: 'center', padding: '4px 8px', color: 'var(--texto-secundario)', fontWeight: 600, width: 60 }}>Realiza</th>
+                      <th style={{ textAlign: 'left', padding: '4px 8px', color: 'var(--texto-secundario)', fontWeight: 600 }}>Tipo de Atendimento</th>
+                      <th style={{ textAlign: 'right', padding: '4px 8px', color: 'var(--texto-secundario)', fontWeight: 600, width: 110 }}>% Profissional</th>
+                      <th style={{ textAlign: 'right', padding: '4px 8px', color: 'var(--texto-secundario)', fontWeight: 600, width: 90 }}>% Clínica</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {percTipos.map(t => {
+                      const realiza = !!percRealiza[t.tipo_id]
+                      const raw = percEdit[t.tipo_id]?.trim()
+                      const pct = raw === '' || raw === undefined ? 100 : Number(raw)
+                      const clinica = Number.isFinite(pct) ? Math.round((100 - pct) * 100) / 100 : 0
+                      return (
+                        <tr key={t.tipo_id} style={{ borderBottom: '1px solid var(--borda-suave)', opacity: t.ativo ? 1 : 0.5 }}>
+                          <td style={{ padding: '4px 8px', textAlign: 'center' }}>
+                            <input
+                              type="checkbox"
+                              checked={realiza}
+                              onChange={e => setPercRealiza(prev => ({ ...prev, [t.tipo_id]: e.target.checked }))}
+                              style={{ cursor: 'pointer', width: 15, height: 15 }}
+                            />
+                          </td>
+                          <td style={{ padding: '5px 8px', color: realiza ? 'var(--texto-principal)' : 'var(--texto-terciario)' }}>
+                            {t.descricao}{!t.ativo && <span style={{ fontSize: 10, color: 'var(--texto-terciario)' }}> (inativo)</span>}
+                          </td>
+                          <td style={{ padding: '4px 8px', textAlign: 'right' }}>
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              step={1}
+                              disabled={!realiza}
+                              value={percEdit[t.tipo_id] ?? ''}
+                              onChange={e => setPercEdit(prev => ({ ...prev, [t.tipo_id]: e.target.value }))}
+                              placeholder="100"
+                              style={{ width: 70, padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, textAlign: 'right', opacity: realiza ? 1 : 0.4 }}
+                            />
+                            <span style={{ fontSize: 11, color: 'var(--texto-secundario)' }}> %</span>
+                          </td>
+                          <td style={{ padding: '4px 8px', textAlign: 'right', color: 'var(--texto-secundario)' }}>
+                            {realiza && Number.isFinite(clinica) ? `${clinica} %` : '-'}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+                <div>
+                  <button
+                    type="button"
+                    onClick={salvarPercentuais}
+                    disabled={savingPerc}
+                    style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 14px', background: 'var(--cor-primaria)', color: '#fff', border: 'none', borderRadius: 3, fontSize: 12, cursor: savingPerc ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: savingPerc ? 0.7 : 1 }}
+                  >
+                    <Save size={13} /> {savingPerc ? 'Salvando...' : 'Salvar atendimentos'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </Secao>
         )}
 
         {aba === 'Consultas' && (

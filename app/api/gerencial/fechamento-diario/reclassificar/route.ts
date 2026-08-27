@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
       `SELECT rc.id, rc.agendamento_id, rc.paciente_id, rc.condicao_pagamento_id,
               rc.batch_agendamento_id, rc.movimento_caixa_id, rc.movimento_banco_id, rc.venda_cartao_id,
               rc.valor_original, rc.valor_desconto, rc.valor_acrescimo, rc.valor_recebido, rc.total_recebimento,
+              rc.percentual_profissional, rc.valor_profissional, rc.valor_clinica,
               TO_CHAR(rc.data_recebimento, 'YYYY-MM-DD') AS data_recebimento,
               rc.status_recebimento, rc.observacao,
               cpOld.tipo_pagamento AS tipo_pagamento_antigo
@@ -275,14 +276,16 @@ export async function POST(req: NextRequest) {
         empresa_id, agendamento_id, paciente_id, condicao_pagamento_id,
         valor_original, valor_desconto, valor_acrescimo, valor_recebido, total_recebimento,
         batch_agendamento_id, movimento_caixa_id, movimento_banco_id, venda_cartao_id,
-        data_recebimento, status_recebimento, observacao, created_by
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+        data_recebimento, status_recebimento, observacao, created_by,
+        percentual_profissional, valor_profissional, valor_clinica
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
       RETURNING id`,
       [
         empresaId, rec.agendamento_id, rec.paciente_id, payload.nova_condicao_pagamento_id,
         rec.valor_original, rec.valor_desconto, rec.valor_acrescimo, rec.valor_recebido, rec.total_recebimento,
         rec.agendamento_id, novoMovimentoCaixaId, novoMovimentoBancoId, novaVendaCartaoId,
         dataMovimento, 'PAGO', rec.observacao ?? null, session.nome ?? 'sistema',
+        rec.percentual_profissional ?? null, rec.valor_profissional ?? null, rec.valor_clinica ?? null,
       ],
     )
     const recebimentoIdNovo = novoRecRows[0].id
