@@ -291,9 +291,17 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // O pagamento e feito ANTES do atendimento (recepcao): o recebimento faz o check-in.
+    // AGENDADO/CONFIRMADO -> AGUARDANDO (entra na sala de espera). Se ja esta AGUARDANDO
+    // ou ATENDIDO (pagamento na saida), mantem. CANCELADO/FALTOU nunca muda.
+    // Quem marca ATENDIDO e o "Finalizar atendimento" (medico), nao o recebimento.
     await client.query(
-      `UPDATE tab_agendamento SET status = 'ATENDIDO', updated_at = NOW()
-       WHERE id = ANY($1::int[]) AND empresa_id = $2`,
+      `UPDATE tab_agendamento
+       SET status = CASE WHEN status IN ('AGENDADO','CONFIRMADO') THEN 'AGUARDANDO' ELSE status END,
+           horario_chegada = COALESCE(horario_chegada, NOW()),
+           updated_at = NOW()
+       WHERE id = ANY($1::int[]) AND empresa_id = $2
+         AND status NOT IN ('CANCELADO','FALTOU')`,
       [ids, session.empresa_id_ativa],
     )
 

@@ -104,11 +104,12 @@ export async function DELETE(
 
     // 3. Todos os recebimentos do lote (mesmo batch_agendamento_id)
     const { rows: todosRecRows } = await client.query(
-      `SELECT id, movimento_caixa_id, movimento_banco_id, venda_cartao_id FROM tab_recebimento_consulta
+      `SELECT id, agendamento_id, movimento_caixa_id, movimento_banco_id, venda_cartao_id FROM tab_recebimento_consulta
        WHERE empresa_id = $1 AND batch_agendamento_id = $2`,
       [session.empresa_id_ativa, batchAgendamentoId]
     )
     const todosRecIds    = todosRecRows.map((r: { id: number }) => r.id)
+    const agendamentoIds = [...new Set(todosRecRows.map((r: { agendamento_id: number }) => r.agendamento_id).filter((x): x is number => x != null))]
     const recMovCaixaIds = todosRecRows.map((r: { movimento_caixa_id: number | null }) => r.movimento_caixa_id).filter((x): x is number => x != null)
     const recMovBancoIds = todosRecRows.map((r: { movimento_banco_id: number | null }) => r.movimento_banco_id).filter((x): x is number => x != null)
     const vendaCartaoIds = [...new Set(todosRecRows.map((r: { venda_cartao_id: number | null }) => r.venda_cartao_id).filter((x): x is number => x != null))]
@@ -171,6 +172,17 @@ export async function DELETE(
     if (vendaCartaoIds.length > 0) {
       await client.query(`DELETE FROM tab_venda_cartao_parcela WHERE venda_cartao_id = ANY($1::int[])`, [vendaCartaoIds])
       await client.query(`DELETE FROM tab_venda_cartao WHERE id = ANY($1::int[])`, [vendaCartaoIds])
+    }
+
+    // F. Reverte o check-in feito no recebimento: AGUARDANDO -> CONFIRMADO.
+    //    Nao mexe em ATENDIDO (consulta ja realizada) nem em CANCELADO/FALTOU.
+    if (agendamentoIds.length > 0) {
+      await client.query(
+        `UPDATE tab_agendamento
+         SET status = 'CONFIRMADO', horario_chegada = NULL, updated_at = NOW()
+         WHERE id = ANY($1::int[]) AND empresa_id = $2 AND status = 'AGUARDANDO'`,
+        [agendamentoIds, session.empresa_id_ativa],
+      )
     }
 
     await client.query('COMMIT')

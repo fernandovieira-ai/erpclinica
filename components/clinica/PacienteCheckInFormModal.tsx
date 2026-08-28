@@ -660,7 +660,9 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
 
   async function handleRecebimentoSalvo() {
     const listaAgsAll = (agendamentos && agendamentos.length > 0) ? agendamentos : agendamento ? [agendamento] : []
-    const pending = listaAgsAll.filter(ag => !pagosIds.has(ag.id) && !['CANCELADO', 'FALTOU'].includes(ag.status))
+    // A rota de recebimento ja faz o check-in (CONFIRMADO -> AGUARDANDO). Este PATCH e
+    // rede de seguranca; nao pode reabrir uma consulta ja ATENDIDA (pagamento na saida).
+    const pending = listaAgsAll.filter(ag => !pagosIds.has(ag.id) && !['CANCELADO', 'FALTOU', 'ATENDIDO'].includes(ag.status))
     await Promise.all(
       pending.map(ag =>
         fetch(`/api/clinica/agendamentos/${ag.id}`, {
