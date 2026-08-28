@@ -224,6 +224,16 @@ export interface AtestadoMedicoRegistro {
   created_at:       string
 }
 
+export interface ReceituarioEspecialRegistro {
+  id:                number
+  agendamento_id:    number
+  paciente_id:       number
+  prescricao:        string
+  paciente_endereco: string | null
+  created_by:        string | null
+  created_at:        string
+}
+
 export interface ProfissionalListItem {
   id:              number
   nome:            string

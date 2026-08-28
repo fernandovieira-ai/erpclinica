@@ -646,3 +646,50 @@ Duas exibições distintas da logo, com fontes e endpoints diferentes — **não
 - **Armadilha corrigida:** antes `.sidebar` era `min-height: 100vh` + `overflow-y: auto` no aside inteiro. Com todos os grupos de menu expandidos o `<nav>` crescia além da viewport e empurrava o rodapé pra baixo da dobra — o botão **Sair** ficava inacessível sem rolar a barra toda. Não usar `min-height` nem scroll no `<aside>`.
 - Scrollbar fina customizada no `.sidebar-section` (`scrollbar-width: thin` + `::-webkit-scrollbar` 6px, thumb em `--sidebar-border`).
 - Qualquer filho novo direto do `.sidebar` que deva ficar fixo (topo ou base) precisa de `flex-shrink: 0`.
+
+---
+
+## 28. Receituário de Controle Especial (implementado 2026-08-27)
+
+Documento da Portaria SVS/MS 344/98 (Anexo X) para prescrição de medicamentos da lista C1 e afins. Botão **"Receituário Especial"** (vermelho `#B02A37`, ícone `FileWarning`) em `HistoricoClinico.tsx`, ao lado de "Criar Atestado". Segue **exatamente** a arquitetura do Atestado (§21) / Receita Sistema.
+
+**Arquivos:**
+- `novos/56_receituario_controle_especial.sql` — `tab_receituario_especial` (`prescricao` TEXT texto livre = fonte da verdade; `paciente_endereco` VARCHAR(300) **congelado na emissão** — o endereço do cadastro pode mudar depois). GRANT + `client_encoding=LATIN1` inclusos. **Aplicada no `hiitcor`** em 2026-08-27.
+- `lib/validators/receituario-especial.schema.ts` — Zod; reusa `paraLatin1()` de `prontuario.schema.ts` em `prescricao` e `paciente_endereco` (§9 — texto livre de textarea quebra INSERT LATIN1 com 500 mudo).
+- `app/api/clinica/receituarios-especiais/route.ts` — GET (`?agendamento_id` / `?paciente_id`) / POST. Sem endpoint de dados próprio — **reaproveita `receitas-sistema?dados=true`**. `paciente_id`/`profissional_id` vêm da linha do agendamento (verificada contra `empresa_id_ativa`), nunca do payload; só `prescricao` e `paciente_endereco` são do cliente.
+- `components/clinica/receituarioEspecialPrint.ts` — HTML A4 em **2 vias** (`.folha` com `page-break-after`), layout do talão: caixa do título, quadro "Identificação do Emitente" (nome/CRM/UF + endereço+telefone **da clínica**), Paciente + Endereço, área de Prescrição pautada (`repeating-linear-gradient`), quadros "Comprador" e "Fornecedor" em branco lado a lado (preenchidos à mão na farmácia). `montarEnderecoPaciente(dados)` monta o fallback do endereço.
+- `components/clinica/ReceituarioEspecial.tsx` — modal com prévia ao vivo. Campo "Endereço do paciente" pré-preenche do cadastro (`montarEnderecoPaciente`); ao editar, para de auto-preencher (`enderecoTocado`).
+- `types/clinica.types.ts` — `ReceituarioEspecialRegistro`.
+
+**Extensão em `receitas-sistema?dados=true`:** o SELECT e a interface `DadosPrescritor` ganharam `paciente_logradouro/numero/complemento/bairro/cidade/uf/cep` (o endereço do paciente não vinha antes — só o da empresa). Beneficia qualquer documento que use esse endpoint.
+
+**Logo da clínica no documento (§26):** bloco `.brand` centralizado no topo de **cada via**, acima da caixa do título — papel timbrado, mesmo padrão de Receita Sistema/Atestado. `empresa_logo_base64` já vinha no endpoint. Imprime em papel branco → sem "chip" branco (diferente da sidebar, §26b). Sem logo → nome da empresa em negrito.
+
+**`<title>` da janela de impressão = `&nbsp;`** de propósito: o navegador imprime o `<title>` no cabeçalho de cada folha (acima do conteúdo). Deixar em branco tira esse texto. Data/URL nas bordas só saem desmarcando "Cabeçalhos e rodapés" no diálogo de impressão (config do navegador, não dá pra forçar).
+
+---
+
+## 29. Recebimento da clínica = check-in (pagamento ANTES do atendimento) (ajustado 2026-08-28)
+
+**Regra de negócio:** na clínica o paciente **paga na recepção antes da consulta**. Portanto o recebimento faz o **check-in**, não marca a consulta como realizada.
+
+| Status antes de pagar | Depois de pagar |
+|---|---|
+| AGENDADO / CONFIRMADO | **AGUARDANDO** (entra na sala de espera — `sala-espera/page.tsx` só lista `status='AGUARDANDO'`) |
+| AGUARDANDO | AGUARDANDO (sem mudança) |
+| ATENDIDO | ATENDIDO (pagamento na saída) |
+| CANCELADO / FALTOU | sem mudança |
+
+**Quem marca ATENDIDO:** só o botão "Finalizar atendimento" do médico (`finalizarAtendimento()` em `PacienteCheckInFormModal.tsx` → `PATCH /api/clinica/agendamentos/[id]` com `{status:'ATENDIDO'}`). A rota PATCH não tem trava de transição e grava `horario_inicio_atendimento`.
+
+**Onde o status muda no recebimento (2 caminhos, os dois com a mesma regra `CASE`):**
+1. `POST /api/clinica/recebimentos` — `UPDATE tab_agendamento SET status = CASE WHEN status IN ('AGENDADO','CONFIRMADO') THEN 'AGUARDANDO' ELSE status END, horario_chegada = COALESCE(horario_chegada, NOW()) ... WHERE status NOT IN ('CANCELADO','FALTOU')`.
+2. Trigger `fn_guardar_status_agendamento_cli` (`novos/57_trigger_recebimento_status_aguardando.sql`, **aplicada no `hiitcor` em 2026-08-28**) — dispara no INSERT de `tab_movimento_caixa`/`tab_movimento_banco` com `tipo='E' AND origem_modulo='CLI'` (dinheiro/PIX). Antes forçava `ATENDIDO` (era de `21_fix_trigger_recebimento.sql`); agora leva a `AGUARDANDO` só se `status IN ('AGENDADO','CONFIRMADO')`. **Cartão e A Prazo não têm movimento → não passam pela trigger, só pelo caminho 1.**
+
+Os dois caminhos rodam juntos para dinheiro/PIX (trigger no INSERT do movimento + UPDATE explícito depois) — são idempotentes, sem conflito. Não remover nenhum (defesa em profundidade, mesmo padrão que já existia com ATENDIDO).
+
+**Estorno** (`DELETE /api/clinica/recebimentos/[id]`): reverte `AGUARDANDO → CONFIRMADO` e limpa `horario_chegada` (passo "F", depois de desfazer movimentos/títulos/venda-cartão, dentro da transação). **Não** mexe em `ATENDIDO` (consulta já realizada) nem em `CANCELADO`/`FALTOU`. Antes desta mudança o estorno não tocava no status (ficava ATENDIDO). Edge case aceito: se o paciente tinha feito check-in manual (AGENDADO→AGUARDANDO na recepção) e só depois pagou, o estorno derruba pra CONFIRMADO mesmo assim — não há histórico do status anterior.
+
+**`PacienteCheckInFormModal.handleRecebimentoSalvo()`** ainda faz um PATCH pra `AGUARDANDO` depois do modal salvar — virou **rede de segurança redundante** (a rota já faz). O filtro exclui `ATENDIDO` além de `CANCELADO`/`FALTOU` pra não reabrir consulta já finalizada (pagamento na saída via esse modal).
+
+**Impacto em relatórios:** Fechamento Diário e repasse (§3, §25) trabalham sobre `tab_recebimento_consulta` (`status_recebimento='PAGO'`), **não** sobre o status do agendamento — não afetados. Agendamentos já marcados `ATENDIDO` por pagamentos antigos não mudam retroativamente. A timeline de `HistoricoClinico` (`agendamentos?status=ATENDIDO`) passa a não mostrar consulta paga-mas-não-atendida — correto, ela ainda não foi realizada (o `agendamentoAtual` cobre a consulta em andamento).

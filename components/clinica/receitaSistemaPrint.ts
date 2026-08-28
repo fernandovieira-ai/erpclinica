@@ -12,6 +12,13 @@ export interface DadosPrescritor {
   crm_uf:               string | null
   paciente_nome:        string
   paciente_nascimento:  string | null
+  paciente_logradouro?: string | null
+  paciente_numero?:     string | null
+  paciente_complemento?: string | null
+  paciente_bairro?:     string | null
+  paciente_cidade?:     string | null
+  paciente_uf?:         string | null
+  paciente_cep?:        string | null
   data_consulta:        string
   empresa_razao_social?:  string | null
   empresa_nome_fantasia?: string | null

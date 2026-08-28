@@ -5,15 +5,17 @@ import { toast } from 'sonner'
 import {
   ChevronDown, ChevronUp, Pencil, Save, X, FileText, Stethoscope, Users, User,
   Activity, AlertTriangle, ClipboardList, Scale, HeartPulse, FlaskConical, Pill, ListChecks, Mic,
-  FileSignature, ExternalLink, Printer, Loader2, Paperclip, Trash2, ClipboardCheck,
+  FileSignature, ExternalLink, Printer, Loader2, Paperclip, Trash2, ClipboardCheck, FileWarning,
 } from 'lucide-react'
-import type { AgendamentoListItem, Prontuario, ProntuarioAnexo, ReceitaMedica, ReceitaSistemaRegistro, AtestadoMedicoRegistro } from '@/types/clinica.types'
+import type { AgendamentoListItem, Prontuario, ProntuarioAnexo, ReceitaMedica, ReceitaSistemaRegistro, AtestadoMedicoRegistro, ReceituarioEspecialRegistro } from '@/types/clinica.types'
 import VoaPluginView, { preconectarVoa, type Status as VoaStatus, type VoaPluginHandle } from './VoaPluginView'
 import MemedPrescricao from './MemedPrescricao'
 import ReceitaSistema from './ReceitaSistema'
 import AtestadoMedico from './AtestadoMedico'
+import ReceituarioEspecial from './ReceituarioEspecial'
 import { gerarHtmlReceita, type DadosPrescritor } from './receitaSistemaPrint'
 import { gerarHtmlAtestado } from './atestadoPrint'
+import { gerarHtmlReceituarioEspecial } from './receituarioEspecialPrint'
 
 const STATUS_COLOR: Record<string, string> = {
   AGENDADO:   '#378ADD',
@@ -37,6 +39,7 @@ const VOA_COR    = '#7C3AED'
 const MEMED_COR  = '#059669'
 const SISTEMA_COR = '#1E7FC3'
 const ATESTADO_COR = '#0F766E'
+const RECEITUARIO_COR = '#B02A37'
 
 const TIPO_ATESTADO_LABEL: Record<AtestadoMedicoRegistro['tipo'], string> = {
   AFASTAMENTO:    'Afastamento',
@@ -243,6 +246,9 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
   const [atestadoId, setAtestadoId] = useState<number | null>(null)
   const [atestados, setAtestados] = useState<Record<number, AtestadoMedicoRegistro[]>>({})
   const [reimprimindoAtestadoId, setReimprimindoAtestadoId] = useState<number | null>(null)
+  const [receituarioId, setReceituarioId] = useState<number | null>(null)
+  const [receituarios, setReceituarios] = useState<Record<number, ReceituarioEspecialRegistro[]>>({})
+  const [reimprimindoReceituarioId, setReimprimindoReceituarioId] = useState<number | null>(null)
   const [anexos, setAnexos] = useState<Record<number, ProntuarioAnexo[]>>({})
   const [enviandoAnexoId, setEnviandoAnexoId] = useState<number | null>(null)
   const [anexoAlvoId, setAnexoAlvoId] = useState<number | null>(null)
@@ -264,13 +270,14 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
           return { dados: [] }
         }
       }
-      const [dataAg, dataPr, dataRe, dataRs, dataAn, dataAt] = await Promise.all([
+      const [dataAg, dataPr, dataRe, dataRs, dataAn, dataAt, dataRce] = await Promise.all([
         buscar(`/api/clinica/agendamentos?${new URLSearchParams({ paciente_id: String(pacienteId), status: 'ATENDIDO' })}`),
         buscar(`/api/clinica/prontuarios?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
         buscar(`/api/clinica/receitas?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
         buscar(`/api/clinica/receitas-sistema?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
         buscar(`/api/clinica/prontuarios/anexos?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
         buscar(`/api/clinica/atestados?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
+        buscar(`/api/clinica/receituarios-especiais?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
       ])
       const lista: AgendamentoListItem[] = [...(dataAg.dados ?? [])]
       if (agendamentoAtual && !lista.some(a => a.id === agendamentoAtual.id)) lista.push(agendamentoAtual)
@@ -293,12 +300,17 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
       for (const a of (dataAt.dados ?? []) as AtestadoMedicoRegistro[]) {
         (mapaAtestados[a.agendamento_id] ??= []).push(a)
       }
+      const mapaReceituarios: Record<number, ReceituarioEspecialRegistro[]> = {}
+      for (const r of (dataRce.dados ?? []) as ReceituarioEspecialRegistro[]) {
+        (mapaReceituarios[r.agendamento_id] ??= []).push(r)
+      }
       setConsultas(lista)
       setProntuarios(mapa)
       setReceitas(mapaReceitas)
       setReceitasSistema(mapaReceitasSistema)
       setAnexos(mapaAnexos)
       setAtestados(mapaAtestados)
+      setReceituarios(mapaReceituarios)
     } finally {
       setLoading(false)
     }
@@ -533,6 +545,24 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
     }
   }
 
+  async function reimprimirReceituario(reg: ReceituarioEspecialRegistro, ag: AgendamentoListItem) {
+    setReimprimindoReceituarioId(reg.id)
+    // Ver comentário em reimprimirReceitaSistema — janela abre antes do await de propósito.
+    const win = window.open('', '_blank', 'width=820,height=1050')
+    try {
+      const res = await fetch(`/api/clinica/receitas-sistema?dados=true&agendamento_id=${reg.agendamento_id}`)
+      const d = await res.json()
+      const dados: DadosPrescritor | null = d.dados ?? null
+      const html = gerarHtmlReceituarioEspecial(reg.prescricao, reg.paciente_endereco, dados, ag.paciente_nome, ag.profissional_nome)
+      if (win) { win.document.write(html); win.document.close() }
+    } catch {
+      win?.close()
+      toast.error('Erro ao gerar receituário para impressão')
+    } finally {
+      setReimprimindoReceituarioId(null)
+    }
+  }
+
   if (loading) {
     return <div style={{ fontSize: 12, color: 'var(--texto-terciario)', padding: 12 }}>Carregando histórico...</div>
   }
@@ -739,6 +769,19 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
 
                           <button
                             type="button"
+                            onClick={() => setReceituarioId(ag.id)}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 4,
+                              padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
+                              background: 'none', border: `1px solid ${RECEITUARIO_COR}`, borderRadius: 4,
+                              cursor: 'pointer', color: RECEITUARIO_COR,
+                            }}
+                          >
+                            <FileWarning size={12} /> Receituário Especial
+                          </button>
+
+                          <button
+                            type="button"
                             onClick={() => abrirSeletorAnexo(ag.id)}
                             disabled={enviandoAnexoId === ag.id}
                             style={{
@@ -819,6 +862,16 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
                             profissionalNome={ag.profissional_nome}
                             onFechar={() => setAtestadoId(null)}
                             onEmitido={() => { setAtestadoId(null); carregar() }}
+                          />
+                        )}
+
+                        {receituarioId === ag.id && (
+                          <ReceituarioEspecial
+                            agendamentoId={ag.id}
+                            pacienteNome={ag.paciente_nome}
+                            profissionalNome={ag.profissional_nome}
+                            onFechar={() => setReceituarioId(null)}
+                            onEmitido={() => { setReceituarioId(null); carregar() }}
                           />
                         )}
 
@@ -921,6 +974,44 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
                                   }}
                                 >
                                   {reimprimindoAtestadoId === at.id
+                                    ? <Loader2 size={11} />
+                                    : <Printer size={11} />}
+                                  Ver/reimprimir
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {!!receituarios[ag.id]?.length && (
+                          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--texto-terciario)' }}>
+                              Receituários de controle especial
+                            </div>
+                            {receituarios[ag.id].map(r => (
+                              <div key={r.id} style={{
+                                display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+                                backgroundColor: 'var(--bg-input)', borderRadius: 5, fontSize: 12,
+                              }}>
+                                <FileWarning size={13} style={{ color: RECEITUARIO_COR, flexShrink: 0 }} />
+                                <span style={{ color: 'var(--texto-terciario)', fontFamily: 'var(--fonte-mono)', fontSize: 11 }}>
+                                  {new Date(r.created_at).toLocaleDateString('pt-BR')}
+                                </span>
+                                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--texto-principal)' }}>
+                                  {r.prescricao.split('\n')[0] || 'Receituário emitido'}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => reimprimirReceituario(r, ag)}
+                                  disabled={reimprimindoReceituarioId === r.id}
+                                  style={{
+                                    display: 'flex', alignItems: 'center', gap: 3,
+                                    background: 'none', border: 'none', cursor: 'pointer',
+                                    color: RECEITUARIO_COR, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
+                                    padding: 0, opacity: reimprimindoReceituarioId === r.id ? 0.6 : 1,
+                                  }}
+                                >
+                                  {reimprimindoReceituarioId === r.id
                                     ? <Loader2 size={11} />
                                     : <Printer size={11} />}
                                   Ver/reimprimir
