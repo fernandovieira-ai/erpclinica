@@ -593,6 +593,308 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
         const resumo       = prontuario?.diagnostico || prontuario?.queixas
         const ultimo      = idx === consultas.length - 1
 
+        // Acoes de documentos (receita, receita sistema, atestado, receituario, anexo)
+        // + paineis e listas de emitidos. Renderado tanto na visualizacao do prontuario
+        // quanto na tela de preenchimento, pra nao precisar sair da edicao pra emitir algo.
+        // Funcao (nao valor) pra so construir a arvore quando o card esta aberto.
+        const blocoDocumentos = () => (
+          <>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+              <button
+                type="button"
+                onClick={() => setReceitaAtivaId(receitaAtivaId === ag.id ? null : ag.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
+                  background: 'none', border: `1px solid ${MEMED_COR}`, borderRadius: 4,
+                  cursor: 'pointer', color: MEMED_COR,
+                }}
+              >
+                <FileSignature size={12} /> Emitir Receita
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setReceitaSistemaId(ag.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
+                  background: 'none', border: '1px solid #1E7FC3', borderRadius: 4,
+                  cursor: 'pointer', color: '#1E7FC3',
+                }}
+              >
+                <FileText size={12} /> Emitir Receita Sistema
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAtestadoId(ag.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
+                  background: 'none', border: `1px solid ${ATESTADO_COR}`, borderRadius: 4,
+                  cursor: 'pointer', color: ATESTADO_COR,
+                }}
+              >
+                <ClipboardCheck size={12} /> Criar Atestado
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setReceituarioId(ag.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
+                  background: 'none', border: `1px solid ${RECEITUARIO_COR}`, borderRadius: 4,
+                  cursor: 'pointer', color: RECEITUARIO_COR,
+                }}
+              >
+                <FileWarning size={12} /> Receituário Especial
+              </button>
+
+              <button
+                type="button"
+                onClick={() => abrirSeletorAnexo(ag.id)}
+                disabled={enviandoAnexoId === ag.id}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
+                  backgroundColor: 'var(--cor-sucesso-bg)', border: '1px solid var(--cor-sucesso)', borderRadius: 4,
+                  cursor: enviandoAnexoId === ag.id ? 'not-allowed' : 'pointer',
+                  color: 'var(--cor-sucesso)', opacity: enviandoAnexoId === ag.id ? 0.6 : 1,
+                }}
+              >
+                {enviandoAnexoId === ag.id ? <Loader2 size={12} /> : <Paperclip size={12} />}
+                Anexar exame{voaMontadoId === ag.id && voaAtivoId === ag.id ? ' (envia também pra Voa)' : ''}
+              </button>
+            </div>
+
+            {!!anexos[ag.id]?.length && (
+              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--texto-terciario)' }}>
+                  Anexos
+                </div>
+                {anexos[ag.id].map(anexo => (
+                  <div key={anexo.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+                    backgroundColor: 'var(--bg-input)', borderRadius: 5, fontSize: 12,
+                  }}>
+                    <Paperclip size={13} style={{ color: 'var(--texto-terciario)', flexShrink: 0 }} />
+                    <a
+                      href={`/api/clinica/prontuarios/anexos/${anexo.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--cor-primaria)', fontWeight: 600 }}
+                    >
+                      {anexo.nome_arquivo}
+                    </a>
+                    {anexo.tamanho_bytes != null && (
+                      <span style={{ color: 'var(--texto-terciario)', fontSize: 11, whiteSpace: 'nowrap' }}>
+                        {(anexo.tamanho_bytes / 1024).toFixed(0)} KB
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removerAnexo(ag, anexo)}
+                      style={{ display: 'flex', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--cor-erro)', padding: 0 }}
+                      title="Remover anexo"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {receitaAtivaId === ag.id && (
+              <div style={{ marginTop: 8 }}>
+                <MemedPrescricao
+                  agendamentoId={ag.id}
+                  profissionalId={ag.profissional_id}
+                  onFechar={() => setReceitaAtivaId(null)}
+                  onEmitida={carregar}
+                />
+              </div>
+            )}
+
+            {receitaSistemaId === ag.id && (
+              <ReceitaSistema
+                agendamentoId={ag.id}
+                pacienteNome={ag.paciente_nome}
+                profissionalNome={ag.profissional_nome}
+                onFechar={() => setReceitaSistemaId(null)}
+                onEmitida={() => { setReceitaSistemaId(null); carregar() }}
+              />
+            )}
+
+            {atestadoId === ag.id && (
+              <AtestadoMedico
+                agendamentoId={ag.id}
+                pacienteNome={ag.paciente_nome}
+                profissionalNome={ag.profissional_nome}
+                onFechar={() => setAtestadoId(null)}
+                onEmitido={() => { setAtestadoId(null); carregar() }}
+              />
+            )}
+
+            {receituarioId === ag.id && (
+              <ReceituarioEspecial
+                agendamentoId={ag.id}
+                pacienteNome={ag.paciente_nome}
+                profissionalNome={ag.profissional_nome}
+                onFechar={() => setReceituarioId(null)}
+                onEmitido={() => { setReceituarioId(null); carregar() }}
+              />
+            )}
+
+            {!!receitas[ag.id]?.length && (
+              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--texto-terciario)' }}>
+                  Receitas emitidas
+                </div>
+                {receitas[ag.id].map(r => (
+                  <div key={r.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+                    backgroundColor: 'var(--bg-input)', borderRadius: 5, fontSize: 12,
+                  }}>
+                    <FileSignature size={13} style={{ color: MEMED_COR, flexShrink: 0 }} />
+                    <span style={{ color: 'var(--texto-terciario)', fontFamily: 'var(--fonte-mono)', fontSize: 11 }}>
+                      {new Date(r.created_at).toLocaleDateString('pt-BR')}
+                    </span>
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--texto-principal)' }}>
+                      {r.medicamentos || 'Receita emitida'}
+                    </span>
+                    {r.url_receita && (
+                      <a
+                        href={r.url_receita}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ display: 'flex', alignItems: 'center', gap: 3, color: 'var(--cor-primaria)', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}
+                      >
+                        Ver/reimprimir <ExternalLink size={11} />
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!!receitasSistema[ag.id]?.length && (
+              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--texto-terciario)' }}>
+                  Receitas do sistema emitidas
+                </div>
+                {receitasSistema[ag.id].map(r => (
+                  <div key={r.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+                    backgroundColor: 'var(--bg-input)', borderRadius: 5, fontSize: 12,
+                  }}>
+                    <FileText size={13} style={{ color: SISTEMA_COR, flexShrink: 0 }} />
+                    <span style={{ color: 'var(--texto-terciario)', fontFamily: 'var(--fonte-mono)', fontSize: 11 }}>
+                      {new Date(r.created_at).toLocaleDateString('pt-BR')}
+                    </span>
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--texto-principal)' }}>
+                      {r.itens.map(it => it.medicamento_nome).join(', ') || 'Receita emitida'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => reimprimirReceitaSistema(r, ag)}
+                      disabled={reimprimindoId === r.id}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 3,
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: SISTEMA_COR, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
+                        padding: 0, opacity: reimprimindoId === r.id ? 0.6 : 1,
+                      }}
+                    >
+                      {reimprimindoId === r.id
+                        ? <Loader2 size={11} />
+                        : <Printer size={11} />}
+                      Ver/reimprimir
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!!atestados[ag.id]?.length && (
+              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--texto-terciario)' }}>
+                  Atestados emitidos
+                </div>
+                {atestados[ag.id].map(at => (
+                  <div key={at.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+                    backgroundColor: 'var(--bg-input)', borderRadius: 5, fontSize: 12,
+                  }}>
+                    <ClipboardCheck size={13} style={{ color: ATESTADO_COR, flexShrink: 0 }} />
+                    <span style={{ color: 'var(--texto-terciario)', fontFamily: 'var(--fonte-mono)', fontSize: 11 }}>
+                      {new Date(at.created_at).toLocaleDateString('pt-BR')}
+                    </span>
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--texto-principal)' }}>
+                      {TIPO_ATESTADO_LABEL[at.tipo]}{at.tipo === 'AFASTAMENTO' && at.dias_afastamento ? ` — ${at.dias_afastamento} dia(s)` : ''}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => reimprimirAtestado(at, ag)}
+                      disabled={reimprimindoAtestadoId === at.id}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 3,
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: ATESTADO_COR, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
+                        padding: 0, opacity: reimprimindoAtestadoId === at.id ? 0.6 : 1,
+                      }}
+                    >
+                      {reimprimindoAtestadoId === at.id
+                        ? <Loader2 size={11} />
+                        : <Printer size={11} />}
+                      Ver/reimprimir
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!!receituarios[ag.id]?.length && (
+              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--texto-terciario)' }}>
+                  Receituários de controle especial
+                </div>
+                {receituarios[ag.id].map(r => (
+                  <div key={r.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+                    backgroundColor: 'var(--bg-input)', borderRadius: 5, fontSize: 12,
+                  }}>
+                    <FileWarning size={13} style={{ color: RECEITUARIO_COR, flexShrink: 0 }} />
+                    <span style={{ color: 'var(--texto-terciario)', fontFamily: 'var(--fonte-mono)', fontSize: 11 }}>
+                      {new Date(r.created_at).toLocaleDateString('pt-BR')}
+                    </span>
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--texto-principal)' }}>
+                      {r.prescricao.split('\n')[0] || 'Receituário emitido'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => reimprimirReceituario(r, ag)}
+                      disabled={reimprimindoReceituarioId === r.id}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 3,
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: RECEITUARIO_COR, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
+                        padding: 0, opacity: reimprimindoReceituarioId === r.id ? 0.6 : 1,
+                      }}
+                    >
+                      {reimprimindoReceituarioId === r.id
+                        ? <Loader2 size={11} />
+                        : <Printer size={11} />}
+                      Ver/reimprimir
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )
+
         return (
           <div key={ag.id} style={{ display: 'flex', gap: 12 }}>
             {/* Linha do tempo */}
@@ -727,299 +1029,9 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
                           >
                             <Pencil size={12} /> {prontuario ? 'Editar prontuário' : 'Preencher prontuário'}
                           </button>
-
-                          <button
-                            type="button"
-                            onClick={() => setReceitaAtivaId(receitaAtivaId === ag.id ? null : ag.id)}
-                            style={{
-                              display: 'flex', alignItems: 'center', gap: 4,
-                              padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
-                              background: 'none', border: `1px solid ${MEMED_COR}`, borderRadius: 4,
-                              cursor: 'pointer', color: MEMED_COR,
-                            }}
-                          >
-                            <FileSignature size={12} /> Emitir Receita
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => setReceitaSistemaId(ag.id)}
-                            style={{
-                              display: 'flex', alignItems: 'center', gap: 4,
-                              padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
-                              background: 'none', border: '1px solid #1E7FC3', borderRadius: 4,
-                              cursor: 'pointer', color: '#1E7FC3',
-                            }}
-                          >
-                            <FileText size={12} /> Emitir Receita Sistema
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => setAtestadoId(ag.id)}
-                            style={{
-                              display: 'flex', alignItems: 'center', gap: 4,
-                              padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
-                              background: 'none', border: `1px solid ${ATESTADO_COR}`, borderRadius: 4,
-                              cursor: 'pointer', color: ATESTADO_COR,
-                            }}
-                          >
-                            <ClipboardCheck size={12} /> Criar Atestado
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => setReceituarioId(ag.id)}
-                            style={{
-                              display: 'flex', alignItems: 'center', gap: 4,
-                              padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
-                              background: 'none', border: `1px solid ${RECEITUARIO_COR}`, borderRadius: 4,
-                              cursor: 'pointer', color: RECEITUARIO_COR,
-                            }}
-                          >
-                            <FileWarning size={12} /> Receituário Especial
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => abrirSeletorAnexo(ag.id)}
-                            disabled={enviandoAnexoId === ag.id}
-                            style={{
-                              display: 'flex', alignItems: 'center', gap: 4,
-                              padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
-                              backgroundColor: 'var(--cor-sucesso-bg)', border: '1px solid var(--cor-sucesso)', borderRadius: 4,
-                              cursor: enviandoAnexoId === ag.id ? 'not-allowed' : 'pointer',
-                              color: 'var(--cor-sucesso)', opacity: enviandoAnexoId === ag.id ? 0.6 : 1,
-                            }}
-                          >
-                            {enviandoAnexoId === ag.id ? <Loader2 size={12} /> : <Paperclip size={12} />}
-                            Anexar exame
-                          </button>
                         </div>
 
-                        {!!anexos[ag.id]?.length && (
-                          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--texto-terciario)' }}>
-                              Anexos
-                            </div>
-                            {anexos[ag.id].map(anexo => (
-                              <div key={anexo.id} style={{
-                                display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
-                                backgroundColor: 'var(--bg-input)', borderRadius: 5, fontSize: 12,
-                              }}>
-                                <Paperclip size={13} style={{ color: 'var(--texto-terciario)', flexShrink: 0 }} />
-                                <a
-                                  href={`/api/clinica/prontuarios/anexos/${anexo.id}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--cor-primaria)', fontWeight: 600 }}
-                                >
-                                  {anexo.nome_arquivo}
-                                </a>
-                                {anexo.tamanho_bytes != null && (
-                                  <span style={{ color: 'var(--texto-terciario)', fontSize: 11, whiteSpace: 'nowrap' }}>
-                                    {(anexo.tamanho_bytes / 1024).toFixed(0)} KB
-                                  </span>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => removerAnexo(ag, anexo)}
-                                  style={{ display: 'flex', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--cor-erro)', padding: 0 }}
-                                  title="Remover anexo"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {receitaAtivaId === ag.id && (
-                          <div style={{ marginTop: 8 }}>
-                            <MemedPrescricao
-                              agendamentoId={ag.id}
-                              profissionalId={ag.profissional_id}
-                              onFechar={() => setReceitaAtivaId(null)}
-                              onEmitida={carregar}
-                            />
-                          </div>
-                        )}
-
-                        {receitaSistemaId === ag.id && (
-                          <ReceitaSistema
-                            agendamentoId={ag.id}
-                            pacienteNome={ag.paciente_nome}
-                            profissionalNome={ag.profissional_nome}
-                            onFechar={() => setReceitaSistemaId(null)}
-                            onEmitida={() => { setReceitaSistemaId(null); carregar() }}
-                          />
-                        )}
-
-                        {atestadoId === ag.id && (
-                          <AtestadoMedico
-                            agendamentoId={ag.id}
-                            pacienteNome={ag.paciente_nome}
-                            profissionalNome={ag.profissional_nome}
-                            onFechar={() => setAtestadoId(null)}
-                            onEmitido={() => { setAtestadoId(null); carregar() }}
-                          />
-                        )}
-
-                        {receituarioId === ag.id && (
-                          <ReceituarioEspecial
-                            agendamentoId={ag.id}
-                            pacienteNome={ag.paciente_nome}
-                            profissionalNome={ag.profissional_nome}
-                            onFechar={() => setReceituarioId(null)}
-                            onEmitido={() => { setReceituarioId(null); carregar() }}
-                          />
-                        )}
-
-                        {!!receitas[ag.id]?.length && (
-                          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--texto-terciario)' }}>
-                              Receitas emitidas
-                            </div>
-                            {receitas[ag.id].map(r => (
-                              <div key={r.id} style={{
-                                display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
-                                backgroundColor: 'var(--bg-input)', borderRadius: 5, fontSize: 12,
-                              }}>
-                                <FileSignature size={13} style={{ color: MEMED_COR, flexShrink: 0 }} />
-                                <span style={{ color: 'var(--texto-terciario)', fontFamily: 'var(--fonte-mono)', fontSize: 11 }}>
-                                  {new Date(r.created_at).toLocaleDateString('pt-BR')}
-                                </span>
-                                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--texto-principal)' }}>
-                                  {r.medicamentos || 'Receita emitida'}
-                                </span>
-                                {r.url_receita && (
-                                  <a
-                                    href={r.url_receita}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    style={{ display: 'flex', alignItems: 'center', gap: 3, color: 'var(--cor-primaria)', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}
-                                  >
-                                    Ver/reimprimir <ExternalLink size={11} />
-                                  </a>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {!!receitasSistema[ag.id]?.length && (
-                          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--texto-terciario)' }}>
-                              Receitas do sistema emitidas
-                            </div>
-                            {receitasSistema[ag.id].map(r => (
-                              <div key={r.id} style={{
-                                display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
-                                backgroundColor: 'var(--bg-input)', borderRadius: 5, fontSize: 12,
-                              }}>
-                                <FileText size={13} style={{ color: SISTEMA_COR, flexShrink: 0 }} />
-                                <span style={{ color: 'var(--texto-terciario)', fontFamily: 'var(--fonte-mono)', fontSize: 11 }}>
-                                  {new Date(r.created_at).toLocaleDateString('pt-BR')}
-                                </span>
-                                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--texto-principal)' }}>
-                                  {r.itens.map(it => it.medicamento_nome).join(', ') || 'Receita emitida'}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => reimprimirReceitaSistema(r, ag)}
-                                  disabled={reimprimindoId === r.id}
-                                  style={{
-                                    display: 'flex', alignItems: 'center', gap: 3,
-                                    background: 'none', border: 'none', cursor: 'pointer',
-                                    color: SISTEMA_COR, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
-                                    padding: 0, opacity: reimprimindoId === r.id ? 0.6 : 1,
-                                  }}
-                                >
-                                  {reimprimindoId === r.id
-                                    ? <Loader2 size={11} />
-                                    : <Printer size={11} />}
-                                  Ver/reimprimir
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {!!atestados[ag.id]?.length && (
-                          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--texto-terciario)' }}>
-                              Atestados emitidos
-                            </div>
-                            {atestados[ag.id].map(at => (
-                              <div key={at.id} style={{
-                                display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
-                                backgroundColor: 'var(--bg-input)', borderRadius: 5, fontSize: 12,
-                              }}>
-                                <ClipboardCheck size={13} style={{ color: ATESTADO_COR, flexShrink: 0 }} />
-                                <span style={{ color: 'var(--texto-terciario)', fontFamily: 'var(--fonte-mono)', fontSize: 11 }}>
-                                  {new Date(at.created_at).toLocaleDateString('pt-BR')}
-                                </span>
-                                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--texto-principal)' }}>
-                                  {TIPO_ATESTADO_LABEL[at.tipo]}{at.tipo === 'AFASTAMENTO' && at.dias_afastamento ? ` — ${at.dias_afastamento} dia(s)` : ''}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => reimprimirAtestado(at, ag)}
-                                  disabled={reimprimindoAtestadoId === at.id}
-                                  style={{
-                                    display: 'flex', alignItems: 'center', gap: 3,
-                                    background: 'none', border: 'none', cursor: 'pointer',
-                                    color: ATESTADO_COR, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
-                                    padding: 0, opacity: reimprimindoAtestadoId === at.id ? 0.6 : 1,
-                                  }}
-                                >
-                                  {reimprimindoAtestadoId === at.id
-                                    ? <Loader2 size={11} />
-                                    : <Printer size={11} />}
-                                  Ver/reimprimir
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {!!receituarios[ag.id]?.length && (
-                          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--texto-terciario)' }}>
-                              Receituários de controle especial
-                            </div>
-                            {receituarios[ag.id].map(r => (
-                              <div key={r.id} style={{
-                                display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
-                                backgroundColor: 'var(--bg-input)', borderRadius: 5, fontSize: 12,
-                              }}>
-                                <FileWarning size={13} style={{ color: RECEITUARIO_COR, flexShrink: 0 }} />
-                                <span style={{ color: 'var(--texto-terciario)', fontFamily: 'var(--fonte-mono)', fontSize: 11 }}>
-                                  {new Date(r.created_at).toLocaleDateString('pt-BR')}
-                                </span>
-                                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--texto-principal)' }}>
-                                  {r.prescricao.split('\n')[0] || 'Receituário emitido'}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => reimprimirReceituario(r, ag)}
-                                  disabled={reimprimindoReceituarioId === r.id}
-                                  style={{
-                                    display: 'flex', alignItems: 'center', gap: 3,
-                                    background: 'none', border: 'none', cursor: 'pointer',
-                                    color: RECEITUARIO_COR, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
-                                    padding: 0, opacity: reimprimindoReceituarioId === r.id ? 0.6 : 1,
-                                  }}
-                                >
-                                  {reimprimindoReceituarioId === r.id
-                                    ? <Loader2 size={11} />
-                                    : <Printer size={11} />}
-                                  Ver/reimprimir
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                        {blocoDocumentos()}
                       </>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1140,52 +1152,7 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
                           </div>
                         )}
 
-                        <div>
-                          <button
-                            type="button"
-                            onClick={() => abrirSeletorAnexo(ag.id)}
-                            disabled={enviandoAnexoId === ag.id}
-                            style={{
-                              display: 'flex', alignItems: 'center', gap: 4, width: 'fit-content',
-                              padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
-                              backgroundColor: 'var(--cor-sucesso-bg)', border: '1px solid var(--cor-sucesso)', borderRadius: 4,
-                              cursor: enviandoAnexoId === ag.id ? 'not-allowed' : 'pointer',
-                              color: 'var(--cor-sucesso)', opacity: enviandoAnexoId === ag.id ? 0.6 : 1,
-                            }}
-                          >
-                            {enviandoAnexoId === ag.id ? <Loader2 size={12} /> : <Paperclip size={12} />}
-                            Anexar exame{voaMontadoId === ag.id && voaAtivoId === ag.id ? ' (envia também pra Voa)' : ''}
-                          </button>
-
-                          {!!anexos[ag.id]?.length && (
-                            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                              {anexos[ag.id].map(anexo => (
-                                <div key={anexo.id} style={{
-                                  display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
-                                  backgroundColor: 'var(--bg-input)', borderRadius: 5, fontSize: 12,
-                                }}>
-                                  <Paperclip size={13} style={{ color: 'var(--texto-terciario)', flexShrink: 0 }} />
-                                  <a
-                                    href={`/api/clinica/prontuarios/anexos/${anexo.id}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--cor-primaria)', fontWeight: 600 }}
-                                  >
-                                    {anexo.nome_arquivo}
-                                  </a>
-                                  <button
-                                    type="button"
-                                    onClick={() => removerAnexo(ag, anexo)}
-                                    style={{ display: 'flex', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--cor-erro)', padding: 0 }}
-                                    title="Remover anexo"
-                                  >
-                                    <Trash2 size={13} />
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
+                        {blocoDocumentos()}
 
                         <CampoEdit label="Queixas"                value={form.queixas}                 onChange={v => setForm(f => ({ ...f, queixas: v }))} />
                         <CampoEdit label="HDA"                    value={form.hda}                     onChange={v => setForm(f => ({ ...f, hda: v }))} />
