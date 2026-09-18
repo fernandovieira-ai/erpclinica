@@ -34,7 +34,8 @@ interface PacienteDuplicado {
 interface Props {
   open:             boolean
   onClose:          () => void
-  onSaved:          () => void
+  // Na criação, recebe o agendamento já pronto (formato da lista) pra a agenda inserir sem refetch
+  onSaved:          (agendamento?: AgendamentoListItem) => void
   agendamento?:     AgendamentoListItem | null
   dataHoraInicio?:  Date | null
   profissionalPre?: ProfissionalListItem | null
@@ -113,6 +114,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
   const [loadingSlot,   setLoadingSlot]   = useState(false)
   const [saving,        setSaving]        = useState(false)
   const [estornando,    setEstornando]    = useState(false)
+  const [carregado,     setCarregado]     = useState(false)
 
   const [horarioPickerOpen, setHorarioPickerOpen] = useState(false)
 
@@ -161,17 +163,29 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
   }, [])
 
   // Carregar dados auxiliares
+  // `carregado` evita mostrar tipos de uma abertura anterior (lista de profissionais desatualizada)
+  // enquanto a configuração atual dos atendimentos de cada profissional ainda está chegando.
   useEffect(() => {
     if (!open) return
+    let cancelado = false
+    setCarregado(false)
     Promise.all([
       fetch('/api/clinica/profissionais').then(r => r.json()),
-      fetch('/api/clinica/tipos-agendamento').then(r => r.json()),
+      // limit=100 (máximo da rota): o padrão é 50 e cortaria em silêncio os tipos além do 50º
+      fetch('/api/clinica/tipos-agendamento?limit=100').then(r => r.json()),
       fetch('/api/clinica/categorias?limit=200').then(r => r.json()),
     ]).then(([p, t, c]) => {
+      if (cancelado) return
       setProfissionais(p.dados ?? [])
       setTipos(t.dados ?? [])
       setCategorias(c.dados ?? [])
+      setCarregado(true)
+    }).catch(() => {
+      if (cancelado) return
+      toast.error('Erro ao carregar dados do agendamento')
+      setCarregado(true)
     })
+    return () => { cancelado = true }
   }, [open])
 
   // Popular form ao editar ou ao clicar em slot
@@ -417,16 +431,18 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
   // Tipos de atendimento que o profissional selecionado realiza.
   // Ao editar, garante que o tipo já gravado apareça mesmo se foi desabilitado depois.
   const tiposDisponiveis = useMemo(() => {
-    if (!form.profissional_id) return []
+    if (!form.profissional_id || !carregado) return []
     const prof = profissionais.find(p => p.id === form.profissional_id)
-    const permitidos = prof?.tipo_ids ?? []
-    let lista = tipos.filter(t => permitidos.includes(t.id))
-    if (form.tipo_id && !lista.some(t => t.id === form.tipo_id)) {
+    const permitidos = new Set(prof?.tipo_ids ?? [])
+    let lista = tipos.filter(t => permitidos.has(t.id))
+    // Só ao EDITAR: mantém o tipo já gravado mesmo se foi desabilitado depois no cadastro.
+    // No lançamento novo nunca entra tipo fora da configuração do profissional.
+    if (isEdit && form.tipo_id && !lista.some(t => t.id === form.tipo_id)) {
       const atual = tipos.find(t => t.id === form.tipo_id)
       if (atual) lista = [...lista, atual]
     }
     return lista
-  }, [form.profissional_id, form.tipo_id, tipos, profissionais])
+  }, [form.profissional_id, form.tipo_id, tipos, profissionais, carregado, isEdit])
 
   // Quando muda o tipo, ajusta a duração
   function handleSelecionarHorario(data: string, hora: string) {
@@ -493,21 +509,8 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
       }
     }
 
-    // Validação de disponibilidade do profissional
-    if (!isEdit) {
-      try {
-        const resDisp = await fetch(`/api/clinica/profissionais/${form.profissional_id}/disponibilidade?data=${form.data}&hora_inicio=${form.hora_inicio}&hora_fim=${form.hora_fim}`)
-        const dataDisp = await resDisp.json()
-        if (!dataDisp.disponivel) {
-          toast.error(dataDisp.razao || 'Profissional não está disponível neste horário')
-          return
-        }
-      } catch (e) {
-        toast.error('Erro ao validar disponibilidade do profissional')
-        return
-      }
-    }
-
+    // Disponibilidade do profissional, tipo habilitado e conflito de horário são validados
+    // pelo servidor no próprio POST (uma ida só), que responde 422/409 com a razão.
     setSaving(true)
     try {
       const url    = isEdit ? `/api/clinica/agendamentos/${agendamento!.id}` : '/api/clinica/agendamentos'
@@ -530,13 +533,16 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
       })
 
       if (!res.ok) {
-        const err = await res.json()
-        toast.error(err.erro ?? 'Erro ao salvar')
+        const err = await res.json().catch(() => ({}))
+        toast.error(typeof err.erro === 'string' ? err.erro : 'Erro ao salvar')
         return
       }
 
+      // No lançamento o servidor devolve o item pronto; a agenda insere na hora, sem refazer a lista
+      const criado: { agendamento?: AgendamentoListItem } | null = isEdit ? null : await res.json().catch(() => null)
+
       toast.success(isEdit ? 'Agendamento atualizado!' : 'Agendamento criado!')
-      onSaved()
+      onSaved(criado?.agendamento)
       onClose()
     } finally {
       setSaving(false)
@@ -1059,17 +1065,17 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
               <select
                 value={form.tipo_id ?? ''}
                 onChange={e => handleTipo(e.target.value ? Number(e.target.value) : null)}
-                disabled={!form.profissional_id}
+                disabled={!form.profissional_id || !carregado}
                 style={{ padding: '5px 6px', fontSize: 12, backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3 }}
               >
                 <option value="">
-                  {!form.profissional_id ? 'Selecione o profissional primeiro' : 'Selecione o tipo...'}
+                  {!form.profissional_id ? 'Selecione o profissional primeiro' : !carregado ? 'Carregando...' : 'Selecione o tipo...'}
                 </option>
                 {tiposDisponiveis.map(t => (
                   <option key={t.id} value={t.id}>{t.descricao} ({t.duracao_min}min)</option>
                 ))}
               </select>
-              {form.profissional_id > 0 && tiposDisponiveis.length === 0 && (
+              {carregado && form.profissional_id > 0 && tiposDisponiveis.length === 0 && (
                 <span style={{ fontSize: 10.5, color: 'var(--cor-erro)', marginTop: 3 }}>
                   Nenhum tipo de atendimento habilitado para este profissional. Configure no cadastro dele (aba Atendimentos).
                 </span>

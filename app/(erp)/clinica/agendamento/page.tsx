@@ -215,10 +215,11 @@ export default function AgendamentoPage() {
       const data = await res.json()
       setAgendamentos(data.dados ?? [])
     } finally { setLoading(false) }
+  }, [periodo, profFiltro])
 
-    // Carrega dias indisponíveis sem bloquear
-    carregarDiasIndisponíveis().catch(() => {})
-  }, [periodo, profFiltro, carregarDiasIndisponíveis])
+  // Grade de dias/horários do profissional: só muda com período ou profissional (não a cada save),
+  // e carrega em paralelo com a lista de agendamentos em vez de esperar por ela.
+  useEffect(() => { carregarDiasIndisponíveis().catch(() => {}) }, [carregarDiasIndisponíveis])
 
   const carregarMes = useCallback(async () => {
     const ini = startOfMonth(calMes)
@@ -254,6 +255,35 @@ export default function AgendamentoPage() {
     const data = await res.json()
     setAgsConfirmar(data.dados ?? [])
   }, [profFiltro])
+
+  // Recarga completa (edição, exclusão, reagendamento). A aba "Confirmar" só recarrega se estiver
+  // aberta — ao abri-la o efeito abaixo já busca a lista.
+  const recarregarAgenda = useCallback(() => {
+    carregar()
+    carregarMes()
+    if (view === 'confirmar') carregarConfirmar()
+  }, [carregar, carregarMes, carregarConfirmar, view])
+
+  // Lançamento: o servidor devolve o agendamento pronto, então ele entra na grade na hora,
+  // sem refazer as três listas. Sem item (edição/exclusão), recarrega normalmente.
+  const aoSalvarAgendamento = useCallback((novo?: AgendamentoListItem) => {
+    if (!novo) { recarregarAgenda(); return }
+    // Fora do profissional filtrado, não aparece em nenhuma das visões atuais
+    if (profFiltro && novo.profissional_id !== profFiltro) return
+
+    const inicio = parseISO(novo.data_hora_inicio)
+    const dia    = format(inicio, 'yyyy-MM-dd')
+    const porHorario = (a: AgendamentoListItem, b: AgendamentoListItem) =>
+      a.data_hora_inicio.localeCompare(b.data_hora_inicio)
+
+    if (dia >= format(periodo.ini, 'yyyy-MM-dd') && dia <= format(periodo.fim, 'yyyy-MM-dd')) {
+      setAgendamentos(prev => [...prev.filter(a => a.id !== novo.id), novo].sort(porHorario))
+    }
+    if (isSameMonth(inicio, calMes)) setAgsMes(prev => new Set(prev).add(dia))
+    if (view === 'confirmar' && novo.status === 'AGENDADO' && dia >= format(startOfDay(new Date()), 'yyyy-MM-dd')) {
+      setAgsConfirmar(prev => [...prev.filter(a => a.id !== novo.id), novo].sort(porHorario))
+    }
+  }, [recarregarAgenda, profFiltro, periodo, calMes, view])
 
   useEffect(() => {
     fetch('/api/clinica/profissionais').then(r => r.json()).then(d => {
@@ -1710,7 +1740,7 @@ export default function AgendamentoPage() {
             <button
               className="btn-ghost"
               style={{ padding: '6px 8px' }}
-              onClick={() => { carregar(); carregarMes(); if (view === 'confirmar') carregarConfirmar() }}
+              onClick={() => { recarregarAgenda(); carregarDiasIndisponíveis().catch(() => {}) }}
               title="Atualizar"
             >
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
@@ -1753,7 +1783,7 @@ export default function AgendamentoPage() {
       <AgendamentoModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        onSaved={() => { carregar(); carregarMes(); carregarConfirmar() }}
+        onSaved={aoSalvarAgendamento}
         agendamento={editAg}
         dataHoraInicio={slotInicio}
         profissionalPre={profissionais.find(p => p.id === profFiltro) ?? null}
@@ -1763,7 +1793,7 @@ export default function AgendamentoPage() {
         open={!!novoHorarioAg}
         agendamento={novoHorarioAg}
         onClose={() => setNovoHorarioAg(null)}
-        onSaved={() => { carregar(); carregarMes(); carregarConfirmar() }}
+        onSaved={recarregarAgenda}
       />
 
       <BuscaPacienteAgendamentosModal

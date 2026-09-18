@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 import { agendamentoSchema } from '@/lib/validators/agendamento.schema'
+import { avaliarDisponibilidade, sqlDadosDisponibilidade } from '@/lib/clinica/disponibilidade'
+import { MSG_TIPO_NAO_HABILITADO } from '@/lib/clinica/tipo-habilitado'
+import {
+  AGENDAMENTO_LISTA_COLUNAS, AGENDAMENTO_LISTA_JOINS, AGENDAMENTO_LISTA_SEM_RECEBIMENTO,
+} from '@/lib/clinica/agendamento-lista'
 import type { Pool } from 'pg'
 
 const _tableCache = new Map<string, boolean>()
@@ -76,31 +81,10 @@ export async function GET(req: NextRequest) {
     : ''
 
   const { rows } = await db.query(
-    `SELECT
-       a.id, a.data_hora_inicio, a.data_hora_fim, a.status, a.motivo, a.observacao,
-       a.horario_chegada, a.horario_inicio_atendimento,
-       pac.id   AS paciente_id,    pac.nome  AS paciente_nome,
-       pac.celular AS paciente_celular, pac.cpf_cnpj AS paciente_cpf,
-       pro.id   AS profissional_id, pro.nome AS profissional_nome,
-       pro.eh_clinica AS profissional_eh_clinica,
-       a.medico_solicitante_id, sol.nome AS medico_solicitante_nome,
-       tp.id    AS tipo_id,         tp.descricao AS tipo_descricao,
-       tp.cor   AS tipo_cor,        tp.duracao_min AS tipo_duracao_min,
-       tp.voa_clinical_type AS tipo_voa_clinical_type,
-       COALESCE(atc.valor, tp.valor) AS tipo_valor,
-       atc.valor_prazo AS tipo_valor_prazo,
-       esp.id   AS especialidade_id, esp.descricao AS especialidade_descricao,
-       esp.cor  AS especialidade_cor,
-       cat.id   AS categoria_id,    cat.descricao AS categoria_descricao
+    `SELECT ${AGENDAMENTO_LISTA_COLUNAS}
        ${selectRecebimento}
      FROM tab_agendamento a
-       JOIN tab_pessoa pac  ON pac.id = a.paciente_id
-       JOIN tab_pessoa pro  ON pro.id = a.profissional_id
-       LEFT JOIN tab_pessoa sol ON sol.id = a.medico_solicitante_id
-       LEFT JOIN tab_agendamento_tipo tp  ON tp.id = a.tipo_id
-       LEFT JOIN tab_agendamento_tipo_categoria atc ON atc.tipo_id = a.tipo_id AND atc.categoria_id = a.categoria_id
-       LEFT JOIN tab_especialidade    esp ON esp.id = a.especialidade_id
-       LEFT JOIN tab_categoria        cat ON cat.id = a.categoria_id
+       ${AGENDAMENTO_LISTA_JOINS}
        ${joinRecebimento}
      WHERE ${where}
      ORDER BY a.data_hora_inicio ${order}
@@ -112,6 +96,9 @@ export async function GET(req: NextRequest) {
 }
 
 // POST /api/clinica/agendamentos
+// Valida tipo habilitado + disponibilidade num único SELECT e grava com a guarda de conflito
+// no próprio INSERT (2 idas ao banco no total). Devolve o item já no formato da lista, pro
+// front inserir na grade sem refazer a consulta.
 export async function POST(req: NextRequest) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
@@ -122,38 +109,74 @@ export async function POST(req: NextRequest) {
   const d  = body.data
   const db = getDb(session.database_name)
 
-  // Verificar conflito de horário para o profissional
-  const { rows: conflito } = await db.query(
-    `SELECT id FROM tab_agendamento
-     WHERE profissional_id = $1
-       AND empresa_id = $2
-       AND status NOT IN ('CANCELADO','FALTOU')
-       AND (data_hora_inicio, data_hora_fim) OVERLAPS ($3::timestamptz, $4::timestamptz)`,
-    [d.profissional_id, session.empresa_id_ativa, d.data_hora_inicio, d.data_hora_fim],
-  )
-
-  if (conflito.length > 0) {
-    return NextResponse.json(
-      { erro: 'Profissional já possui agendamento nesse horário' },
-      { status: 409 },
-    )
+  if (!d.tipo_id) {
+    return NextResponse.json({ erro: 'Selecione o tipo de atendimento' }, { status: 422 })
   }
 
-  const { rows } = await db.query(
-    `INSERT INTO tab_agendamento (
-       empresa_id, paciente_id, profissional_id, tipo_id, especialidade_id,
-       data_hora_inicio, data_hora_fim, status, motivo, observacao, categoria_id, created_by
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-     RETURNING id`,
-    [
-      session.empresa_id_ativa, d.paciente_id, d.profissional_id,
-      d.tipo_id ?? null, d.especialidade_id ?? null,
-      d.data_hora_inicio, d.data_hora_fim,
-      d.status, d.motivo ?? null, d.observacao ?? null,
-      d.categoria_id ?? null,
-      session.nome,
-    ],
-  )
+  try {
+    // Horário local da clínica derivado do instante enviado pelo front (ISO/UTC), no fuso da sessão
+    // do banco — o mesmo que o resto do sistema já assume (filtros de data da agenda, fechamento etc.).
+    const dataLocal = `($3::timestamptz)::date`
+    const { rows: [v] } = await db.query(
+      `SELECT
+         EXISTS (SELECT 1 FROM tab_profissional_tipo_percentual
+                 WHERE empresa_id = $2 AND profissional_id = $1 AND tipo_id = $5) AS tipo_ok,
+         to_char($3::timestamptz, 'HH24:MI') AS hora_inicio,
+         to_char($4::timestamptz, 'HH24:MI') AS hora_fim,
+         ${sqlDadosDisponibilidade(dataLocal)}`,
+      [d.profissional_id, session.empresa_id_ativa, d.data_hora_inicio, d.data_hora_fim, d.tipo_id],
+    )
 
-  return NextResponse.json({ id: rows[0].id }, { status: 201 })
+    if (!v.tipo_ok) {
+      return NextResponse.json({ erro: MSG_TIPO_NAO_HABILITADO }, { status: 422 })
+    }
+
+    const disp = avaliarDisponibilidade(v, v.hora_inicio, v.hora_fim)
+    if (!disp.disponivel) {
+      return NextResponse.json({ erro: disp.razao }, { status: 422 })
+    }
+
+    // O NOT EXISTS fica no próprio INSERT: a janela de corrida entre checar e gravar cai de uma
+    // ida de rede ao banco pra microssegundos. 0 linhas = horário tomado por outro lançamento.
+    const { rows } = await db.query(
+      `WITH ins AS (
+         INSERT INTO tab_agendamento (
+           empresa_id, paciente_id, profissional_id, tipo_id, especialidade_id,
+           data_hora_inicio, data_hora_fim, status, motivo, observacao, categoria_id, created_by
+         )
+         SELECT $1::int, $2::int, $3::int, $4::int, $5::int,
+                $6::timestamptz, $7::timestamptz, $8::varchar, $9::varchar, $10::text, $11::int, $12::varchar
+         WHERE NOT EXISTS (
+           SELECT 1 FROM tab_agendamento
+           WHERE profissional_id = $3::int AND empresa_id = $1::int
+             AND status NOT IN ('CANCELADO','FALTOU')
+             AND (data_hora_inicio, data_hora_fim) OVERLAPS ($6::timestamptz, $7::timestamptz)
+         )
+         RETURNING *
+       )
+       SELECT ${AGENDAMENTO_LISTA_COLUNAS}${AGENDAMENTO_LISTA_SEM_RECEBIMENTO}
+       FROM ins a
+         ${AGENDAMENTO_LISTA_JOINS}`,
+      [
+        session.empresa_id_ativa, d.paciente_id, d.profissional_id,
+        d.tipo_id, d.especialidade_id ?? null,
+        d.data_hora_inicio, d.data_hora_fim,
+        d.status, d.motivo ?? null, d.observacao ?? null,
+        d.categoria_id ?? null,
+        session.nome,
+      ],
+    )
+
+    if (!rows.length) {
+      return NextResponse.json(
+        { erro: 'Profissional já possui agendamento nesse horário' },
+        { status: 409 },
+      )
+    }
+
+    return NextResponse.json({ id: rows[0].id, agendamento: rows[0] }, { status: 201 })
+  } catch (err) {
+    console.error('[POST /api/clinica/agendamentos]', err)
+    return NextResponse.json({ erro: 'Erro ao salvar agendamento' }, { status: 500 })
+  }
 }

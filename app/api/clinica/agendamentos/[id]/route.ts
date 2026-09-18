@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 import { agendamentoSchema } from '@/lib/validators/agendamento.schema'
 import { registrarAuditoria } from '@/lib/auditoria'
+import { MSG_TIPO_NAO_HABILITADO, profissionalRealizaTipo } from '@/lib/clinica/tipo-habilitado'
 
 type Params = { params: { id: string } }
 
@@ -59,6 +60,18 @@ export async function PUT(req: NextRequest, { params }: Params) {
       `SELECT * FROM tab_agendamento WHERE id = $1 AND empresa_id = $2 FOR UPDATE`,
       [params.id, session.empresa_id_ativa],
     )).rows
+
+    // Tipo x profissional só é revalidado quando um dos dois mudou — reagendar só o horário de um
+    // agendamento antigo (tipo desabilitado depois no cadastro) continua permitido.
+    const antes = antesRows[0]
+    if (
+      antes && d.tipo_id &&
+      (Number(antes.tipo_id) !== d.tipo_id || Number(antes.profissional_id) !== d.profissional_id) &&
+      !(await profissionalRealizaTipo(client, session.empresa_id_ativa, d.profissional_id, d.tipo_id))
+    ) {
+      await client.query('ROLLBACK')
+      return NextResponse.json({ erro: MSG_TIPO_NAO_HABILITADO }, { status: 422 })
+    }
 
     // Verificar conflito excluindo o próprio registro (dentro da transação para evitar race condition)
     const { rows: conflito } = await client.query(
