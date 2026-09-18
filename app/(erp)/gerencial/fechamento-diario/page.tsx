@@ -27,6 +27,10 @@ interface AgendamentoDia {
   recebimento_id: number | null
   status_recebimento: string | null
   total_recebimento: number | null
+  // Rateio gravado no recebimento (NUMERIC chega do pg como string). NULL = recebimento anterior ao rateio
+  percentual_profissional: number | string | null
+  valor_profissional: number | string | null
+  valor_clinica: number | string | null
   batch_agendamento_id: number | null
   condicao_pagamento_id: number | null
   tipo_pagamento: string | null
@@ -86,6 +90,23 @@ function shiftDate(dateStr: string, delta: number): string {
   const dt = new Date(Date.UTC(y, m - 1, d))
   dt.setUTCDate(dt.getUTCDate() + delta)
   return dt.toISOString().slice(0, 10)
+}
+
+// Repasse e parte da clínica de um atendimento pago, a partir do rateio gravado no recebimento.
+// Mesmo fallback dos totais da rota: sem rateio gravado, o profissional não recebe e a clínica fica com tudo.
+function rateioDoAtendimento(ag: AgendamentoDia): { repasse: number; clinica: number; regra: string; semRateio: boolean } {
+  const total = Number(ag.total_recebimento) || 0
+  if (ag.valor_profissional == null) {
+    return { repasse: 0, clinica: total, regra: 'sem rateio', semRateio: true }
+  }
+  const repasse = Number(ag.valor_profissional) || 0
+  const clinica = ag.valor_clinica != null ? Number(ag.valor_clinica) : total - repasse
+  const pct     = Number(ag.percentual_profissional)
+  // % 0 com repasse > 0 só acontece com valor fixo (regra do cadastro do profissional)
+  const regra = pct === 0 && repasse > 0
+    ? 'valor fixo'
+    : `${(Number.isFinite(pct) ? pct : 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`
+  return { repasse, clinica, regra, semRateio: false }
 }
 
 function fmtHora(iso: string): string {
@@ -409,17 +430,20 @@ export default function FechamentoDiarioPage() {
                       <th style={{ width: 110 }}>Status</th>
                       <th style={{ width: 110 }}>Forma Pgto</th>
                       <th style={{ width: 110, textAlign: 'right' }}>Valor</th>
+                      <th style={{ width: 120, textAlign: 'right' }}>Repasse</th>
+                      <th style={{ width: 110, textAlign: 'right' }}>Clínica</th>
                       {isAdmin && <th style={{ width: 90 }}>Ação</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {dados.agendamentos.length === 0 && (
-                      <tr><td colSpan={isAdmin ? 8 : 7} style={{ textAlign: 'center', padding: 24, color: 'var(--texto-terciario)', fontSize: 13 }}>Nenhum agendamento neste dia</td></tr>
+                      <tr><td colSpan={isAdmin ? 10 : 9} style={{ textAlign: 'center', padding: 24, color: 'var(--texto-terciario)', fontSize: 13 }}>Nenhum agendamento neste dia</td></tr>
                     )}
                     {dados.agendamentos.map(ag => {
                       const pago      = ag.status_recebimento === 'PAGO'
                       const isLote    = ag.batch_agendamento_id != null && ag.batch_agendamento_id !== ag.id
                       const podeCorrigir = isAdmin && pago && !diaFechado && !isLote
+                      const rateio    = pago ? rateioDoAtendimento(ag) : null
                       return (
                         <tr key={ag.id}>
                           <td style={{ fontFamily: 'var(--fonte-mono)', fontSize: 12 }}>{fmtHora(ag.data_hora_inicio)}</td>
@@ -441,6 +465,21 @@ export default function FechamentoDiarioPage() {
                           </td>
                           <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)', fontWeight: 600, color: pago ? 'var(--cor-sucesso)' : 'var(--texto-terciario)' }}>
                             {pago ? formatBRL(ag.total_recebimento ?? 0) : '—'}
+                          </td>
+                          <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)' }}>
+                            {rateio && !rateio.semRateio ? (
+                              <>
+                                {formatBRL(rateio.repasse)}
+                                <div style={{ fontFamily: 'var(--fonte-sans, inherit)', fontSize: 10, color: 'var(--texto-terciario)' }}>{rateio.regra}</div>
+                              </>
+                            ) : rateio ? (
+                              <span style={{ fontFamily: 'var(--fonte-sans, inherit)', fontSize: 10.5, color: 'var(--texto-terciario)' }} title="Recebimento anterior ao rateio por profissional: o total fica com a clínica">
+                                sem rateio
+                              </span>
+                            ) : '—'}
+                          </td>
+                          <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)', color: 'var(--texto-secundario)' }}>
+                            {rateio ? formatBRL(rateio.clinica) : '—'}
                           </td>
                           {isAdmin && (
                             <td onClick={e => e.stopPropagation()}>
