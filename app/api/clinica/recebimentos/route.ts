@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 import { addDias, obterTipoReceitaPadrao } from '@/lib/clinica/recebimento-helpers'
-import { percentualRepasse, dividirRepasse } from '@/lib/clinica/repasse'
+import { regraRepasse, dividirRepasse } from '@/lib/clinica/repasse'
 
 interface RecebimentoItem {
   agendamento_id: number
@@ -267,8 +267,9 @@ export async function POST(req: NextRequest) {
       const profissionalRepasse = definicoesExecutor.get(item.agendamento_id)?.medico_executor_id
         ?? info?.profissional_id
         ?? null
-      const pct = await percentualRepasse(client, profissionalRepasse, info?.tipo_id ?? null)
-      const { valor_profissional, valor_clinica } = dividirRepasse(item.total_recebimento, pct)
+      const regra = await regraRepasse(client, profissionalRepasse, info?.tipo_id ?? null)
+      const pct = regra.percentual
+      const { valor_profissional, valor_clinica } = dividirRepasse(item.total_recebimento, regra)
 
       await client.query(
         `INSERT INTO tab_recebimento_consulta (

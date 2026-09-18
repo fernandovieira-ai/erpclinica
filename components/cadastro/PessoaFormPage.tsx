@@ -561,6 +561,8 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
   const [percTipos,   setPercTipos]   = useState<{ tipo_id: number; descricao: string; ativo: boolean }[]>([])
   const [percRealiza, setPercRealiza] = useState<Record<number, boolean>>({})
   const [percEdit,    setPercEdit]    = useState<Record<number, string>>({})
+  // Valor fixo (R$) por atendimento: só vale (e só aparece) quando o % da linha é 0
+  const [percFixo,    setPercFixo]    = useState<Record<number, string>>({})
   const [loadingPerc, setLoadingPerc] = useState(false)
   const [savingPerc,  setSavingPerc]  = useState(false)
 
@@ -570,16 +572,19 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
     try {
       const res = await fetch(`/api/clinica/profissionais/${pessoa.id}/percentuais`)
       const json = await res.json()
-      const dados: { tipo_id: number; descricao: string; ativo: boolean; percentual_profissional: number | null }[] = json.dados ?? []
+      const dados: { tipo_id: number; descricao: string; ativo: boolean; percentual_profissional: number | null; valor_fixo: number | null }[] = json.dados ?? []
       setPercTipos(dados.map(d => ({ tipo_id: d.tipo_id, descricao: d.descricao, ativo: d.ativo })))
       const realiza: Record<number, boolean> = {}
       const edit: Record<number, string> = {}
+      const fixo: Record<number, string> = {}
       dados.forEach(d => {
         realiza[d.tipo_id] = d.percentual_profissional != null
         edit[d.tipo_id] = d.percentual_profissional != null ? String(Number(d.percentual_profissional)) : '100'
+        fixo[d.tipo_id] = d.valor_fixo != null ? String(Number(d.valor_fixo)) : ''
       })
       setPercRealiza(realiza)
       setPercEdit(edit)
+      setPercFixo(fixo)
     } finally { setLoadingPerc(false) }
   }, [pessoa?.id])
 
@@ -595,7 +600,11 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
         .filter(t => percRealiza[t.tipo_id])
         .map(t => {
           const v = percEdit[t.tipo_id]?.trim()
-          return { tipo_id: t.tipo_id, percentual: v === '' || v === undefined ? null : Number(v) }
+          const percentual = v === '' || v === undefined ? null : Number(v)
+          const f = percFixo[t.tipo_id]?.trim()
+          // Valor fixo só segue junto quando o % é 0 (o servidor também ignora nos demais casos)
+          const valor_fixo = percentual === 0 && f ? Number(f) : null
+          return { tipo_id: t.tipo_id, percentual, valor_fixo }
         })
       const res = await fetch(`/api/clinica/profissionais/${pessoa.id}/percentuais`, {
         method: 'PUT',
@@ -1905,11 +1914,13 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
                 Nenhum tipo de atendimento cadastrado. Cadastre em <strong>Clínica → Tipos de Atendimento</strong> primeiro.
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 560 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 680 }}>
                 <div style={{ fontSize: 11.5, color: 'var(--texto-terciario)' }}>
                   Marque os tipos de atendimento que este profissional realiza — só eles aparecem no
                   agendamento dele. Para cada um, o <strong>% Profissional</strong> é a parte do valor
                   recebido que fica com ele (em branco = 100%); o restante fica com a clínica.
+                  Se o % for <strong>0</strong>, informe o <strong>Valor Fixo</strong> que o profissional
+                  recebe por atendimento — a clínica fica com o restante do valor recebido.
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button
@@ -1933,6 +1944,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
                       <th style={{ textAlign: 'center', padding: '4px 8px', color: 'var(--texto-secundario)', fontWeight: 600, width: 60 }}>Realiza</th>
                       <th style={{ textAlign: 'left', padding: '4px 8px', color: 'var(--texto-secundario)', fontWeight: 600 }}>Tipo de Atendimento</th>
                       <th style={{ textAlign: 'right', padding: '4px 8px', color: 'var(--texto-secundario)', fontWeight: 600, width: 110 }}>% Profissional</th>
+                      <th style={{ textAlign: 'right', padding: '4px 8px', color: 'var(--texto-secundario)', fontWeight: 600, width: 130 }}>Valor Fixo (R$)</th>
                       <th style={{ textAlign: 'right', padding: '4px 8px', color: 'var(--texto-secundario)', fontWeight: 600, width: 90 }}>% Clínica</th>
                     </tr>
                   </thead>
@@ -1942,6 +1954,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
                       const raw = percEdit[t.tipo_id]?.trim()
                       const pct = raw === '' || raw === undefined ? 100 : Number(raw)
                       const clinica = Number.isFinite(pct) ? Math.round((100 - pct) * 100) / 100 : 0
+                      const usaFixo = realiza && pct === 0
                       return (
                         <tr key={t.tipo_id} style={{ borderBottom: '1px solid var(--borda-suave)', opacity: t.ativo ? 1 : 0.5 }}>
                           <td style={{ padding: '4px 8px', textAlign: 'center' }}>
@@ -1969,8 +1982,25 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
                             />
                             <span style={{ fontSize: 11, color: 'var(--texto-secundario)' }}> %</span>
                           </td>
+                          <td style={{ padding: '4px 8px', textAlign: 'right', color: 'var(--texto-terciario)' }}>
+                            {usaFixo ? (
+                              <>
+                                <span style={{ fontSize: 11, color: 'var(--texto-secundario)' }}>R$ </span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={0.01}
+                                  value={percFixo[t.tipo_id] ?? ''}
+                                  onChange={e => setPercFixo(prev => ({ ...prev, [t.tipo_id]: e.target.value }))}
+                                  placeholder="0,00"
+                                  title="Valor fixo que o profissional recebe por atendimento"
+                                  style={{ width: 90, padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, textAlign: 'right' }}
+                                />
+                              </>
+                            ) : '-'}
+                          </td>
                           <td style={{ padding: '4px 8px', textAlign: 'right', color: 'var(--texto-secundario)' }}>
-                            {realiza && Number.isFinite(clinica) ? `${clinica} %` : '-'}
+                            {!realiza || !Number.isFinite(clinica) ? '-' : usaFixo ? 'restante' : `${clinica} %`}
                           </td>
                         </tr>
                       )

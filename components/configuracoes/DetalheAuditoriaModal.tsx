@@ -11,6 +11,7 @@ const LABEL_TABELA: Record<LogAuditoriaTabela, string> = {
   tab_titulo_pagar:         'Título a Pagar',
   tab_titulo_receber:       'Título a Receber',
   tab_recebimento_consulta: 'Recebimento',
+  tab_profissional_tipo_percentual: 'Repasse do Profissional',
 }
 
 const LABEL_ACAO: Record<string, string> = {

@@ -124,6 +124,7 @@ export interface ProfissionalTipoPercentualItem {
   descricao:                string
   ativo:                    boolean
   percentual_profissional:  number | null
+  valor_fixo:               number | null
 }
 
 export interface TipoAtendimentoListResponse {

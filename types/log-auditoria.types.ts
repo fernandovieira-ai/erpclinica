@@ -6,6 +6,7 @@ export type LogAuditoriaTabela =
   | 'tab_titulo_pagar'
   | 'tab_titulo_receber'
   | 'tab_recebimento_consulta'
+  | 'tab_profissional_tipo_percentual'
 
 export type LogAuditoriaAcao = 'INSERT' | 'UPDATE' | 'DELETE'
 
