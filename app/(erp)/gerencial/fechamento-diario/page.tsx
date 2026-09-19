@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ChevronLeft, ChevronRight, Lock, Unlock, CheckCircle2, ClipboardCheck,
   Wallet, Banknote, Building2, CreditCard, CalendarClock,
@@ -147,23 +147,50 @@ export default function FechamentoDiarioPage() {
   const [motivo, setMotivo]     = useState('')
   const [relatorioAberto, setRelatorioAberto] = useState(false)
 
+  const [erroCarga, setErroCarga] = useState<string | null>(null)
+
+  // Só a resposta da ÚLTIMA busca vale. Sem isso, clicar rápido entre dias deixa uma resposta lenta
+  // do dia anterior chegar depois e sobrescrever: a tela mostrava os números de um dia com o seletor
+  // (e o botão "Fechar caixa") em outro. A busca anterior é cancelada e respostas velhas são ignoradas.
+  const buscaAtual = useRef<{ id: number; controle: AbortController | null }>({ id: 0, controle: null })
+
   const carregar = useCallback(async (d: string) => {
+    buscaAtual.current.controle?.abort()
+    const controle = new AbortController()
+    const id = buscaAtual.current.id + 1
+    buscaAtual.current = { id, controle }
+    const valida = () => buscaAtual.current.id === id
+
     setLoading(true)
+    setErroCarga(null)
     try {
-      const res = await fetch(`/api/gerencial/fechamento-diario?data=${d}`)
-      if (!res.ok) return
-      setDados(await res.json())
+      const res = await fetch(`/api/gerencial/fechamento-diario?data=${d}`, { signal: controle.signal })
+      if (!valida()) return
+      if (!res.ok) {
+        // Não deixa os números do dia anterior na tela com a data nova no seletor
+        setDados(null)
+        setErroCarga('Não foi possível carregar o fechamento deste dia. Tente novamente.')
+        return
+      }
+      const json = await res.json()
+      if (!valida()) return
+      setDados(json)
+    } catch (err) {
+      if ((err as { name?: string })?.name === 'AbortError' || !valida()) return
+      setDados(null)
+      setErroCarga('Falha de conexão ao carregar o fechamento. Tente novamente.')
     } finally {
-      setLoading(false)
+      if (valida()) setLoading(false)
     }
   }, [])
 
-  useEffect(() => { carregar(data) }, [carregar, data])
+  useEffect(() => {
+    carregar(data)
+    return () => buscaAtual.current.controle?.abort()
+  }, [carregar, data])
 
   useEffect(() => {
     fetch('/api/auth/me').then(r => r.json()).then(d => setPerfil(d.perfil ?? null)).catch(() => {})
-    fetch('/api/cadastro/condicoes-pagamento?ativo=true&limit=100')
-      .then(r => r.json()).then(d => setCondicoes(d.dados ?? [])).catch(() => {})
   }, [])
 
   const isAdmin      = perfil === 'admin'
@@ -207,6 +234,11 @@ export default function FechamentoDiarioPage() {
     setModalAg(ag)
     setNovaCondicaoId('')
     setMotivo('')
+    // Só o admin corrige e só aqui a lista é usada: busca na 1ª abertura, não a cada visita à tela
+    if (condicoes.length === 0) {
+      fetch('/api/cadastro/condicoes-pagamento?ativo=true&limit=100')
+        .then(r => r.json()).then(d => setCondicoes(d.dados ?? [])).catch(() => {})
+    }
   }
 
   async function handleReclassificar() {
@@ -270,6 +302,17 @@ export default function FechamentoDiarioPage() {
       </div>
 
       <div className="page-body">
+        {erroCarga && !loading && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12,
+            background: 'var(--cor-erro-bg)', color: 'var(--cor-erro)',
+            borderRadius: 10, padding: '10px 16px', fontSize: 13,
+          }}>
+            <span style={{ flex: 1 }}>{erroCarga}</span>
+            <button className="btn-ghost" onClick={() => carregar(data)}>Tentar novamente</button>
+          </div>
+        )}
+
         {loading && !dados && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300, color: 'var(--texto-terciario)', gap: 8 }}>
             <Loader2 size={16} className="spin" /> Carregando fechamento do dia...
@@ -293,7 +336,7 @@ export default function FechamentoDiarioPage() {
                   {dados.fechamento?.reaberto_em && <> · Reaberto em {formatDateTime(dados.fechamento.reaberto_em)} por {dados.fechamento.reaberto_por}</>}
                 </div>
                 {isAdmin && (
-                  <button className="btn-ghost" onClick={handleReabrir} disabled={loadingAcao} style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                  <button className="btn-ghost" onClick={handleReabrir} disabled={loadingAcao || loading} style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                     <Unlock size={14} /> Reabrir
                   </button>
                 )}
@@ -309,7 +352,7 @@ export default function FechamentoDiarioPage() {
                   Caixa <strong>ABERTO</strong> — edições e correções permitidas
                 </div>
                 {isAdmin && !diaFuturo && (
-                  <button className="btn-primary" onClick={handleFechar} disabled={loadingAcao} style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                  <button className="btn-primary" onClick={handleFechar} disabled={loadingAcao || loading} style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                     <ClipboardCheck size={14} /> Fechar caixa do dia
                   </button>
                 )}

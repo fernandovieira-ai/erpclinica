@@ -19,18 +19,19 @@ export async function GET(req: NextRequest) {
 
   // tab_fechamento_caixa_diario é tabela nova (migration 51) - pode ainda não existir
   // no banco em algum ambiente que não rodou a migration; tratar como dia ABERTO nesse caso.
-  let fechamento: Record<string, unknown> | null = null
-  try {
-    const { rows } = await db.query(
-      `SELECT * FROM tab_fechamento_caixa_diario WHERE empresa_id = $1 AND data = $2`,
-      [empresaId, data],
-    )
-    fechamento = rows[0] ?? null
-  } catch {
-    fechamento = null
-  }
+  // Só esse erro (42P01 = tabela inexistente) é tolerado: qualquer outra falha (conexão, permissão)
+  // vira 500, em vez de mostrar como ABERTO um dia que pode estar FECHADO.
+  const consultaFechamento = db.query(
+    `SELECT * FROM tab_fechamento_caixa_diario WHERE empresa_id = $1 AND data = $2`,
+    [empresaId, data],
+  ).then(r => (r.rows[0] ?? null) as Record<string, unknown> | null)
+    .catch((err: { code?: string }) => {
+      if (err?.code === '42P01') return null
+      throw err
+    })
 
-  const { rows: agendamentos } = await db.query(
+  // As duas consultas são independentes: rodam juntas (uma ida ao banco a menos no tempo total)
+  const consultaAgendamentos = db.query(
     `SELECT
        a.id, a.data_hora_inicio, a.data_hora_fim, a.status, a.motivo,
        pac.id AS paciente_id, pac.nome AS paciente_nome,
@@ -52,6 +53,17 @@ export async function GET(req: NextRequest) {
      ORDER BY a.data_hora_inicio ASC`,
     [empresaId, data],
   )
+
+  let fechamento: Record<string, unknown> | null
+  let agendamentos: Record<string, any>[]
+  try {
+    const [f, a] = await Promise.all([consultaFechamento, consultaAgendamentos])
+    fechamento   = f
+    agendamentos = a.rows
+  } catch (err) {
+    console.error('[GET /api/gerencial/fechamento-diario]', err)
+    return NextResponse.json({ erro: 'Erro ao carregar o fechamento do dia' }, { status: 500 })
+  }
 
   // KPIs calculados em JS a partir do mesmo array de agendamentos, pra garantir
   // que a lista exibida e os totais batem sempre (evita drift entre queries).
