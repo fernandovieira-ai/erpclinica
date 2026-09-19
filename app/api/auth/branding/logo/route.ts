@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const { rows: inst } = await dbControl.query<{ database_name: string; status: string }>(
-      `SELECT database_name, status FROM tab_instancia WHERE slug = $1 LIMIT 1`,
+      `SELECT database_name, status FROM tab_instancia WHERE LOWER(slug) = $1 LIMIT 1`,
       [slug],
     )
     if (!inst.length || (inst[0].status !== 'ativo' && inst[0].status !== 'trial')) {

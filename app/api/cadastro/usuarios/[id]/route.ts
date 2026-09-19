@@ -64,7 +64,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ erro: 'Você não pode remover seu próprio perfil de administrador' }, { status: 400 })
   }
 
-  const { rows: existentes } = await db.query(`SELECT id FROM tab_usuario WHERE email = $1 AND id <> $2`, [d.email, id])
+  const { rows: existentes } = await db.query(`SELECT id FROM tab_usuario WHERE LOWER(email) = LOWER($1) AND id <> $2`, [d.email, id])
   if (existentes.length) return NextResponse.json({ erro: 'Já existe um usuário com este e-mail' }, { status: 409 })
 
   const client = await db.connect()

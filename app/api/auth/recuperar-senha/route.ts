@@ -7,8 +7,8 @@ import { emailRecuperacaoSenha } from '@/lib/email/send'
 import { rateLimited, getClientIp } from '@/lib/rate-limit'
 
 const schema = z.object({
-  slug:  z.string().min(1),
-  email: z.string().email(),
+  slug:  z.string().trim().min(1),
+  email: z.string().trim().email(),
 })
 
 function pwdVersion(senhaHash: string): string {
@@ -35,14 +35,14 @@ export async function POST(req: NextRequest) {
   const ip = getClientIp(req)
   if (
     rateLimited(`recuperar-senha:ip:${ip}`, 5, 15 * 60_000) ||
-    rateLimited(`recuperar-senha:conta:${slug}:${email.toLowerCase()}`, 3, 60 * 60_000)
+    rateLimited(`recuperar-senha:conta:${slug.toLowerCase()}:${email.toLowerCase()}`, 3, 60 * 60_000)
   ) {
     return NextResponse.json({ erro: 'Muitas tentativas. Aguarde alguns minutos e tente novamente.' }, { status: 429 })
   }
 
   try {
     const { rows: inst } = await dbControl.query<{ database_name: string; status: string }>(
-      `SELECT database_name, status FROM tab_instancia WHERE slug = $1 LIMIT 1`,
+      `SELECT database_name, status FROM tab_instancia WHERE LOWER(slug) = LOWER($1) LIMIT 1`,
       [slug],
     )
 
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
     const db = getDb(database_name)
 
     const { rows: users } = await db.query<{ id: number; nome: string; email: string; senha_hash: string }>(
-      `SELECT id, nome, email, senha_hash FROM tab_usuario WHERE email = $1 AND ativo = true LIMIT 1`,
+      `SELECT id, nome, email, senha_hash FROM tab_usuario WHERE LOWER(email) = LOWER($1) AND ativo = true LIMIT 1`,
       [email],
     )
 

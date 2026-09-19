@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
   const d  = body.data
   const db = getDb(session.database_name)
 
-  const { rows: existentes } = await db.query(`SELECT id FROM tab_usuario WHERE email = $1`, [d.email])
+  const { rows: existentes } = await db.query(`SELECT id FROM tab_usuario WHERE LOWER(email) = LOWER($1)`, [d.email])
   if (existentes.length) return NextResponse.json({ erro: 'Já existe um usuário com este e-mail' }, { status: 409 })
 
   const senhaHash = await bcrypt.hash(d.senha, 10)

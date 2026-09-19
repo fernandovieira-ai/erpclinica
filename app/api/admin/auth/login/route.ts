@@ -6,7 +6,7 @@ import { signToken } from '@/lib/auth/jwt'
 import type { AdminSession } from '@/types/session'
 
 const schema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().email(),
   senha: z.string().min(1),
 })
 
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   }>(
     `SELECT id, nome, email, senha_hash
      FROM tab_saas_admin
-     WHERE email = $1 AND ativo = true
+     WHERE LOWER(email) = LOWER($1) AND ativo = true
      LIMIT 1`,
     [email],
   )

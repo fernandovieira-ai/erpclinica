@@ -6,9 +6,9 @@ import { signToken } from '@/lib/auth/jwt'
 import type { Session, SelectToken } from '@/types/session'
 
 const schema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().email(),
   senha: z.string().min(1),
-  slug:  z.string().min(1),
+  slug:  z.string().trim().min(1),
 })
 
 const COOKIE_OPTS = {
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
   try {
     // 1. Busca instância ativa no saas_control
     const { rows: inst } = await dbControl.query<{ database_name: string; status: string }>(
-      `SELECT database_name, status FROM tab_instancia WHERE slug = $1 LIMIT 1`,
+      `SELECT database_name, status FROM tab_instancia WHERE LOWER(slug) = LOWER($1) LIMIT 1`,
       [slug],
     )
 
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
       id: number; nome: string; email: string; senha_hash: string; perfil: string; ativo: boolean; profissional_id: number | null
     }>(
       `SELECT id, nome, email, senha_hash, perfil, ativo, profissional_id
-       FROM tab_usuario WHERE email = $1 AND ativo = true LIMIT 1`,
+       FROM tab_usuario WHERE LOWER(email) = LOWER($1) AND ativo = true LIMIT 1`,
       [email],
     )
 
