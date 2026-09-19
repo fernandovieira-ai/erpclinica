@@ -63,9 +63,9 @@ export default function TiposAtendimentoPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ eh_exame: novo }),
       })
-      if (!res.ok) { marcar(t.id, !novo); toast.error('Erro ao alterar "É exame"') }
+      if (!res.ok) { marcar(t.id, !novo); toast.error('Erro ao alterar "Exame"') }
     } catch {
-      marcar(t.id, !novo); toast.error('Erro de conexão ao alterar "É exame"')
+      marcar(t.id, !novo); toast.error('Erro de conexão ao alterar "Exame"')
     } finally {
       setSalvandoExame(s => { const n = new Set(s); n.delete(t.id); return n })
     }
@@ -117,7 +117,7 @@ export default function TiposAtendimentoPage() {
                   <th style={{ width: 48 }}></th>
                   <th>Descrição</th>
                   <th style={{ width: 130 }}>Duração</th>
-                  <th style={{ width: 90, textAlign: 'center' }} title="Exames entram no relatório Exames pelo médico executante">É exame</th>
+                  <th style={{ width: 90, textAlign: 'center' }} title="Exames entram no relatório Exames pelo médico executante">Exame</th>
                   <th style={{ width: 80 }}>Status</th>
                   <th style={{ width: 80 }}></th>
                 </tr>

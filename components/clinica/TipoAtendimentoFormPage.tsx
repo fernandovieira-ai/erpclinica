@@ -256,8 +256,8 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
             {errors.valor && <span style={{ fontSize: 11, color: 'var(--cor-erro)' }}>{errors.valor.message}</span>}
           </Row>
 
-          {/* É exame */}
-          <Row label="É exame:">
+          {/* Exame */}
+          <Row label="Exame:">
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
               <input type="checkbox" {...register('eh_exame')} style={{ cursor: 'pointer' }} />
               Sim, este tipo é um exame / procedimento
