@@ -4,9 +4,10 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   ChevronLeft, ChevronRight, Lock, Unlock, CheckCircle2, ClipboardCheck,
   Wallet, Banknote, Building2, CreditCard, CalendarClock,
-  Users, UserX, TrendingUp, Receipt, Loader2, Pencil,
+  Users, UserX, TrendingUp, Receipt, Loader2, Pencil, Printer,
 } from 'lucide-react'
 import { formatBRL, formatDateTime } from '@/lib/utils'
+import RelatorioAtendimentosModal from '@/components/gerencial/RelatorioAtendimentosModal'
 
 interface CondicaoPagamento {
   id: number
@@ -144,6 +145,7 @@ export default function FechamentoDiarioPage() {
   const [modalAg, setModalAg]   = useState<AgendamentoDia | null>(null)
   const [novaCondicaoId, setNovaCondicaoId] = useState<string>('')
   const [motivo, setMotivo]     = useState('')
+  const [relatorioAberto, setRelatorioAberto] = useState(false)
 
   const carregar = useCallback(async (d: string) => {
     setLoading(true)
@@ -257,6 +259,13 @@ export default function FechamentoDiarioPage() {
           {data !== hojeStr() && (
             <button className="btn-ghost" onClick={() => setData(hojeStr())}>Hoje</button>
           )}
+          <button
+            className="btn-ghost" onClick={() => setRelatorioAberto(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}
+            title="Imprimir relatório de pacientes por tipo de atendimento"
+          >
+            <Printer size={15} /> Imprimir relatório
+          </button>
         </div>
       </div>
 
@@ -504,6 +513,12 @@ export default function FechamentoDiarioPage() {
           </div>
         )}
       </div>
+
+      <RelatorioAtendimentosModal
+        open={relatorioAberto}
+        onClose={() => setRelatorioAberto(false)}
+        dataInicial={data}
+      />
 
       {/* Modal de correção de forma de pagamento */}
       {modalAg && (
