@@ -725,9 +725,11 @@ Os dois caminhos rodam juntos para dinheiro/PIX (trigger no INSERT do movimento 
 
 ## 31. Fechamento Diário: relatório impresso "Pacientes pelo tipo de atendimento" (2026-09-18/19)
 
-Botão **"Imprimir relatório"** no cabeçalho de `app/(erp)/gerencial/fechamento-diario/page.tsx` → modal (período de/até começando no dia da tela, médico, categoria, **"Agrupar por médico"** marcado por padrão) → janela de impressão **A4 paisagem, layout compacto**. Baseado no relatório do sistema anterior do cliente (foto de referência: título "Emissão de Relatórios / Pacientes pelo tipo de atendimento", filtros Médico/Categoria/Período, colunas Paciente / Telefone / Categoria / Dt. Visita / Médico / Vlr. Pagar / Vlr. Pago / Atendimento) **+ a coluna "Forma de Pgto"**.
+Botão **"Imprimir relatório"** no cabeçalho de `app/(erp)/gerencial/fechamento-diario/page.tsx` → modal (período de/até começando no dia da tela, médico, categoria, **"Agrupar por médico"** marcado por padrão) → janela de impressão **compacta: A4 retrato (agrupado) / A4 paisagem (lista única)**. Baseado no relatório do sistema anterior do cliente (foto de referência: título "Emissão de Relatórios / Pacientes pelo tipo de atendimento", filtros Médico/Categoria/Período, colunas Paciente / Telefone / Categoria / Dt. Visita / Médico / Vlr. Pagar / Vlr. Pago / Atendimento) **+ a coluna "Forma de Pgto" e sem a coluna Telefone** (removida a pedido do cliente em 2026-09-19; a rota nem devolve mais o telefone).
 
 **Fluxo:** clique em "Imprimir" no modal → `window.open` **imediato** (antes do fetch, senão o navegador bloqueia como pop-up) com "Gerando relatório..." → `GET /api/gerencial/fechamento-diario/relatorio` → `gerarHtmlRelatorioAtendimentos(itens, opções)` → `document.write` na janela → `window.print()` no `onload`. Erro ou dia sem atendimento: a janela é fechada e a mensagem aparece no modal.
+
+> **Base compartilhada (2026-09-19):** helpers (`esc`, `brl`, `logoSegura`, `paraCss`...), o CSS (`cssBase`), o cabeçalho, os chips de filtro e a etiqueta de forma de pagamento moram em `components/gerencial/relatorioImpressaoBase.ts`; a validação de período/ids e a forma de pagamento da rota em `lib/gerencial/relatorio-fechamento.ts`. Existe um 2º relatório que usa a mesma base: §33. A extração foi verificada com HTML **byte a byte idêntico** (36 combinações) e resposta de API idêntica (6 chamadas) — repita essa comparação se mexer na base.
 
 ### Onde mexer para cada tipo de ajuste
 
@@ -735,9 +737,9 @@ Botão **"Imprimir relatório"** no cabeçalho de `app/(erp)/gerencial/fechament
 |---|---|
 | **Adicionar/tirar coluna** | rota (`SELECT` + mapeamento em `itens`) → `ItemRelatorioAtendimento` → `linhaItem` e `<thead>` → larguras `W` (têm que somar 100%) → `totalColunas` / `colunasAntesValores` e os `colspan` das linhas de total/grupo |
 | **Quem entra / de onde vêm os valores** | `WHERE` e `SELECT` de `app/api/gerencial/fechamento-diario/relatorio/route.ts` |
-| **Visual** (fonte, margens, cores, etiquetas, larguras) | bloco `<style>` e `W` em `components/gerencial/relatorioAtendimentosPrint.ts` |
+| **Visual** (fonte, margens, cores, etiquetas) | `cssBase()` em `components/gerencial/relatorioImpressaoBase.ts` — **vale para os DOIS relatórios (§33)**; confira os dois. Larguras (`W`) ficam em cada módulo |
 | **Filtros do modal** | `components/gerencial/RelatorioAtendimentosModal.tsx` **e** a validação na rota |
-| **Orientação/papel** | `@page { size: A4 landscape }` |
+| **Orientação/papel** | const `papel` no início do `<style>` (agrupado = `A4 portrait`, lista única = `A4 landscape`) **e** o `W` de cada modo |
 | **Novo tipo de pagamento com cor própria** | `CLASSE_FORMA` + classe `.f-*` no `<style>` |
 
 ### Regras de negócio
@@ -746,16 +748,18 @@ Botão **"Imprimir relatório"** no cabeçalho de `app/(erp)/gerencial/fechament
 - **Vlr. Pago** = `total_recebimento` (0 se não pagou). **Vlr. Pagar** = `valor_original` gravado no recebimento; sem recebimento, o **valor de tabela atual** do tipo pra categoria (`COALESCE(atc.valor, tp.valor)` — pode diferir do preço da época do atendimento). Retorno sai R$ 0,00 / R$ 0,00.
 - **Forma de pagamento** = `tab_condicao_pagamento.descricao` do recebimento (PIX, DINHEIRO, VISA DEBITO...); **crédito parcelado** acrescenta `Nx` de `tab_venda_cartao.qtd_parcelas` (`VISA CREDITO 3x`); a prazo já vem na descrição (`PARCELADO 6X`). Sem pagamento: `Pendente` (há valor a pagar) ou `-` (retorno). O item da API traz `pago`, `forma_pagamento` e `tipo_pagamento` (o tipo só escolhe a cor da etiqueta).
 - **Agrupado:** faixa por médico (nome completo), subtotal por médico, TOTAL GERAL e, com 2+ médicos, "Resumo por médico" no fim; a coluna Médico some (o nome está na faixa). **Desmarcado:** lista única com a coluna Médico (sem o título DR./DRA.) e TOTAL GERAL.
-- Datas com `TO_CHAR` no SQL (memória "pg DATE precisa de TO_CHAR"); telefone = celular, senão telefone.
+- Datas com `TO_CHAR` no SQL (memória "pg DATE precisa de TO_CHAR"). **Sem telefone** (coluna removida a pedido do cliente; é dado pessoal que o relatório não precisa).
 - **Rota:** valida datas (YYYY-MM-DD, fim ≥ início, máx. **366 dias**), ids inteiros positivos (senão 400), teto de **5.000 linhas** (422); devolve `itens` + `empresa_nome` / `empresa_logo` / `emitido_por`.
 
 ### Decisões de design — não reverter sem o cliente pedir
 
 - **O objetivo é caber o máximo de atendimentos por página.** Topo numa faixa só (logo pequena | título | emissão), **4 filtros numa linha pequena** (Médico, Categoria, Período, Agrupamento) e **nada entre o filtro e a grade**.
 - Os **cartões-resumo** (atendimentos, pagamentos registrados, total a pagar, total pago) e o **"Resumo por forma de pagamento"** foram **removidos de propósito** a pedido do cliente. Os totais ficam nos subtotais/TOTAL GERAL e, agrupado com 2+ médicos, no "Resumo por médico" (só no fim).
-- **A4 paisagem** — com 9 colunas a folha em pé ficava apertada e cortava nomes de atendimento.
-- Fonte **7,4 pt**, linhas justas (`padding` 1,4 px), `table-layout: fixed`, margens 0,8 / 0,9 / 1,15 cm.
-- **Medido** (318 linhas): agrupado **21 → 40 linhas/página**; lista única **16 → 35**. **Armadilha:** na lista única, nome de médico quebrado em 2 linhas dobra a altura da linha — a coluna Médico precisa de ~17,5% da largura (só isso levou a lista de 24 → 35). **Mexeu em larguras (`W`) ou fonte? Refaça a medição.**
+- **Papel por modo:** **agrupado = A4 retrato** (sem a coluna Médico são 7 colunas e a página tem ~46% mais altura); **lista única = A4 paisagem** (com a coluna Médico, no retrato "JOSE VICENTE TONIN / JUNIOR" e "CONSULTA / CARDIOLOGICA" quebram em 2 linhas e o ganho some — medido: 34 linhas/página, igual à paisagem antiga). **Retrato na lista única foi tentado e descartado.**
+- Fonte **7,4 pt**, linhas justas (`padding` 1,4 px), `table-layout: fixed`, margens 0,8 / 0,8 / 1,15 cm.
+- **Medido** (342 linhas, contra o layout paisagem com telefone): agrupado **38 → 49 linhas/página (+29%)**; lista única **34 → 38 (+11%)**. (Histórico: antes do layout compacto eram 21 e 16.) **Armadilha:** na lista única, nome de médico quebrado em 2 linhas dobra a altura da linha — a coluna Médico precisa de ~17,5% da largura (só isso levou a lista de 24 → 35). **Mexeu em larguras (`W`) ou fonte? Refaça a medição.**
+- **Totais grandes (retrato):** as colunas Vlr. Pagar/Pago são estreitas (10,5%) e o TOTAL GERAL é negrito — na 1ª versão saiu "R$ 6.500,00R$ 6.500,00" (colado). A fonte dos totais/subtotais agora **encolhe conforme o maior valor** (`fsTotais`, 7,6 → 6,2 pt); testado sem estouro até R$ 1,5 milhão. Se mexer nas larguras de valor, refazer esse teste (checar `scrollWidth > clientWidth` nas células `.num` e nas linhas `total`/`subtotal`).
+- A etiqueta de forma de pagamento **pode quebrar em 2 linhas** (raro, ex.: `VISA CREDITO 3x`) em vez de vazar pra coluna do lado (`.pill` sem `nowrap`).
 
 ### Segurança do HTML (manter)
 
@@ -766,14 +770,15 @@ Botão **"Imprimir relatório"** no cabeçalho de `app/(erp)/gerencial/fechament
 
 1. **Servidor:** use o `next dev` do usuário se já estiver de pé (porta 3000) e só faça chamadas de leitura. **Não suba um segundo `next dev` no projeto** (§32). Valide tipos com `npx tsc --noEmit`, nunca `next build` com dev ativo.
 2. **Gerar o HTML sem a tela:** transpile `relatorioAtendimentosPrint.ts` com `typescript.transpileModule` + `new Function('module','exports', js)` e alimente com os `itens` de `GET /api/gerencial/fechamento-diario/relatorio?inicio=..&fim=..`. Tire `<script>window.onload...print</script>` antes de renderizar.
-3. **Ver o resultado:** Chrome headless `--screenshot --window-size=1123,794` (A4 paisagem a 96 dpi = 1123×794 px); adicione `body{padding:30px 34px 44px}` pra simular as margens. A captura **não mostra o rodapé** das margens.
+3. **Ver o resultado:** Chrome headless `--screenshot --window-size=1123,794` (A4 paisagem a 96 dpi = 1123×794 px; retrato = 794×1123); adicione `body{padding:30px 34px 44px}` pra simular as margens. A captura **não mostra o rodapé** das margens (ele funciona na impressão real — ver "Limites conhecidos"); pra ver a página exatamente como sai, peça ao usuário o PDF impresso.
 4. **Medir capacidade por página:** Playwright `page.setContent(html)` + `page.pdf({ preferCSSPageSize: true })` e contar `/Type /Page` no buffer (`/\/Type\s*\/Page[^s]/g`), com **300+ linhas** (repita os itens reais). Compare com a versão anterior via `git show HEAD:components/gerencial/relatorioAtendimentosPrint.ts`. Referência atual: agrupado 40, lista 35 linhas/página.
 5. **Fluxo real:** Playwright com `channel: 'chrome'`: clicar "Imprimir relatório", preencher as datas, `ctx.waitForEvent('page')` pro popup e checar `.filtro`, `thead th`, `tr.total`. **Não fixe totais no teste** (o banco é vivo e muda): confira "soma de Vlr. Pago do relatório = Total Recebido do fechamento" dia a dia.
 6. **Escape:** teste com nome de paciente `<script>alert(1)</script>` e atendimento `<img src=x onerror=alert(2)>` — têm que sair como texto.
 
 ### Limites conhecidos
 
-- **Não foi visto em papel/PDF renderizado** (o ambiente de teste não rasteriza PDF): rodapé e quebra entre páginas só foram inferidos pelo CSS e pela contagem de páginas. Vale olhar uma impressão real.
+- **Conferido em impressão real** (PDF gerado pelo cliente no Chrome, 2026-09-19, período 01/09–19/09, 13 atendimentos agrupados; layout da época: paisagem, com Telefone): A4 em 1 página, filtros numa linha, etiquetas e cores impressas, sem sobreposição, e **rodapé nas 3 posições** — esquerda "Emitido em ... por ... | Período ...", centro nome da clínica, direita "Página 1 de 1". Os totais do PDF batem com a API e com a soma do Total Recebido do fechamento. Pela altura das linhas no PDF, cabem ~38 linhas/página no agrupado (medido: 40).
+- **Ainda não visto em impressão real:** o **retrato** do agrupado e a remoção do Telefone (2026-09-19 — só por captura de tela e contagem de páginas) e relatório de **várias páginas** (o PDF de exemplo tem 1 página) — cabeçalho da grade repetido a cada página, grupo de médico atravessando a quebra, "Página X de Y" com Y > 1. O ambiente de teste não rasteriza PDF, então isso só foi inferido pelo CSS e pela contagem de páginas.
 - 7,4 pt é pequeno; se o cliente reclamar, subir a fonte e **refazer a medição** (cabe menos linha por página).
 - A logo (~200 KB em base64) viaja em toda geração; aceito por ser uso eventual.
 - Teto de 366 dias / 5.000 linhas na rota.
@@ -798,3 +803,21 @@ Botão **"Imprimir relatório"** no cabeçalho de `app/(erp)/gerencial/fechament
 
 **Como foi testado:** scripts Playwright + Chrome (corrida com resposta atrasada, HTTP 500 + "Tentar novamente", botão travado durante a carga, `condicoes-pagamento` carregada sob demanda) e a conferência "soma do relatório = Total Recebido do fechamento", dia a dia (18/18). **Cuidado ao testar:** não subir um segundo `next dev` neste projeto enquanto o do usuário roda — os dois disputam o `.next` e o segundo trava em "Starting..." (e pode corromper o do usuário); testar contra o servidor que já está de pé, só com chamadas de leitura.
 
+
+---
+
+## 33. Fechamento Diário: relatório impresso "Exames pelo médico executante" (2026-09-19)
+
+Mesmo desenho do §31, só de **exames**, organizado pelo **médico que executou** e mostrando o **solicitante**. É a **segunda opção** do modal do botão "Imprimir relatório" (radio "Tipo de relatório"; o padrão continua sendo "Pacientes pelo tipo de atendimento", que não mudou). Decisão: **um botão só + seletor no modal** (não uma flag dentro do relatório antigo) porque as colunas, a rota e o critério de quem entra são diferentes — misturar deixaria o relatório antigo cheio de `if`.
+
+**O que é "exame":** coluna **`tab_agendamento_tipo.eh_exame`** (migração `novos/59_tipo_atendimento_eh_exame.sql`, aplicada no hiitcor em 2026-09-19; classificação inicial = tudo que não começa com CONSULTA/RETORNO). Caixa **"É exame"** no cadastro do tipo **e coluna "É exame" na grade** `clinica/tipos-atendimento` (caixa clicável: marca/desmarca **com `confirm()` antes** (mensagem diz o efeito no relatório; cancelar não envia nada — a caixa é controlada pelo estado), depois atualização otimista e desfaz + aviso se o servidor falhar; usa `PATCH /api/clinica/tipos-agendamento/[id]` com **só** `{ eh_exame }`, ramo próprio da rota — o UPDATE geral regrava `valor` e `voa_clinical_type`, então um PATCH parcial com outro campo apagaria esses dois) (`TipoAtendimentoFormPage`; schema `eh_exame` boolean default false; PATCH usa `COALESCE($7, eh_exame)` pra um PATCH parcial não zerar o flag). **Tipo novo de exame = marcar a caixa**, senão ele some do relatório sem aviso. **Outros bancos/clientes: aplicar a 59** — sem a coluna, o cadastro de tipos, a agenda (que lista tipos) e este relatório dão 500.
+
+**Quem é o executante (§22):** no recebimento de exame agendado no "médico da clínica" (placeholder `tab_pessoa.eh_clinica`) a rota de recebimentos **troca** `agendamento.profissional_id` pelo executor e grava o solicitante em `medico_solicitante_id`. Logo: `profissional_id` = executante; `profissional_id` = placeholder ⇒ **executante ainda a definir** (grupo âmbar "Executante a definir", sempre por último, com nota explicativa no rodapé). Exame agendado direto com o médico real já sai no grupo dele. O filtro do modal exclui o placeholder da lista de executantes.
+
+**Arquivos:** rota `app/api/gerencial/fechamento-diario/relatorio-exames/route.ts` (filtros `profissional_id` = executante, `tipo_id` = exame, `categoria_id`; mesmas validações/limites do §31; `tp.eh_exame = true`; mesmo critério de presença/pagamento) · `components/gerencial/relatorioExamesPrint.ts` · seletor no `RelatorioAtendimentosModal.tsx` (rota e gerador escolhidos por `tipo`) · base do §31.
+
+**Layout:** agrupado por executante = A4 **retrato** (8 colunas: Paciente/Categoria/Exame/Solicitante/Dt. Visita/Vlr. Pagar/Vlr. Pago/Forma); lista única = A4 **paisagem** (+ coluna Executante, 9). Subtotal por executante, TOTAL GERAL, "Resumo por médico executante" só com 2+ grupos. Sem coluna de repasse de propósito (não foi pedida e é dado sensível). Larguras `W` somam 100%; Categoria precisa de ~11% no retrato senão "UNIMED RIO VERDE"/"SUS - ACREÚNA" quebram em 2 linhas.
+
+**Como foi testado (padrão a repetir):** (1) HTML sintético (3 executantes + a definir, valores até R$ 1,5 mi, XSS em paciente/solicitante/exame/empresa/logo) renderizado no Chrome: páginas, estouro horizontal, nenhum `alert`; (2) a **SQL real da rota extraída do arquivo** rodada em `BEGIN/ROLLBACK` com dados alterados (exame no placeholder ⇒ a definir; solicitante; tipo com `eh_exame=false` some) — os dados reais ainda não têm exame no placeholder nem solicitante; (3) itens do relatório novo == itens do relatório antigo para o mesmo tipo (8/8 idênticos); (4) Playwright no modal (2 tipos, filtro de exame com 33 opções, sem consulta/retorno, total = API, "Nenhum exame encontrado"); (5) schema + `UPDATE`/`INSERT` do tipo em `ROLLBACK`. **Não** salvar pelo formulário do tipo só pra testar: ele regrava também os valores por categoria (`PUT .../categorias`, vazio vira 0) no banco de produção.
+
+**Ainda não visto em impressão real** (só por captura e contagem de páginas). Possível evolução: resumo por tipo de exame (quantos ECG cada médico fez).
