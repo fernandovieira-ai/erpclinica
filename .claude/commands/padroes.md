@@ -599,7 +599,7 @@ Botão "Criar Atestado" em `HistoricoClinico.tsx`, ao lado de "Editar prontuári
 - Fechamento Diário (`app/(erp)/gerencial/fechamento-diario/page.tsx`): Repasse / Clínica **por profissional** (cartão "Por Profissional") e **por atendimento** (lista "Agendamentos do Dia", com a regra aplicada: `35%`, `valor fixo` ou `sem rateio` pra recebimento anterior à migração 55). `rateioDoAtendimento()` usa o mesmo fallback dos totais da rota (snapshot NULL ⇒ repasse 0 / clínica = total). Só leitura — **não há correção manual de repasse** (possível fase futura: admin + motivo + auditoria, dia aberto).
 
 **PRÓXIMO AJUSTE — fase 2: relatório "Repasse Médico" em Gerencial** (filtro período + profissional; substitui a planilha do cliente). Antes de começar, resolver:
-- **Falta índice** pra consulta "repasse de um médico no mês": hoje seria `tab_recebimento_consulta` JOIN `tab_agendamento` por `profissional_id`, e não há índice em `tab_recebimento_consulta(agendamento_id)`.
+- **Índices:** pra consulta "repasse de um médico no mês" (`tab_recebimento_consulta` JOIN `tab_agendamento` por `profissional_id`), **o índice `idx_rc_agendamento` (em `tab_recebimento_consulta(agendamento_id)`) já existe** — conferido em 2026-09-19; a versão anterior desta nota dizia o contrário e estava errada. Só vale avaliar um composto `tab_agendamento(empresa_id, profissional_id, data_hora_inicio)` se o volume crescer (hoje ~60 agendamentos).
 - Tratar recebimentos pré-migração 55 (snapshot NULL) como "sem rateio".
 - Modelo visual pronto: as colunas Repasse/Clínica do Fechamento Diário.
 
@@ -720,3 +720,47 @@ Os dois caminhos rodam juntos para dinheiro/PIX (trigger no INSERT do movimento 
 **Medido (dev → banco remoto, RTT ~15 ms):** validação 20 ms + INSERT 34 ms. O pool descarta conexão ociosa após 30 s (`idleTimeoutMillis`), então a 1ª ação depois de uma pausa paga conexão nova (~75 ms local, mais em produção) — **não alterado**: subir isso mexe no total de conexões do Postgres compartilhado, é decisão à parte.
 
 **Pendências conhecidas (não corrigidas):** `paciente_id`/`categoria_id` do POST não são validados por empresa (pré-existente); `regraRepasse` ainda faz 1 query por item no recebimento; `scripts/run-migrations.js` tem a **senha do admin do banco escrita no arquivo (e no histórico do git — rotacionar)** e **derruba todas as tabelas** — nunca usar pra aplicar migração nova: aplicar o `.sql` avulso com um script que leia as credenciais do `.env.local`.
+
+---
+
+## 31. Fechamento Diário: relatório impresso "Pacientes pelo tipo de atendimento" (2026-09-18)
+
+Botão **"Imprimir relatório"** no cabeçalho de `app/(erp)/gerencial/fechamento-diario/page.tsx` → modal com período (de/até, começa no dia da tela), médico, categoria e **"Agrupar por médico"** (marcado por padrão). Layout do relatório do sistema anterior (título, filtros Médico/Categoria/Período, colunas Paciente / Telefone / Categoria / Dt. Visita / Médico / Vlr. Pagar / Vlr. Pago / Atendimento) **+ coluna "Forma de Pgto"**, em **A4 paisagem** (com 9 colunas a folha em pé ficava apertada e cortava nomes de atendimento). Acabamento: topo com logo | título | emissão, filtros em etiquetas, 4 cartões-resumo (atendimentos, pagamentos registrados, total a pagar, total pago), forma de pagamento em etiquetas coloridas por tipo (`CLASSE_FORMA`, classe fixa — nunca texto do banco em `class`), e no fim "Resumo por médico" (agrupado, 2+ médicos) + "Resumo por forma de pagamento".
+
+**Arquivos:**
+- `app/api/gerencial/fechamento-diario/relatorio/route.ts` — `GET ?inicio&fim&profissional_id&categoria_id`. Valida datas (YYYY-MM-DD, fim ≥ início, máx. 366 dias), ids inteiros positivos (senão 400), teto de 5.000 linhas (422). Devolve `itens` + `empresa_nome`/`empresa_logo`/`emitido_por`.
+- `components/gerencial/relatorioAtendimentosPrint.ts` — `gerarHtmlRelatorioAtendimentos()` (HTML A4 paisagem, `window.print()` no `onload`). **Todo texto vindo do banco passa por `esc()`**; a logo só é aceita se for data URL de imagem (`logoSegura`); o rodapé vai numa string CSS e é filtrado a `[\p{L}\p{N} .,:;-/()|]` (nada de aspas/`<`/`\` que fechariam a string ou a tag `<style>`).
+- `components/gerencial/RelatorioAtendimentosModal.tsx` — abre a janela **no próprio clique, antes do fetch** (senão o navegador bloqueia como pop-up) com um "Gerando relatório..." provisório; em erro ou sem resultado a janela é fechada e a mensagem aparece no modal.
+
+**Regras de negócio:**
+- **Quem entra:** status `AGUARDANDO`/`ATENDIDO` **ou** com recebimento `PAGO` (mesmo `FALTOU`) — assim a soma de "Vlr. Pago" **confere com o "Total Recebido" do Fechamento** (conferido dia a dia: 18/18 dias). Sem o "ou pago", um pagamento de quem faltou sumiria do relatório mas continuaria no fechamento.
+- **Vlr. Pago** = `total_recebimento` do recebimento (0 se não pagou). **Vlr. Pagar** = `valor_original` gravado no recebimento; sem recebimento, o valor de tabela atual do tipo pra categoria (`COALESCE(atc.valor, tp.valor)`). Retorno sai R$ 0,00 / R$ 0,00.
+- **Agrupado:** faixa por médico (nome completo), subtotal por médico, TOTAL GERAL e, com 2+ médicos, "Resumo por médico" no fim; a coluna Médico some (está na faixa). **Desmarcado:** lista única com a coluna Médico (sem o título DR./DRA.) e TOTAL GERAL.
+- Datas via `TO_CHAR` no SQL (memória "pg DATE precisa de TO_CHAR"); telefone = celular, senão telefone.
+- **Forma de pagamento** = `tab_condicao_pagamento.descricao` do recebimento PAGO (ex.: PIX, DINHEIRO, VISA DEBITO); **crédito parcelado** acrescenta `Nx` a partir de `tab_venda_cartao.qtd_parcelas` (`VISA CREDITO 3x`); a prazo já vem na descrição (`PARCELADO 6X`). Sem pagamento: `Pendente` (se há valor a pagar) ou `-` (retorno R$ 0). O item da API traz `pago`, `forma_pagamento` e `tipo_pagamento` (o tipo só escolhe a cor da etiqueta). No "Resumo por forma", quem não pagou entra numa linha "Sem pagamento registrado" pra a soma das quantidades fechar com o total de atendimentos.
+- Texto de banco que vai pra dentro de string CSS (rodapé `@bottom-left/@bottom-center`) passa por `paraCss()`; o resto do HTML, por `esc()`.
+
+**Rodapé "Emitido em ... por ... | Período ..." e "Página X de Y" ficam nas margens da página** (`@page { @bottom-left/@bottom-right }`, Chrome/Edge ≥ 131). **Não usar `position: fixed` no rodapé**: repete em toda página mas sobrepõe a última linha da tabela. Em navegador sem suporte a caixas de margem o rodapé simplesmente não sai (o resto do relatório não muda). **Não foi possível conferir visualmente o rodapé impresso** (o ambiente de teste não rasteriza PDF) — vale olhar uma impressão real uma vez.
+
+**Testado de ponta a ponta com Playwright + Chrome** (modal, período invertido, dia sem atendimento, agrupado e lista, filtro de médico; zero erro de console). O HTML foi testado com nome de paciente contendo `<script>` e `<img onerror>` (saem escapados).
+
+---
+
+## 32. Fechamento Diário: análise de desempenho das buscas (2026-09-19)
+
+**Resultado: buscas saudáveis; 1 defeito real de tela corrigido + 3 ajustes.**
+
+**Medido** (dev → banco remoto, RTT ~15 ms; 59 agendamentos / 10 recebimentos):
+- Consulta principal do dia (`GET /api/gerencial/fechamento-diario`): execução **0,54 ms** (planning 2,7 ms). Com `enable_seqscan=off` o plano usa `idx_ag_data (empresa_id, data_hora_inicio)` + `idx_rc_agendamento` — com a tabela grande o filtro do dia continua por índice; hoje o planner faz seqscan só porque a tabela é minúscula (normal, não é problema).
+- HTTP (warm): **~70 ms → ~43 ms** depois de rodar as 2 consultas da rota em `Promise.all`. O relatório impresso leva ~70 ms, mas a resposta pesa ~206 KB (≈200 KB é a logo em base64) — aceito, uso eventual; se virar problema, guardar a logo no cliente entre relatórios.
+- Índices conferidos, nada faltando: `tab_agendamento` (`idx_ag_data`, `idx_ag_profissional`…), `tab_recebimento_consulta` (`idx_rc_agendamento`, `idx_rc_data`…), `tab_fechamento_caixa_diario` (unique empresa+data).
+
+**Defeito corrigido — "só a última resposta vale" (corrida de respostas):** clicando rápido entre dias, a resposta lenta de um dia anterior chegava depois e sobrescrevia o estado: a tela mostrava agendamentos/totais de 27/08 (11) com o seletor em 28/08 (2) — e "Fechar caixa do dia" agiria sobre a data do seletor. Reproduzido com Playwright (`page.route` atrasando o dia A). Correção em `page.tsx`: `buscaAtual` (ref com id sequencial + `AbortController`) cancela a busca anterior e ignora qualquer resposta que não seja da última; **erro (HTTP ≠ 200 ou queda) limpa `dados` e mostra aviso com "Tentar novamente"** em vez de manter os números do dia anterior; "Fechar/Reabrir caixa" ficam desabilitados enquanto `loading`. **Padrão a seguir em toda tela que busca a partir de seletor de data/filtro.** A tela de Agendamento (`carregar` em `app/(erp)/clinica/agendamento/page.tsx`) usa o mesmo padrão sem essa guarda — **provavelmente tem o mesmo problema; não foi testado.**
+
+**Outros ajustes:**
+- Rota: as duas consultas (fechamento do dia + agendamentos) em `Promise.all`. Só o erro `42P01` (tabela `tab_fechamento_caixa_diario` inexistente, migration 51 não aplicada) é tolerado como "dia aberto"; **qualquer outra falha vira 500** — antes o `catch` genérico mostrava como ABERTO um dia que podia estar FECHADO.
+- `condicoes-pagamento` só é buscada ao abrir "Corrigir" (1ª vez), não em toda visita (só o admin corrige).
+- Sem paginação de propósito: um dia tem dezenas de linhas. O relatório limita 366 dias / 5.000 linhas.
+
+**Como foi testado:** scripts Playwright + Chrome (corrida com resposta atrasada, HTTP 500 + "Tentar novamente", botão travado durante a carga, `condicoes-pagamento` carregada sob demanda) e a conferência "soma do relatório = Total Recebido do fechamento", dia a dia (18/18). **Cuidado ao testar:** não subir um segundo `next dev` neste projeto enquanto o do usuário roda — os dois disputam o `.next` e o segundo trava em "Starting..." (e pode corromper o do usuário); testar contra o servidor que já está de pé, só com chamadas de leitura.
+
