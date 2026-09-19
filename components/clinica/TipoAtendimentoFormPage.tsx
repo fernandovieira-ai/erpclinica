@@ -83,7 +83,7 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
 
   const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<AgendamentoTipoInput>({
     resolver: zodResolver(agendamentoTipoSchema),
-    defaultValues: { duracao_min: 30, cor: '#0EA5E9', ativo: true },
+    defaultValues: { duracao_min: 30, cor: '#0EA5E9', ativo: true, eh_exame: false },
   })
 
   const corAtual = watch('cor')
@@ -96,6 +96,7 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
       cor:               tipo.cor,
       valor:             tipo.valor != null ? parseFloat(String(tipo.valor)) : undefined,
       voa_clinical_type: tipo.voa_clinical_type ?? undefined,
+      eh_exame:          tipo.eh_exame ?? false,
       ativo:             tipo.ativo,
     })
   }, [tipo, reset])
@@ -253,6 +254,19 @@ export default function TipoAtendimentoFormPage({ tipo }: Props) {
               style={{ width: 110, padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: errors.valor ? '1px solid var(--cor-erro)' : '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, textAlign: 'right' }}
             />
             {errors.valor && <span style={{ fontSize: 11, color: 'var(--cor-erro)' }}>{errors.valor.message}</span>}
+          </Row>
+
+          {/* É exame */}
+          <Row label="É exame:">
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+              <input type="checkbox" {...register('eh_exame')} style={{ cursor: 'pointer' }} />
+              Sim, este tipo é um exame / procedimento
+            </label>
+          </Row>
+          <Row label="">
+            <span style={{ fontSize: 10.5, color: 'var(--texto-terciario)' }}>
+              Só os tipos marcados como exame entram no relatório <strong style={{ color: 'var(--texto-secundario)' }}>Exames pelo médico executante</strong> do Fechamento Diário. Consulta e retorno ficam desmarcados.
+            </span>
           </Row>
 
           <Row label="">

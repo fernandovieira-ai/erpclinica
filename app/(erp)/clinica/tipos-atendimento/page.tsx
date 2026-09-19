@@ -15,6 +15,7 @@ export default function TiposAtendimentoPage() {
   const [busca,   setBusca]   = useState('')
   const [ativo,   setAtivo]   = useState('true')
   const [page,    setPage]    = useState(1)
+  const [salvandoExame, setSalvandoExame] = useState<Set<number>>(new Set())
 
   const carregar = useCallback(async () => {
     setLoading(true)
@@ -42,6 +43,32 @@ export default function TiposAtendimentoPage() {
     })
     if (res.ok) { toast.success(`Tipo ${t.ativo ? 'desativado' : 'reativado'}!`); carregar() }
     else toast.error('Erro ao alterar status')
+  }
+
+  // Marca/desmarca "É exame" direto na grade: pede confirmação (clique sem querer muda o relatório de exames),
+  // atualiza na hora e desfaz se o servidor recusar. Cancelar não muda nada: a caixa é controlada pelo estado.
+  async function alternarExame(t: TipoAtendimentoListItem) {
+    if (salvandoExame.has(t.id)) return
+    const novo = !t.eh_exame
+    const pergunta = novo
+      ? `Marcar "${t.descricao}" como EXAME?\n\nEle passará a aparecer no relatório "Exames pelo médico executante".`
+      : `Desmarcar "${t.descricao}" como exame?\n\nEle deixará de aparecer no relatório "Exames pelo médico executante".`
+    if (!confirm(pergunta)) return
+    const marcar = (id: number, valor: boolean) => setDados(ds => ds.map(d => d.id === id ? { ...d, eh_exame: valor } : d))
+    setSalvandoExame(s => new Set(s).add(t.id))
+    marcar(t.id, novo)
+    try {
+      const res = await fetch(`/api/clinica/tipos-agendamento/${t.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eh_exame: novo }),
+      })
+      if (!res.ok) { marcar(t.id, !novo); toast.error('Erro ao alterar "É exame"') }
+    } catch {
+      marcar(t.id, !novo); toast.error('Erro de conexão ao alterar "É exame"')
+    } finally {
+      setSalvandoExame(s => { const n = new Set(s); n.delete(t.id); return n })
+    }
   }
 
   const inicio = (page - 1) * 50 + 1
@@ -90,16 +117,17 @@ export default function TiposAtendimentoPage() {
                   <th style={{ width: 48 }}></th>
                   <th>Descrição</th>
                   <th style={{ width: 130 }}>Duração</th>
+                  <th style={{ width: 90, textAlign: 'center' }} title="Exames entram no relatório Exames pelo médico executante">É exame</th>
                   <th style={{ width: 80 }}>Status</th>
                   <th style={{ width: 80 }}></th>
                 </tr>
               </thead>
               <tbody>
                 {loading && (
-                  <tr><td colSpan={5} style={{ textAlign: 'center', padding: 32, color: 'var(--texto-terciario)' }}>Carregando...</td></tr>
+                  <tr><td colSpan={6} style={{ textAlign: 'center', padding: 32, color: 'var(--texto-terciario)' }}>Carregando...</td></tr>
                 )}
                 {!loading && dados.length === 0 && (
-                  <tr><td colSpan={5} style={{ textAlign: 'center', padding: 40, color: 'var(--texto-terciario)' }}>Nenhum tipo de atendimento encontrado</td></tr>
+                  <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--texto-terciario)' }}>Nenhum tipo de atendimento encontrado</td></tr>
                 )}
                 {!loading && dados.map(t => (
                   <tr key={t.id}>
@@ -108,6 +136,17 @@ export default function TiposAtendimentoPage() {
                     </td>
                     <td style={{ fontWeight: 500 }}>{t.descricao}</td>
                     <td style={{ fontFamily: 'var(--fonte-mono)', fontSize: 12 }}>{t.duracao_min} min</td>
+                    <td style={{ textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={!!t.eh_exame}
+                        disabled={salvandoExame.has(t.id)}
+                        onChange={() => alternarExame(t)}
+                        aria-label={`${t.descricao} é exame`}
+                        title={t.eh_exame ? 'É exame - clique para desmarcar' : 'Não é exame - clique para marcar'}
+                        style={{ cursor: salvandoExame.has(t.id) ? 'wait' : 'pointer', width: 15, height: 15 }}
+                      />
+                    </td>
                     <td>
                       <span className={`badge-status ${t.ativo ? 'badge-pago' : 'badge-cancelado'}`}>
                         {t.ativo ? 'Ativo' : 'Inativo'}

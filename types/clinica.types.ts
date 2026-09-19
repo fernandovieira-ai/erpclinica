@@ -117,6 +117,7 @@ export interface TipoAtendimentoListItem {
   valor:             number | null
   ativo:             boolean
   voa_clinical_type: string | null
+  eh_exame:          boolean
 }
 
 export interface ProfissionalTipoPercentualItem {

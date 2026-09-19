@@ -24,6 +24,7 @@ export const agendamentoTipoSchema = z.object({
     z.number().nonnegative().nullable(),
   ).optional(),
   voa_clinical_type: z.preprocess(v => (v === '' ? null : v), z.string().max(50).nullable().optional()),
+  eh_exame:    z.boolean().default(false),
   ativo:       z.boolean().default(true),
 })
 
