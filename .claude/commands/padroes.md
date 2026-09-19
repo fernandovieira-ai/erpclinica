@@ -723,26 +723,60 @@ Os dois caminhos rodam juntos para dinheiro/PIX (trigger no INSERT do movimento 
 
 ---
 
-## 31. Fechamento Diário: relatório impresso "Pacientes pelo tipo de atendimento" (2026-09-18)
+## 31. Fechamento Diário: relatório impresso "Pacientes pelo tipo de atendimento" (2026-09-18/19)
 
-Botão **"Imprimir relatório"** no cabeçalho de `app/(erp)/gerencial/fechamento-diario/page.tsx` → modal com período (de/até, começa no dia da tela), médico, categoria e **"Agrupar por médico"** (marcado por padrão). Layout do relatório do sistema anterior (título, filtros Médico/Categoria/Período, colunas Paciente / Telefone / Categoria / Dt. Visita / Médico / Vlr. Pagar / Vlr. Pago / Atendimento) **+ coluna "Forma de Pgto"**, em **A4 paisagem** (com 9 colunas a folha em pé ficava apertada e cortava nomes de atendimento). Acabamento: topo com logo | título | emissão, filtros em etiquetas, 4 cartões-resumo (atendimentos, pagamentos registrados, total a pagar, total pago), forma de pagamento em etiquetas coloridas por tipo (`CLASSE_FORMA`, classe fixa — nunca texto do banco em `class`), e no fim "Resumo por médico" (agrupado, 2+ médicos) + "Resumo por forma de pagamento".
+Botão **"Imprimir relatório"** no cabeçalho de `app/(erp)/gerencial/fechamento-diario/page.tsx` → modal (período de/até começando no dia da tela, médico, categoria, **"Agrupar por médico"** marcado por padrão) → janela de impressão **A4 paisagem, layout compacto**. Baseado no relatório do sistema anterior do cliente (foto de referência: título "Emissão de Relatórios / Pacientes pelo tipo de atendimento", filtros Médico/Categoria/Período, colunas Paciente / Telefone / Categoria / Dt. Visita / Médico / Vlr. Pagar / Vlr. Pago / Atendimento) **+ a coluna "Forma de Pgto"**.
 
-**Arquivos:**
-- `app/api/gerencial/fechamento-diario/relatorio/route.ts` — `GET ?inicio&fim&profissional_id&categoria_id`. Valida datas (YYYY-MM-DD, fim ≥ início, máx. 366 dias), ids inteiros positivos (senão 400), teto de 5.000 linhas (422). Devolve `itens` + `empresa_nome`/`empresa_logo`/`emitido_por`.
-- `components/gerencial/relatorioAtendimentosPrint.ts` — `gerarHtmlRelatorioAtendimentos()` (HTML A4 paisagem, `window.print()` no `onload`). **Todo texto vindo do banco passa por `esc()`**; a logo só é aceita se for data URL de imagem (`logoSegura`); o rodapé vai numa string CSS e é filtrado a `[\p{L}\p{N} .,:;-/()|]` (nada de aspas/`<`/`\` que fechariam a string ou a tag `<style>`).
-- `components/gerencial/RelatorioAtendimentosModal.tsx` — abre a janela **no próprio clique, antes do fetch** (senão o navegador bloqueia como pop-up) com um "Gerando relatório..." provisório; em erro ou sem resultado a janela é fechada e a mensagem aparece no modal.
+**Fluxo:** clique em "Imprimir" no modal → `window.open` **imediato** (antes do fetch, senão o navegador bloqueia como pop-up) com "Gerando relatório..." → `GET /api/gerencial/fechamento-diario/relatorio` → `gerarHtmlRelatorioAtendimentos(itens, opções)` → `document.write` na janela → `window.print()` no `onload`. Erro ou dia sem atendimento: a janela é fechada e a mensagem aparece no modal.
 
-**Regras de negócio:**
-- **Quem entra:** status `AGUARDANDO`/`ATENDIDO` **ou** com recebimento `PAGO` (mesmo `FALTOU`) — assim a soma de "Vlr. Pago" **confere com o "Total Recebido" do Fechamento** (conferido dia a dia: 18/18 dias). Sem o "ou pago", um pagamento de quem faltou sumiria do relatório mas continuaria no fechamento.
-- **Vlr. Pago** = `total_recebimento` do recebimento (0 se não pagou). **Vlr. Pagar** = `valor_original` gravado no recebimento; sem recebimento, o valor de tabela atual do tipo pra categoria (`COALESCE(atc.valor, tp.valor)`). Retorno sai R$ 0,00 / R$ 0,00.
-- **Agrupado:** faixa por médico (nome completo), subtotal por médico, TOTAL GERAL e, com 2+ médicos, "Resumo por médico" no fim; a coluna Médico some (está na faixa). **Desmarcado:** lista única com a coluna Médico (sem o título DR./DRA.) e TOTAL GERAL.
-- Datas via `TO_CHAR` no SQL (memória "pg DATE precisa de TO_CHAR"); telefone = celular, senão telefone.
-- **Forma de pagamento** = `tab_condicao_pagamento.descricao` do recebimento PAGO (ex.: PIX, DINHEIRO, VISA DEBITO); **crédito parcelado** acrescenta `Nx` a partir de `tab_venda_cartao.qtd_parcelas` (`VISA CREDITO 3x`); a prazo já vem na descrição (`PARCELADO 6X`). Sem pagamento: `Pendente` (se há valor a pagar) ou `-` (retorno R$ 0). O item da API traz `pago`, `forma_pagamento` e `tipo_pagamento` (o tipo só escolhe a cor da etiqueta). No "Resumo por forma", quem não pagou entra numa linha "Sem pagamento registrado" pra a soma das quantidades fechar com o total de atendimentos.
-- Texto de banco que vai pra dentro de string CSS (rodapé `@bottom-left/@bottom-center`) passa por `paraCss()`; o resto do HTML, por `esc()`.
+### Onde mexer para cada tipo de ajuste
 
-**Rodapé "Emitido em ... por ... | Período ..." e "Página X de Y" ficam nas margens da página** (`@page { @bottom-left/@bottom-right }`, Chrome/Edge ≥ 131). **Não usar `position: fixed` no rodapé**: repete em toda página mas sobrepõe a última linha da tabela. Em navegador sem suporte a caixas de margem o rodapé simplesmente não sai (o resto do relatório não muda). **Não foi possível conferir visualmente o rodapé impresso** (o ambiente de teste não rasteriza PDF) — vale olhar uma impressão real uma vez.
+| Quero mudar... | Mexa em |
+|---|---|
+| **Adicionar/tirar coluna** | rota (`SELECT` + mapeamento em `itens`) → `ItemRelatorioAtendimento` → `linhaItem` e `<thead>` → larguras `W` (têm que somar 100%) → `totalColunas` / `colunasAntesValores` e os `colspan` das linhas de total/grupo |
+| **Quem entra / de onde vêm os valores** | `WHERE` e `SELECT` de `app/api/gerencial/fechamento-diario/relatorio/route.ts` |
+| **Visual** (fonte, margens, cores, etiquetas, larguras) | bloco `<style>` e `W` em `components/gerencial/relatorioAtendimentosPrint.ts` |
+| **Filtros do modal** | `components/gerencial/RelatorioAtendimentosModal.tsx` **e** a validação na rota |
+| **Orientação/papel** | `@page { size: A4 landscape }` |
+| **Novo tipo de pagamento com cor própria** | `CLASSE_FORMA` + classe `.f-*` no `<style>` |
 
-**Testado de ponta a ponta com Playwright + Chrome** (modal, período invertido, dia sem atendimento, agrupado e lista, filtro de médico; zero erro de console). O HTML foi testado com nome de paciente contendo `<script>` e `<img onerror>` (saem escapados).
+### Regras de negócio
+
+- **Quem entra:** status `AGUARDANDO`/`ATENDIDO` **ou** com recebimento `PAGO` (mesmo `FALTOU`) — assim a soma de "Vlr. Pago" **confere com o "Total Recebido" do Fechamento** (conferido dia a dia, 18/18). Sem o "ou pago", o pagamento de quem faltou sumiria do relatório e continuaria no fechamento. Pagamento **a prazo conta como pago** (mesma regra do fechamento, §3).
+- **Vlr. Pago** = `total_recebimento` (0 se não pagou). **Vlr. Pagar** = `valor_original` gravado no recebimento; sem recebimento, o **valor de tabela atual** do tipo pra categoria (`COALESCE(atc.valor, tp.valor)` — pode diferir do preço da época do atendimento). Retorno sai R$ 0,00 / R$ 0,00.
+- **Forma de pagamento** = `tab_condicao_pagamento.descricao` do recebimento (PIX, DINHEIRO, VISA DEBITO...); **crédito parcelado** acrescenta `Nx` de `tab_venda_cartao.qtd_parcelas` (`VISA CREDITO 3x`); a prazo já vem na descrição (`PARCELADO 6X`). Sem pagamento: `Pendente` (há valor a pagar) ou `-` (retorno). O item da API traz `pago`, `forma_pagamento` e `tipo_pagamento` (o tipo só escolhe a cor da etiqueta).
+- **Agrupado:** faixa por médico (nome completo), subtotal por médico, TOTAL GERAL e, com 2+ médicos, "Resumo por médico" no fim; a coluna Médico some (o nome está na faixa). **Desmarcado:** lista única com a coluna Médico (sem o título DR./DRA.) e TOTAL GERAL.
+- Datas com `TO_CHAR` no SQL (memória "pg DATE precisa de TO_CHAR"); telefone = celular, senão telefone.
+- **Rota:** valida datas (YYYY-MM-DD, fim ≥ início, máx. **366 dias**), ids inteiros positivos (senão 400), teto de **5.000 linhas** (422); devolve `itens` + `empresa_nome` / `empresa_logo` / `emitido_por`.
+
+### Decisões de design — não reverter sem o cliente pedir
+
+- **O objetivo é caber o máximo de atendimentos por página.** Topo numa faixa só (logo pequena | título | emissão), **4 filtros numa linha pequena** (Médico, Categoria, Período, Agrupamento) e **nada entre o filtro e a grade**.
+- Os **cartões-resumo** (atendimentos, pagamentos registrados, total a pagar, total pago) e o **"Resumo por forma de pagamento"** foram **removidos de propósito** a pedido do cliente. Os totais ficam nos subtotais/TOTAL GERAL e, agrupado com 2+ médicos, no "Resumo por médico" (só no fim).
+- **A4 paisagem** — com 9 colunas a folha em pé ficava apertada e cortava nomes de atendimento.
+- Fonte **7,4 pt**, linhas justas (`padding` 1,4 px), `table-layout: fixed`, margens 0,8 / 0,9 / 1,15 cm.
+- **Medido** (318 linhas): agrupado **21 → 40 linhas/página**; lista única **16 → 35**. **Armadilha:** na lista única, nome de médico quebrado em 2 linhas dobra a altura da linha — a coluna Médico precisa de ~17,5% da largura (só isso levou a lista de 24 → 35). **Mexeu em larguras (`W`) ou fonte? Refaça a medição.**
+
+### Segurança do HTML (manter)
+
+- **Todo texto vindo do banco passa por `esc()`**; texto que vai dentro de string CSS (rodapé `@bottom-left/@bottom-center`) passa por `paraCss()` (só `[\p{L}\p{N} .,:;-/()|]` — nada de aspas, `<` ou `\` que fechariam a string ou a tag `<style>`); a logo só é aceita se for data URL de imagem (`logoSegura`); a etiqueta usa **classe fixa** (`CLASSE_FORMA`), **nunca texto do banco em `class`**.
+- Rodapé "Emitido em ... por ... | Período ..." e "Página X de Y" ficam **nas margens da página** (`@page { @bottom-left/@bottom-center/@bottom-right }`, Chrome/Edge ≥ 131). **Não usar `position: fixed` no rodapé**: repete em toda página mas sobrepõe a última linha da tabela. Em navegador sem suporte o rodapé simplesmente não sai; o resto não muda.
+
+### Receita para ajustar e testar (sem abrir impressora)
+
+1. **Servidor:** use o `next dev` do usuário se já estiver de pé (porta 3000) e só faça chamadas de leitura. **Não suba um segundo `next dev` no projeto** (§32). Valide tipos com `npx tsc --noEmit`, nunca `next build` com dev ativo.
+2. **Gerar o HTML sem a tela:** transpile `relatorioAtendimentosPrint.ts` com `typescript.transpileModule` + `new Function('module','exports', js)` e alimente com os `itens` de `GET /api/gerencial/fechamento-diario/relatorio?inicio=..&fim=..`. Tire `<script>window.onload...print</script>` antes de renderizar.
+3. **Ver o resultado:** Chrome headless `--screenshot --window-size=1123,794` (A4 paisagem a 96 dpi = 1123×794 px); adicione `body{padding:30px 34px 44px}` pra simular as margens. A captura **não mostra o rodapé** das margens.
+4. **Medir capacidade por página:** Playwright `page.setContent(html)` + `page.pdf({ preferCSSPageSize: true })` e contar `/Type /Page` no buffer (`/\/Type\s*\/Page[^s]/g`), com **300+ linhas** (repita os itens reais). Compare com a versão anterior via `git show HEAD:components/gerencial/relatorioAtendimentosPrint.ts`. Referência atual: agrupado 40, lista 35 linhas/página.
+5. **Fluxo real:** Playwright com `channel: 'chrome'`: clicar "Imprimir relatório", preencher as datas, `ctx.waitForEvent('page')` pro popup e checar `.filtro`, `thead th`, `tr.total`. **Não fixe totais no teste** (o banco é vivo e muda): confira "soma de Vlr. Pago do relatório = Total Recebido do fechamento" dia a dia.
+6. **Escape:** teste com nome de paciente `<script>alert(1)</script>` e atendimento `<img src=x onerror=alert(2)>` — têm que sair como texto.
+
+### Limites conhecidos
+
+- **Não foi visto em papel/PDF renderizado** (o ambiente de teste não rasteriza PDF): rodapé e quebra entre páginas só foram inferidos pelo CSS e pela contagem de páginas. Vale olhar uma impressão real.
+- 7,4 pt é pequeno; se o cliente reclamar, subir a fonte e **refazer a medição** (cabe menos linha por página).
+- A logo (~200 KB em base64) viaja em toda geração; aceito por ser uso eventual.
+- Teto de 366 dias / 5.000 linhas na rota.
 
 ---
 
