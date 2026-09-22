@@ -34,7 +34,8 @@ export async function GET(req: NextRequest) {
     }
 
     const { rows } = await db.query(
-      `SELECT p.id, p.nome, p.cpf_cnpj, p.celular, p.telefone, p.whatsapp, p.cidade, p.uf, p.email
+      `SELECT p.id, p.nome, p.cpf_cnpj, p.celular, p.telefone, p.whatsapp, p.cidade, p.uf, p.email,
+              TO_CHAR(p.data_nascimento, 'YYYY-MM-DD') AS data_nascimento
        FROM tab_pessoa p
        WHERE p.empresa_id = $1 AND p.ind_paciente = true AND p.ativo = true
        ${buscaCond}

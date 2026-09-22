@@ -271,7 +271,10 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
         }
       }
       const [dataAg, dataPr, dataRe, dataRs, dataAn, dataAt, dataRce] = await Promise.all([
-        buscar(`/api/clinica/agendamentos?${new URLSearchParams({ paciente_id: String(pacienteId), status: 'ATENDIDO' })}`),
+        // Sem filtro de status: a aba precisa mostrar TODO o histórico do paciente (agendado,
+        // confirmado, aguardando, faltou, cancelado — não só atendido), senão consultas que
+        // ainda vão acontecer ou que foram canceladas somem da timeline sem explicação.
+        buscar(`/api/clinica/agendamentos?${new URLSearchParams({ paciente_id: String(pacienteId), order: 'desc', limit: '500' })}`),
         buscar(`/api/clinica/prontuarios?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
         buscar(`/api/clinica/receitas?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
         buscar(`/api/clinica/receitas-sistema?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
@@ -570,7 +573,7 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
   if (consultas.length === 0) {
     return (
       <div style={{ padding: '24px 4px', textAlign: 'center', fontSize: 12, color: 'var(--texto-secundario)' }}>
-        Nenhuma consulta atendida encontrada para este paciente.
+        Nenhum agendamento encontrado para este paciente.
       </div>
     )
   }
@@ -958,7 +961,10 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
                         {resumo}
                       </div>
                     )}
-                    {!aberto && !resumo && (
+                    {/* "Prontuário não preenchido" só faz sentido pra consulta que já aconteceu — AGUARDANDO
+                        ainda é fila de espera (paciente não foi chamado), não existe prontuário a preencher
+                        ainda; pra AGENDADO/CONFIRMADO/CANCELADO o badge de status ao lado já explica a linha. */}
+                    {!aberto && !resumo && (ag.status === 'ATENDIDO' || ag.status === 'FALTOU') && (
                       <div style={{ fontSize: 11.5, color: 'var(--texto-terciario)', marginTop: 2, fontStyle: 'italic' }}>
                         Prontuário não preenchido
                       </div>

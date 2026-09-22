@@ -17,7 +17,7 @@ import { toast } from 'sonner'
 import type { AgendamentoListItem, ProfissionalListItem } from '@/types/clinica.types'
 import AgendamentoModal from '@/components/clinica/AgendamentoModal'
 import NovoHorarioModal from '@/components/clinica/NovoHorarioModal'
-import BuscaPacienteAgendamentosModal from '@/components/clinica/BuscaPacienteAgendamentosModal'
+import FichaPacienteModal from '@/components/clinica/FichaPacienteModal'
 import PacienteCheckInFormModal from '@/components/clinica/PacienteCheckInFormModal'
 
 type ViewMode = 'dia' | 'semana' | 'mes' | 'lista' | 'confirmar'
@@ -96,6 +96,7 @@ export default function AgendamentoPage() {
   const [agendaSemanaRaw, setAgendaSemanaRaw]     = useState<Map<number, boolean>>(new Map())
   const [agendaConfigRaw, setAgendaConfigRaw]     = useState<Map<number, { hora_inicio: string; hora_fim: string; intervalo_min: number }>>(new Map())
   const [excecoesRaw, setExcecoesRaw]             = useState<Map<string, boolean>>(new Map())
+  const [pausasRaw, setPausasRaw]                 = useState<Map<number, { hora_inicio: string; hora_fim: string; descricao: string | null }[]>>(new Map())
   const [configAgendaAberta, setConfigAgendaAberta] = useState(false)
   const [agendaProf, setAgendaProf] = useState<Record<number, { hora_inicio: string; hora_fim: string; ativo: boolean; id?: number }>>({})
   const [salvandoAgenda, setSalvandoAgenda] = useState(false)
@@ -141,6 +142,7 @@ export default function AgendamentoPage() {
       setDiasIndisponíveis(new Set())
       setAgendaSemanaRaw(new Map())
       setExcecoesRaw(new Map())
+      setPausasRaw(new Map())
       try {
         const resAgregado = await fetch('/api/clinica/agenda-profissional')
         const agregadoData = resAgregado.ok ? await resAgregado.json() : { dados: [] }
@@ -159,14 +161,16 @@ export default function AgendamentoPage() {
       return
     }
     try {
-      // Busca configuração semanal e exceções em paralelo (2 chamadas ao invés de N)
-      const [resAgenda, resExcecoes] = await Promise.all([
+      // Busca configuração semanal, exceções e pausas em paralelo (3 chamadas ao invés de N)
+      const [resAgenda, resExcecoes, resPausas] = await Promise.all([
         fetch(`/api/clinica/agenda-profissional?profissional_id=${profFiltro}`),
         fetch(`/api/clinica/agenda-profissional-excecao?profissional_id=${profFiltro}`),
+        fetch(`/api/clinica/agenda-profissional-pausa?profissional_id=${profFiltro}`),
       ])
 
       const agendaData   = resAgenda.ok   ? await resAgenda.json()   : { dados: [] }
       const excecoesData = resExcecoes.ok ? await resExcecoes.json() : { dados: [] }
+      const pausasData   = resPausas.ok   ? await resPausas.json()   : { dados: [] }
 
       // Mapa: dia_semana (0-6) → ativo
       const semana = new Map<number, boolean>()
@@ -192,9 +196,19 @@ export default function AgendamentoPage() {
         excecoes.set(dataStr, Boolean(exc.nao_atende))
       }
 
+      // Mapa: dia_semana (0-6) → pausas cadastradas naquele dia
+      const pausas = new Map<number, { hora_inicio: string; hora_fim: string; descricao: string | null }[]>()
+      for (const p of (pausasData.dados ?? [])) {
+        const dia = Number(p.dia_semana)
+        const lista = pausas.get(dia) ?? []
+        lista.push({ hora_inicio: p.hora_inicio, hora_fim: p.hora_fim, descricao: p.descricao ?? null })
+        pausas.set(dia, lista)
+      }
+
       setAgendaSemanaRaw(semana)
       setAgendaConfigRaw(config)
       setExcecoesRaw(excecoes)
+      setPausasRaw(pausas)
       setDiasIndisponíveis(computarIndisponíveis(periodo.ini, periodo.fim, semana, excecoes))
     } catch {
       // Silenciosamente falha — não bloqueia nenhum dia
@@ -446,6 +460,29 @@ export default function AgendamentoPage() {
 
     return linhas
   }, [agendamentos, periodo, agendaConfigRaw])
+
+  // Pausas do profissional filtrado (almoço etc.) que valem para `dia` — nulas se não há
+  // profissional selecionado (pausa é por profissional) ou se `dia` tem uma exceção cadastrada
+  // (a exceção do dia sobrepõe a grade semanal por completo, mesma regra do servidor em
+  // avaliarDisponibilidade/lib/clinica/disponibilidade.ts).
+  function pausasParaDia(dia: Date): { hora_inicio: string; hora_fim: string; descricao: string | null }[] {
+    if (!profFiltro) return []
+    if (excecoesRaw.has(format(dia, 'yyyy-MM-dd'))) return []
+    return pausasRaw.get(dia.getDay()) ?? []
+  }
+
+  // Se o slot [inícioMin, inícioMin+dur) cai (mesmo parcialmente) dentro de alguma pausa do dia
+  function pausaDoSlot(
+    dia: Date, inicioMin: number, dur: number,
+  ): { hora_inicio: string; hora_fim: string; descricao: string | null } | null {
+    const fimMin = inicioMin + dur
+    for (const p of pausasParaDia(dia)) {
+      const [ph, pm]   = p.hora_inicio.split(':').map(Number)
+      const [pfh, pfm] = p.hora_fim.split(':').map(Number)
+      if (inicioMin < pfh * 60 + pfm && fimMin > ph * 60 + pm) return p
+    }
+    return null
+  }
 
   function navAnterior() {
     if (view === 'dia') setSelectedDay(d => addDays(d, -1))
@@ -836,25 +873,34 @@ export default function AgendamentoPage() {
             const fim = parseISO(ag.data_hora_fim)
             return slotDt >= ini && slotDt < fim
           })
+          // slot dentro de um período de pausa cadastrado pro profissional filtrado — não vale
+          // pra horário que já passou, senão um dia antigo mostra o destaque de "bloqueado
+          // por pausa" em vez do cinza neutro de horário passado (a pausa já nem é o motivo
+          // relevante ali, o dia inteiro está no passado)
+          const pausa   = pausaDoSlot(selectedDay, slotMin, slot.dur)
+          const bloqueadoPausa = !!pausa && !isOccupied && !isPast
 
           return (
             <div
               key={`${slot.h}:${slot.m}`}
-              onClick={() => !isPast && !isOccupied && abrirNovo(selectedDay, slot)}
+              onClick={() => !isPast && !isOccupied && !bloqueadoPausa && abrirNovo(selectedDay, slot)}
               style={{
                 display: 'flex',
                 minHeight: SLOT_H,
                 borderBottom: `0.5px solid ${isPrimeiraDaHora ? 'var(--borda-suave)' : 'rgba(0,0,0,0.03)'}`,
                 background: isAtual
                   ? 'rgba(15,110,86,0.04)'
+                  : bloqueadoPausa
+                  ? 'rgba(0,0,0,0.09)'
                   : isPast
                   ? 'rgba(0,0,0,0.012)'
                   : isOccupied && ags.length === 0
                   ? 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(0,0,0,0.025) 4px, rgba(0,0,0,0.025) 8px)'
                   : undefined,
-                cursor: isPast || isOccupied ? 'default' : 'pointer',
+                cursor: isPast || isOccupied || bloqueadoPausa ? 'default' : 'pointer',
                 opacity: isPast && !isOccupied ? 0.45 : 1,
               }}
+              title={bloqueadoPausa ? `Bloqueado — pausa${pausa?.descricao ? `: ${pausa.descricao}` : ''} (${pausa!.hora_inicio}-${pausa!.hora_fim})` : undefined}
             >
               {/* Coluna hora */}
               <div style={{
@@ -875,6 +921,14 @@ export default function AgendamentoPage() {
 
               {/* Área de agendamentos */}
               <div style={{ flex: 1, padding: ags.length ? '4px 10px' : '0 10px', position: 'relative' }}>
+                {bloqueadoPausa && ags.length === 0 && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', height: '100%',
+                    fontSize: 11, fontWeight: 600, color: 'var(--texto-secundario)', fontStyle: 'italic',
+                  }}>
+                    Pausa{pausa?.descricao ? ` — ${pausa.descricao}` : ''}
+                  </div>
+                )}
                 {ags.map(ag => {
                   const dur         = durMinutes(ag)
                   const statusColor = STATUS_COLOR[ag.status] ?? '#378ADD'
@@ -1142,6 +1196,10 @@ export default function AgendamentoPage() {
                   const ini = parseISO(ag.data_hora_inicio)
                   return isSameDay(ini, dia) && ini.getHours() === slot.h && ini.getMinutes() === slot.m
                 })
+                const proxSlot   = horasSemana[slotIdx + 1]
+                const slotDurMin = proxSlot ? (proxSlot.h * 60 + proxSlot.m) - (slot.h * 60 + slot.m) : 30
+                const pausa      = ags.length === 0 ? pausaDoSlot(dia, slot.h * 60 + slot.m, slotDurMin) : null
+                const bloqueadoPausa = !indisponível && !!pausa
                 return (
                   <div
                     key={`${dia.toISOString()}-${slot.label}`}
@@ -1150,16 +1208,22 @@ export default function AgendamentoPage() {
                       borderLeft: '0.5px solid var(--borda-suave)',
                       borderBottom: isPrimeiraDaHora ? '0.5px solid var(--borda-suave)' : '0.5px solid rgba(0,0,0,0.03)',
                       position: 'relative',
-                      cursor: indisponível ? 'not-allowed' : 'pointer',
+                      cursor: indisponível || bloqueadoPausa ? 'not-allowed' : 'pointer',
                       background: isToday(dia)
                         ? 'rgba(15,110,86,0.02)'
                         : indisponível
                         ? 'rgba(239, 68, 68, 0.03)'
+                        : bloqueadoPausa
+                        ? 'rgba(0,0,0,0.09)'
                         : undefined,
                       opacity: indisponível ? 0.6 : 1,
                     }}
-                    onClick={() => !indisponível && abrirNovo(dia, slot)}
-                    title={indisponível ? 'Profissional não atende neste dia' : undefined}
+                    onClick={() => !indisponível && !bloqueadoPausa && abrirNovo(dia, slot)}
+                    title={
+                      indisponível ? 'Profissional não atende neste dia'
+                      : bloqueadoPausa ? `Bloqueado — pausa${pausa?.descricao ? `: ${pausa.descricao}` : ''} (${pausa!.hora_inicio}-${pausa!.hora_fim})`
+                      : undefined
+                    }
                   >
                     {ags.map(ag => {
                       const dur         = durMinutes(ag)
@@ -1796,7 +1860,7 @@ export default function AgendamentoPage() {
         onSaved={recarregarAgenda}
       />
 
-      <BuscaPacienteAgendamentosModal
+      <FichaPacienteModal
         open={buscaPacienteOpen}
         onClose={() => setBuscaPacienteOpen(false)}
         onAbrirAgendamento={abrirAgendamentoDaConsultaPaciente}
