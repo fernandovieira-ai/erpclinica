@@ -4,6 +4,7 @@ import { getDb } from '@/lib/db'
 import { agendamentoSchema } from '@/lib/validators/agendamento.schema'
 import { registrarAuditoria } from '@/lib/auditoria'
 import { MSG_TIPO_NAO_HABILITADO, profissionalRealizaTipo } from '@/lib/clinica/tipo-habilitado'
+import { avaliarDisponibilidade, sqlDadosDisponibilidade } from '@/lib/clinica/disponibilidade'
 
 type Params = { params: { id: string } }
 
@@ -71,6 +72,34 @@ export async function PUT(req: NextRequest, { params }: Params) {
     ) {
       await client.query('ROLLBACK')
       return NextResponse.json({ erro: MSG_TIPO_NAO_HABILITADO }, { status: 422 })
+    }
+
+    // Disponibilidade (grade semanal, exceção do dia, pausas) só é revalidada quando o horário
+    // ou o profissional mudou — mesmo racional do bloco acima: uma edição que não mexe em
+    // quando/quem não pode ser barrada por uma pausa cadastrada depois do agendamento já existir.
+    // Sem isso, reagendar (drag no calendário / "Novo horário") ou trocar o profissional pelo
+    // modal de edição nunca passava por avaliarDisponibilidade — só pelo checkTipo acima (que
+    // só olha tipo habilitado) e pelo checkConflito abaixo (que só olha choque com OUTRO
+    // agendamento) — então dava pra reagendar por cima de uma pausa/dia bloqueado sem erro.
+    const horarioMudou = !!antes && (
+      new Date(antes.data_hora_inicio as Date).getTime() !== new Date(d.data_hora_inicio).getTime() ||
+      new Date(antes.data_hora_fim as Date).getTime()    !== new Date(d.data_hora_fim).getTime() ||
+      Number(antes.profissional_id) !== d.profissional_id
+    )
+    if (horarioMudou) {
+      const dataLocal = `($3::timestamptz)::date`
+      const { rows: [v] } = await client.query(
+        `SELECT
+           to_char($3::timestamptz, 'HH24:MI') AS hora_inicio,
+           to_char($4::timestamptz, 'HH24:MI') AS hora_fim,
+           ${sqlDadosDisponibilidade(dataLocal)}`,
+        [d.profissional_id, session.empresa_id_ativa, d.data_hora_inicio, d.data_hora_fim],
+      )
+      const disp = avaliarDisponibilidade(v, v.hora_inicio, v.hora_fim)
+      if (!disp.disponivel) {
+        await client.query('ROLLBACK')
+        return NextResponse.json({ erro: disp.razao }, { status: 422 })
+      }
     }
 
     // Verificar conflito excluindo o próprio registro (dentro da transação para evitar race condition)
