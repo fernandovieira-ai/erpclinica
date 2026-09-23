@@ -49,6 +49,8 @@ export const empresaSchema = z.object({
   logo_base64:        z.string().max(700_000, 'Imagem muito grande').startsWith('data:image/').optional().nullable(),
   // Status
   ativo:              z.boolean().default(true),
+  // Parametro de agendamento
+  permite_agendamento_retroativo: z.boolean().default(false),
 })
 
 export type EmpresaInput = z.infer<typeof empresaSchema>

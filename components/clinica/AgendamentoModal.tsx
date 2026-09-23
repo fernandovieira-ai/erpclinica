@@ -115,6 +115,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
   const [saving,        setSaving]        = useState(false)
   const [estornando,    setEstornando]    = useState(false)
   const [carregado,     setCarregado]     = useState(false)
+  const [permiteRetroativo, setPermiteRetroativo] = useState(false)
 
   const [horarioPickerOpen, setHorarioPickerOpen] = useState(false)
 
@@ -169,16 +170,19 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
     if (!open) return
     let cancelado = false
     setCarregado(false)
+    setPermiteRetroativo(false) // valor seguro por padrão até a resposta chegar (ou em caso de falha)
     Promise.all([
       fetch('/api/clinica/profissionais').then(r => r.json()),
       // limit=100 (máximo da rota): o padrão é 50 e cortaria em silêncio os tipos além do 50º
       fetch('/api/clinica/tipos-agendamento?limit=100').then(r => r.json()),
       fetch('/api/clinica/categorias?limit=200').then(r => r.json()),
-    ]).then(([p, t, c]) => {
+      fetch('/api/clinica/agendamentos/parametros').then(r => r.json()),
+    ]).then(([p, t, c, parametros]) => {
       if (cancelado) return
       setProfissionais(p.dados ?? [])
       setTipos(t.dados ?? [])
       setCategorias(c.dados ?? [])
+      setPermiteRetroativo(!!parametros.permite_agendamento_retroativo)
       setCarregado(true)
     }).catch(() => {
       if (cancelado) return
@@ -494,7 +498,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
     const agora       = new Date()
 
     if (!isEdit) {
-      if (dataHoraIni < agora) {
+      if (dataHoraIni < agora && !permiteRetroativo) {
         toast.error('Não é possível agendar em data e horário que já passou')
         return
       }
@@ -1002,7 +1006,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                   type="date"
                   value={form.data}
                   disabled={loadingSlot}
-                  min={!isEdit ? format(new Date(), 'yyyy-MM-dd') : undefined}
+                  min={!isEdit && !permiteRetroativo ? format(new Date(), 'yyyy-MM-dd') : undefined}
                   onChange={e => setForm(f => ({ ...f, data: e.target.value }))}
                   style={{ padding: '5px 6px', fontSize: 12, backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3, width: 130, opacity: loadingSlot ? 0.5 : 1 }}
                 />
@@ -1019,7 +1023,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                     padding: '5px 6px', fontSize: 12,
                     backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)',
                     border: `1px solid ${
-                      !isEdit && form.data && form.hora_inicio &&
+                      !isEdit && !permiteRetroativo && form.data && form.hora_inicio &&
                       new Date(`${form.data}T${form.hora_inicio}:00`) < new Date()
                         ? 'var(--cor-erro)'
                         : 'var(--borda-media)'

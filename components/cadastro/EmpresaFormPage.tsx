@@ -224,6 +224,7 @@ export default function EmpresaFormPage({ empresa }: Props) {
       memed_ambiente:    (empresa.memed_ambiente ?? 'homologacao') as 'homologacao' | 'producao',
       logo_base64:       empresa.logo_base64 ?? null,
       ativo:             empresa.ativo,
+      permite_agendamento_retroativo: empresa.permite_agendamento_retroativo ?? false,
     })
     setLogoPreview(empresa.logo_base64 ?? null)
   }, [empresa, reset])
@@ -584,6 +585,14 @@ export default function EmpresaFormPage({ empresa }: Props) {
             {/* Ativo */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 20, paddingLeft: 126 }}>
               <Check label="Empresa Ativa" {...register('ativo')} />
+            </div>
+
+            {/* Parâmetros de agendamento */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingLeft: 126, marginTop: 8 }}>
+              <Check label="Permite agendamento com data/horário retroativo" {...register('permite_agendamento_retroativo')} />
+              <span style={{ fontSize: 11, color: 'var(--texto-secundario)' }}>
+                Quando marcado, a recepção pode lançar um novo agendamento com data/hora no passado (útil pra registrar atendimentos com atraso, sem precisar mudar a data do computador).
+              </span>
             </div>
             </div>
           </fieldset>

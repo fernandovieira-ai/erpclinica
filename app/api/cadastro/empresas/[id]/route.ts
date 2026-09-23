@@ -22,7 +22,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
             memed_api_key, memed_ambiente,
             (memed_secret_key IS NOT NULL) AS memed_secret_key_configured,
             logo_base64,
-            ativo, created_at, updated_at
+            ativo, permite_agendamento_retroativo, created_at, updated_at
      FROM tab_empresa
      WHERE id = $1`,
     [params.id],
@@ -70,8 +70,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
        memed_api_key=$29, memed_ambiente=$30,
        memed_secret_key=COALESCE(NULLIF($31, ''), memed_secret_key),
        logo_base64=$32,
-       ativo=$33, updated_at=NOW()
-     WHERE id = $34`,
+       ativo=$33, permite_agendamento_retroativo=$34, updated_at=NOW()
+     WHERE id = $35`,
     [
       up(d.razao_social), up(d.nome_fantasia), up(d.cnpj), up(d.ie), up(d.im),
       d.regime_tributario, d.crt,
@@ -86,6 +86,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       d.memed_secret_key || '',
       d.logo_base64 || null,
       d.ativo,
+      d.permite_agendamento_retroativo,
       params.id,
     ],
   )

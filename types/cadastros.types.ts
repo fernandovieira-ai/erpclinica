@@ -119,6 +119,7 @@ export interface Empresa {
   memed_secret_key_configured:    boolean
   logo_base64:       string | null
   ativo:             boolean
+  permite_agendamento_retroativo: boolean
   created_at:        string
   updated_at:        string
 }

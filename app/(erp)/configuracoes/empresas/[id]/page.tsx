@@ -21,7 +21,7 @@ export default async function EditarEmpresaPage({ params }: { params: { id: stri
             memed_api_key, memed_ambiente,
             (memed_secret_key IS NOT NULL) AS memed_secret_key_configured,
             logo_base64,
-            ativo, created_at, updated_at
+            ativo, permite_agendamento_retroativo, created_at, updated_at
      FROM tab_empresa
      WHERE id = $1`,
     [params.id],
