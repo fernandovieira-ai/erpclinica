@@ -504,10 +504,11 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
       }
     } else {
       // Na edição, só bloqueia se o usuário alterou a data/hora início para o passado
+      // (a menos que o parâmetro de agendamento retroativo esteja ligado pra empresa)
       const iniOriginal    = parseISO(agendamento!.data_hora_inicio)
       const iniOriginalStr = format(iniOriginal, "yyyy-MM-dd'T'HH:mm")
       const iniNovoStr     = `${form.data}T${form.hora_inicio}`
-      if (iniOriginalStr !== iniNovoStr && dataHoraIni < agora) {
+      if (iniOriginalStr !== iniNovoStr && dataHoraIni < agora && !permiteRetroativo) {
         toast.error('Não é possível reagendar para uma data e horário que já passou')
         return
       }
