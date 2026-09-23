@@ -595,6 +595,15 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
 
   const statusAtual = STATUS_OPTIONS.find(s => s.value === form.status)
 
+  // Mesma regra de bloqueio do handleSalvar (linhas ~500-513), reaproveitada aqui só pro aviso visual
+  const horaInicioBloqueadaPorPassado = (() => {
+    if (permiteRetroativo || !form.data || !form.hora_inicio) return false
+    if (new Date(`${form.data}T${form.hora_inicio}:00`) >= new Date()) return false
+    if (!isEdit) return true
+    const iniOriginalStr = format(parseISO(agendamento!.data_hora_inicio), "yyyy-MM-dd'T'HH:mm")
+    return iniOriginalStr !== `${form.data}T${form.hora_inicio}`
+  })()
+
   return (
     <>
     <div style={{
@@ -1023,12 +1032,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                   style={{
                     padding: '5px 6px', fontSize: 12,
                     backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)',
-                    border: `1px solid ${
-                      !isEdit && !permiteRetroativo && form.data && form.hora_inicio &&
-                      new Date(`${form.data}T${form.hora_inicio}:00`) < new Date()
-                        ? 'var(--cor-erro)'
-                        : 'var(--borda-media)'
-                    }`,
+                    border: `1px solid ${horaInicioBloqueadaPorPassado ? 'var(--cor-erro)' : 'var(--borda-media)'}`,
                     borderRadius: 3, width: 90, opacity: loadingSlot ? 0.5 : 1,
                   }}
                 />
