@@ -7,6 +7,8 @@ export interface DadosDisponibilidade {
   excecao: { nao_atende: boolean; hora_inicio: string | null; hora_fim: string | null } | null
   agenda:  { ativo: boolean; hora_inicio: string; hora_fim: string } | null
   pausas:  { hora_inicio: string; hora_fim: string }[]
+  // Faixas bloqueadas só nesta data (tab_agenda_profissional_bloqueio) — valem por cima de tudo
+  bloqueios?: { hora_inicio: string; hora_fim: string; motivo: string | null }[]
 }
 
 export type ResultadoDisponibilidade = { disponivel: true } | { disponivel: false; razao: string }
@@ -31,7 +33,10 @@ export function sqlDadosDisponibilidade(dataExpr: string): string {
        WHERE profissional_id = $1 AND empresa_id = $2 AND dia_semana = EXTRACT(DOW FROM ${dataExpr})::int LIMIT 1) x) AS agenda,
     (SELECT COALESCE(json_agg(json_build_object('hora_inicio', ${hhmm('hora_inicio')}, 'hora_fim', ${hhmm('hora_fim')})), '[]'::json)
        FROM tab_agenda_profissional_pausa
-       WHERE profissional_id = $1 AND empresa_id = $2 AND dia_semana = EXTRACT(DOW FROM ${dataExpr})::int) AS pausas`
+       WHERE profissional_id = $1 AND empresa_id = $2 AND dia_semana = EXTRACT(DOW FROM ${dataExpr})::int) AS pausas,
+    (SELECT COALESCE(json_agg(json_build_object('hora_inicio', ${hhmm('hora_inicio')}, 'hora_fim', ${hhmm('hora_fim')}, 'motivo', motivo)), '[]'::json)
+       FROM tab_agenda_profissional_bloqueio
+       WHERE profissional_id = $1 AND empresa_id = $2 AND data = ${dataExpr}) AS bloqueios`
 }
 
 // horaInicio/horaFim no formato HH:MM (horário local da clínica)
@@ -40,7 +45,7 @@ export function avaliarDisponibilidade(
   horaInicio: string,
   horaFim: string,
 ): ResultadoDisponibilidade {
-  const { excecao, agenda, pausas } = dados
+  const { excecao, agenda, pausas, bloqueios } = dados
 
   if (excecao) {
     if (excecao.nao_atende) {
@@ -55,21 +60,30 @@ export function avaliarDisponibilidade(
         }
       }
     }
-    return { disponivel: true }
-  }
-
-  if (!agenda || !agenda.ativo) {
-    return { disponivel: false, razao: `Profissional não atende ${NOMES_DIA[dados.dia_semana]}` }
-  }
-  if (horaInicio < agenda.hora_inicio || horaFim > agenda.hora_fim) {
-    return {
-      disponivel: false,
-      razao: `Profissional atende apenas de ${agenda.hora_inicio} a ${agenda.hora_fim} neste dia`,
+  } else {
+    if (!agenda || !agenda.ativo) {
+      return { disponivel: false, razao: `Profissional não atende ${NOMES_DIA[dados.dia_semana]}` }
+    }
+    if (horaInicio < agenda.hora_inicio || horaFim > agenda.hora_fim) {
+      return {
+        disponivel: false,
+        razao: `Profissional atende apenas de ${agenda.hora_inicio} a ${agenda.hora_fim} neste dia`,
+      }
+    }
+    for (const pausa of pausas ?? []) {
+      if (horaInicio < pausa.hora_fim && horaFim > pausa.hora_inicio) {
+        return { disponivel: false, razao: `Conflito com período de pausa (${pausa.hora_inicio} - ${pausa.hora_fim})` }
+      }
     }
   }
-  for (const pausa of pausas ?? []) {
-    if (horaInicio < pausa.hora_fim && horaFim > pausa.hora_inicio) {
-      return { disponivel: false, razao: `Conflito com período de pausa (${pausa.hora_inicio} - ${pausa.hora_fim})` }
+
+  // Bloqueio pontual do dia vale tanto na grade normal quanto num dia com horário especial
+  for (const b of bloqueios ?? []) {
+    if (horaInicio < b.hora_fim && horaFim > b.hora_inicio) {
+      return {
+        disponivel: false,
+        razao: `Horário bloqueado (${b.hora_inicio} - ${b.hora_fim})${b.motivo ? `: ${b.motivo}` : ''}`,
+      }
     }
   }
   return { disponivel: true }

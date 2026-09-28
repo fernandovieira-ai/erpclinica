@@ -65,6 +65,16 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       [profissionalId, session.empresa_id_ativa, dataInicio, dataFim],
     )
 
+    // Faixas de horário bloqueadas pontualmente no intervalo de busca
+    const { rows: bloqueios } = await db.query<{ data: string; hora_inicio: string; hora_fim: string }>(
+      `SELECT TO_CHAR(data, 'YYYY-MM-DD')        AS data,
+              SUBSTRING(hora_inicio::text, 1, 5) AS hora_inicio,
+              SUBSTRING(hora_fim::text,    1, 5) AS hora_fim
+       FROM tab_agenda_profissional_bloqueio
+       WHERE profissional_id = $1 AND empresa_id = $2 AND data BETWEEN $3 AND $4`,
+      [profissionalId, session.empresa_id_ativa, dataInicio, dataFim],
+    )
+
     // Agendamentos existentes no intervalo (não cancelados / faltou)
     // TO_CHAR sem timezone é intencional: compatível com como o frontend envia os horários
     const { rows: agendamentos } = await db.query<{
@@ -96,6 +106,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       return pausas
         .filter(p => p.dia_semana === diaSemana)
         .some(p => ini < p.hora_fim && fim > p.hora_inicio)
+    }
+
+    function slotBloqueado(data: string, ini: string, fim: string): boolean {
+      return bloqueios.some(b => b.data === data && ini < b.hora_fim && fim > b.hora_inicio)
     }
 
     // ── Iteração por dia ────────────────────────────────────────────────────────
@@ -166,7 +180,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         const slotFim = addMin(slotIni, duracao)
         if (slotFim > hFim) break
 
-        if (!slotEmPausa(diaSemana, slotIni, slotFim) && !slotConflita(dataStr, slotIni, slotFim)) {
+        if (!slotEmPausa(diaSemana, slotIni, slotFim) && !slotBloqueado(dataStr, slotIni, slotFim) && !slotConflita(dataStr, slotIni, slotFim)) {
           return NextResponse.json({ data: dataStr, hora_inicio: slotIni, hora_fim: slotFim })
         }
 

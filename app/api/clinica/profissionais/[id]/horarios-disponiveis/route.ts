@@ -68,6 +68,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       [profissionalId, session.empresa_id_ativa, dataInicio, dataFim],
     )
 
+    const { rows: bloqueios } = await db.query<{ data: string; hora_inicio: string; hora_fim: string }>(
+      `SELECT TO_CHAR(data, 'YYYY-MM-DD')        AS data,
+              SUBSTRING(hora_inicio::text, 1, 5) AS hora_inicio,
+              SUBSTRING(hora_fim::text,    1, 5) AS hora_fim
+       FROM tab_agenda_profissional_bloqueio
+       WHERE profissional_id = $1 AND empresa_id = $2 AND data BETWEEN $3 AND $4`,
+      [profissionalId, session.empresa_id_ativa, dataInicio, dataFim],
+    )
+
     const { rows: agendamentos } = await db.query<{
       data: string; hora_ini: string; hora_fim: string
     }>(
@@ -95,6 +104,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       return pausas
         .filter(p => p.dia_semana === diaSemana)
         .some(p => ini < p.hora_fim && fim > p.hora_inicio)
+    }
+
+    function slotBloqueado(data: string, ini: string, fim: string): boolean {
+      return bloqueios.some(b => b.data === data && ini < b.hora_fim && fim > b.hora_inicio)
     }
 
     const agora     = new Date()
@@ -153,7 +166,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         const slotFim = addMin(slotIni, duracaoMin)
         if (slotFim > hFim) break
 
-        if (!slotEmPausa(diaSemana, slotIni, slotFim) && !slotConflita(dataStr, slotIni, slotFim)) {
+        if (!slotEmPausa(diaSemana, slotIni, slotFim) && !slotBloqueado(dataStr, slotIni, slotFim) && !slotConflita(dataStr, slotIni, slotFim)) {
           slotsDoDia.push(slotIni)
         }
         slotIni = addMin(slotIni, intervalo)

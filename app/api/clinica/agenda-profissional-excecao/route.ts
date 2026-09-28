@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
+import { registrarAuditoria } from '@/lib/auditoria'
 
 // GET /api/clinica/agenda-profissional-excecao?profissional_id=X
 export async function GET(req: NextRequest) {
@@ -42,6 +43,13 @@ export async function POST(req: NextRequest) {
   }
 
   const db = getDb(session.database_name)
+
+  // Estado anterior do dia (o ON CONFLICT abaixo sobrescreve) — vai pro log de auditoria
+  const { rows: [antes] } = await db.query(
+    `SELECT * FROM tab_agenda_profissional_excecao WHERE profissional_id = $1 AND empresa_id = $2 AND data = $3`,
+    [profissional_id, session.empresa_id_ativa, data],
+  )
+
   const { rows } = await db.query(
     `INSERT INTO tab_agenda_profissional_excecao
        (empresa_id, profissional_id, data, descricao, nao_atende, hora_inicio, hora_fim, intervalo_min)
@@ -60,13 +68,21 @@ export async function POST(req: NextRequest) {
       session.empresa_id_ativa,
       profissional_id,
       data,
-      descricao ?? null,
+      typeof descricao === 'string' && descricao.trim() ? descricao.trim().toUpperCase() : null,
       nao_atende ?? true,
       nao_atende ? null : hora_inicio,
       nao_atende ? null : hora_fim,
       intervalo_min ?? 30,
     ],
   )
+
+  await registrarAuditoria(db, session, {
+    tabela: 'tab_agenda_profissional_excecao',
+    registroId: rows[0].id,
+    acao: antes ? 'UPDATE' : 'INSERT',
+    dadosAntes: antes ?? null,
+    dadosDepois: rows[0],
+  })
 
   return NextResponse.json(rows[0])
 }
