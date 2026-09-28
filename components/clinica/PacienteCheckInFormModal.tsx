@@ -6,7 +6,7 @@ import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { X, Save, Camera, Search, RefreshCw, User, DollarSign, CheckCircle2 } from 'lucide-react'
 import RecebimentoModal from '@/components/clinica/RecebimentoModal'
-import HistoricoClinico from '@/components/clinica/HistoricoClinico'
+import HistoricoClinico, { type HistoricoClinicoHandle } from '@/components/clinica/HistoricoClinico'
 import { toast } from 'sonner'
 import type { AgendamentoListItem } from '@/types/clinica.types'
 
@@ -69,6 +69,7 @@ interface Props {
   onSaved?: () => void
   ocultarRecebimento?: boolean
   ocultarFinalizar?: boolean
+  ocultarCadastro?: boolean
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -547,7 +548,97 @@ function BuscarPessoa({
   )
 }
 
-export default function PacienteCheckInFormModal({ open, paciente, agendamento, agendamentos, onClose, onSaved, ocultarRecebimento, ocultarFinalizar }: Props) {
+function ConfirmarFinalizarModal({
+  open, pacienteNome, finalizando, onCancelar, onFecharSemFinalizar, onFinalizar,
+}: {
+  open: boolean
+  pacienteNome?: string
+  finalizando: boolean
+  onCancelar: () => void
+  onFecharSemFinalizar: () => void
+  onFinalizar: () => void
+}) {
+  if (!open) return null
+  return (
+    <div
+      onClick={onCancelar}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1200,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          backgroundColor: 'var(--bg-card)', borderRadius: 12,
+          width: '100%', maxWidth: 380,
+          padding: '30px 26px 22px',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+          textAlign: 'center',
+        }}
+      >
+        <div style={{
+          width: 54, height: 54, borderRadius: '50%', margin: '0 auto 16px',
+          background: 'var(--cor-primaria-light)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <CheckCircle2 size={26} style={{ color: 'var(--cor-primaria)' }} />
+        </div>
+
+        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--texto-principal)', marginBottom: 8 }}>
+          Finalizar atendimento?
+        </div>
+        <div style={{ fontSize: 12.5, color: 'var(--texto-secundario)', lineHeight: 1.55, marginBottom: 24 }}>
+          {pacienteNome ? <>O atendimento de <strong style={{ color: 'var(--texto-principal)' }}>{pacienteNome}</strong></> : 'O atendimento'}
+          {' '}será marcado como concluído e o prontuário preenchido nesta tela será salvo.
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <button
+            type="button"
+            disabled={finalizando}
+            onClick={onFinalizar}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              padding: '10px 16px', borderRadius: 8,
+              background: finalizando ? '#15a073' : 'linear-gradient(135deg,#1D9E75,#15a073)',
+              color: '#fff', border: 'none',
+              fontSize: 13.5, fontWeight: 700, cursor: finalizando ? 'not-allowed' : 'pointer',
+              opacity: finalizando ? 0.75 : 1,
+              boxShadow: '0 2px 8px rgba(29,158,117,0.35)',
+              letterSpacing: '0.02em',
+              transition: 'opacity 0.15s',
+            }}
+            onMouseEnter={e => { if (!finalizando) e.currentTarget.style.opacity = '0.88' }}
+            onMouseLeave={e => { if (!finalizando) e.currentTarget.style.opacity = '1' }}
+          >
+            <CheckCircle2 size={15} />
+            {finalizando ? 'Finalizando...' : 'Sim, finalizar atendimento'}
+          </button>
+          <button
+            type="button"
+            disabled={finalizando}
+            onClick={onFecharSemFinalizar}
+            style={{
+              padding: '9px 16px', borderRadius: 8,
+              background: 'none', border: '1px solid var(--borda-media)',
+              color: 'var(--texto-secundario)',
+              fontSize: 12.5, fontWeight: 600,
+              cursor: finalizando ? 'not-allowed' : 'pointer',
+              opacity: finalizando ? 0.6 : 1,
+            }}
+          >
+            Não, só fechar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function PacienteCheckInFormModal({ open, paciente, agendamento, agendamentos, onClose, onSaved, ocultarRecebimento, ocultarFinalizar, ocultarCadastro }: Props) {
   const { register, watch, setValue, handleSubmit, reset } = useForm({
     defaultValues: {
       tipo_pessoa: 'F',
@@ -575,11 +666,14 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
   const [finalizando,  setFinalizando]  = useState(false)
 
   const [aba, setAba] = useState<'Cadastro' | 'Histórico Clínico'>('Cadastro')
+  const historicoRef = useRef<HistoricoClinicoHandle>(null)
+  const [confirmFinalizarAberto, setConfirmFinalizarAberto] = useState(false)
 
   useEffect(() => {
     if (open && paciente) {
       setCpfStatus(null)
       setPagosIds(new Set())
+      setAba(ocultarCadastro ? 'Histórico Clínico' : 'Cadastro')
       const rawDoc = (paciente.cpf_cnpj ?? '').replace(/\D/g, '')
       reset({
         tipo_pessoa:        paciente.tipo_pessoa ?? 'F',
@@ -630,14 +724,14 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
         ind_profissional:   paciente.ind_profissional ?? false,
       })
     }
-  }, [open, paciente, reset])
+  }, [open, paciente, reset, ocultarCadastro])
 
   // O modal não desmonta quando fecha (só retorna null), então o estado de aba
   // persiste entre aberturas — resetar no fechamento evita mostrar por um frame
   // a aba anterior (e o HistoricoClinico chegar a montar/buscar dados à toa) antes
   // de um useEffect corrigir depois da abertura já ter renderizado.
   function fecharModal() {
-    setAba('Cadastro')
+    setAba(ocultarCadastro ? 'Histórico Clínico' : 'Cadastro')
     onClose()
   }
 
@@ -698,6 +792,33 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
     } finally {
       setFinalizando(false)
     }
+  }
+
+  // Salva o que estiver em edição no prontuário (se houver) antes de finalizar — pra não
+  // perder o que foi digitado na tela sem um clique explícito em "Salvar".
+  async function salvarEFinalizar() {
+    await historicoRef.current?.salvarPendente()
+    await finalizarAtendimento()
+  }
+
+  // "Fechar" na aba Histórico Clínico: se ainda dá pra finalizar esse atendimento, confirma
+  // antes de sair (modal próprio, ver ConfirmarFinalizarModal) — evita que o profissional
+  // feche a tela sem querer e perca a oportunidade de finalizar (o paciente ficaria preso
+  // na sala de espera).
+  function fecharHistorico() {
+    const podeFinalizarAqui = !ocultarFinalizar && !!agendamento && agendamento.status !== 'ATENDIDO'
+    if (!podeFinalizarAqui) { fecharModal(); return }
+    setConfirmFinalizarAberto(true)
+  }
+
+  async function confirmarFinalizarEFechar() {
+    setConfirmFinalizarAberto(false)
+    await salvarEFinalizar()
+  }
+
+  function fecharSemFinalizar() {
+    setConfirmFinalizarAberto(false)
+    fecharModal()
   }
 
   async function onSubmit(data: any) {
@@ -815,7 +936,7 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
           {/* Close */}
           <button
             type="button"
-            onClick={fecharModal}
+            onClick={aba === 'Histórico Clínico' ? fecharHistorico : fecharModal}
             style={{
               background: 'rgba(255,255,255,0.18)', border: 'none', cursor: 'pointer',
               padding: '6px 8px', borderRadius: 4, color: 'white',
@@ -830,30 +951,32 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
         </div>
 
         {/* Abas */}
-        <div style={{
-          display: 'flex', gap: 4, padding: '0 16px',
-          borderBottom: '1px solid var(--borda-suave)', backgroundColor: 'var(--bg-page)',
-          flexShrink: 0,
-        }}>
-          {(['Cadastro', 'Histórico Clínico'] as const).map(t => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setAba(t)}
-              style={{
-                padding: '9px 14px', fontSize: 12.5, fontWeight: 600,
-                background: 'none', border: 'none', cursor: 'pointer',
-                borderBottom: aba === t ? '2px solid var(--cor-primaria)' : '2px solid transparent',
-                color: aba === t ? 'var(--cor-primaria)' : 'var(--texto-secundario)',
-              }}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
+        {!ocultarCadastro && (
+          <div style={{
+            display: 'flex', gap: 4, padding: '0 16px',
+            borderBottom: '1px solid var(--borda-suave)', backgroundColor: 'var(--bg-page)',
+            flexShrink: 0,
+          }}>
+            {(['Cadastro', 'Histórico Clínico'] as const).map(t => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setAba(t)}
+                style={{
+                  padding: '9px 14px', fontSize: 12.5, fontWeight: 600,
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  borderBottom: aba === t ? '2px solid var(--cor-primaria)' : '2px solid transparent',
+                  color: aba === t ? 'var(--cor-primaria)' : 'var(--texto-secundario)',
+                }}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Formulário */}
-        {aba === 'Cadastro' && (
+        {aba === 'Cadastro' && !ocultarCadastro && (
         <form onSubmit={handleSubmit(onSubmit)} autoComplete="off" style={{
           flex: 1, overflowY: 'auto', padding: '12px 16px',
           display: 'flex', flexDirection: 'column', gap: 10,
@@ -1350,11 +1473,11 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
             (inclusive pro atendimento atual, mesmo antes dele virar ATENDIDO) */}
         {aba === 'Histórico Clínico' && (
           <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <HistoricoClinico pacienteId={paciente.id} agendamentoAtual={agendamento ?? null} />
+            <HistoricoClinico ref={historicoRef} pacienteId={paciente.id} agendamentoAtual={agendamento ?? null} autoEditarAtual={ocultarCadastro} />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button
                 type="button"
-                onClick={fecharModal}
+                onClick={fecharHistorico}
                 style={{
                   padding: '4px 14px', borderRadius: 3, border: '1px solid var(--borda-media)',
                   background: 'none', color: 'var(--texto-principal)',
@@ -1367,7 +1490,7 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
                 <button
                   type="button"
                   disabled={finalizando}
-                  onClick={finalizarAtendimento}
+                  onClick={salvarEFinalizar}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 6,
                     padding: '6px 18px', borderRadius: 6,
@@ -1405,6 +1528,15 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
             />
           )
         })()}
+
+        <ConfirmarFinalizarModal
+          open={confirmFinalizarAberto}
+          pacienteNome={watch('nome')}
+          finalizando={finalizando}
+          onCancelar={() => setConfirmFinalizarAberto(false)}
+          onFecharSemFinalizar={fecharSemFinalizar}
+          onFinalizar={confirmarFinalizarEFechar}
+        />
       </div>
     </div>
   )

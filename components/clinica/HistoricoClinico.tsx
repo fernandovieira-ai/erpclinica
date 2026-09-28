@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   ChevronDown, ChevronUp, Pencil, Save, X, FileText, Stethoscope, Users, User,
@@ -218,9 +218,20 @@ interface Props {
   // necessariamente ATENDIDO — fixado na timeline mesmo sem histórico prévio, pra permitir
   // preencher prontuário/emitir receita da consulta em andamento.
   agendamentoAtual?: AgendamentoListItem | null
+  // Abre direto no modo de edição do prontuário do agendamentoAtual (equivalente a já ter
+  // clicado em "Preencher prontuário"), pulando a lista/timeline — usado pelo fluxo de
+  // "Atendimento" da sala de espera, que já leva direto pra essa tela.
+  autoEditarAtual?: boolean
 }
 
-export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }: Props) {
+export interface HistoricoClinicoHandle {
+  // Salva o prontuário que estiver em edição no momento (se houver). Usado pelo modal pai
+  // antes de finalizar o atendimento, pra não perder o que foi digitado na tela sem um
+  // clique explícito em "Salvar".
+  salvarPendente: () => Promise<void>
+}
+
+const HistoricoClinico = forwardRef<HistoricoClinicoHandle, Props>(function HistoricoClinico({ pacienteId, agendamentoAtual = null, autoEditarAtual = false }, ref) {
   const [consultas,   setConsultas]   = useState<AgendamentoListItem[]>([])
   const [prontuarios, setProntuarios] = useState<Record<number, Prontuario>>({})
   const [receitas,    setReceitas]    = useState<Record<number, ReceitaMedica[]>>({})
@@ -255,69 +266,80 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
   const inputAnexoRef = useRef<HTMLInputElement>(null)
   const voaRef = useRef<VoaPluginHandle>(null)
 
+  // Cada endpoint é buscado independentemente — uma falha isolada (ex: 500 sem
+  // corpo por permissão faltando numa tabela nova) não pode zerar o resto do
+  // histórico que carregou normalmente (já aconteceu: anexos derrubava tudo).
+  const buscar = useCallback(async (url: string) => {
+    try {
+      const res = await fetch(url)
+      if (!res.ok) return { dados: [] }
+      return await res.json()
+    } catch {
+      return { dados: [] }
+    }
+  }, [])
+
   const carregar = useCallback(async () => {
     setLoading(true)
     try {
-      // Cada endpoint é buscado independentemente — uma falha isolada (ex: 500 sem
-      // corpo por permissão faltando numa tabela nova) não pode zerar o resto do
-      // histórico que carregou normalmente (já aconteceu: anexos derrubava tudo).
-      const buscar = async (url: string) => {
-        try {
-          const res = await fetch(url)
-          if (!res.ok) return { dados: [] }
-          return await res.json()
-        } catch {
-          return { dados: [] }
-        }
-      }
-      const [dataAg, dataPr, dataRe, dataRs, dataAn, dataAt, dataRce] = await Promise.all([
+      // Estágio 1 — só o essencial pra montar a timeline e liberar o form de edição
+      // (autoEditarAtual espera !loading pra abrir). Receitas, receitas do sistema,
+      // atestados, receituários e anexos só aparecem quando um card é expandido —
+      // não precisam travar o "Carregando histórico..." (eram 7 fetches num Promise.all
+      // só, e o mais lento segurava a tela inteira).
+      const [dataAg, dataPr] = await Promise.all([
         // Sem filtro de status: a aba precisa mostrar TODO o histórico do paciente (agendado,
         // confirmado, aguardando, faltou, cancelado — não só atendido), senão consultas que
         // ainda vão acontecer ou que foram canceladas somem da timeline sem explicação.
         buscar(`/api/clinica/agendamentos?${new URLSearchParams({ paciente_id: String(pacienteId), order: 'desc', limit: '500' })}`),
         buscar(`/api/clinica/prontuarios?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
-        buscar(`/api/clinica/receitas?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
-        buscar(`/api/clinica/receitas-sistema?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
-        buscar(`/api/clinica/prontuarios/anexos?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
-        buscar(`/api/clinica/atestados?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
-        buscar(`/api/clinica/receituarios-especiais?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
       ])
       const lista: AgendamentoListItem[] = [...(dataAg.dados ?? [])]
       if (agendamentoAtual && !lista.some(a => a.id === agendamentoAtual.id)) lista.push(agendamentoAtual)
       lista.sort((a, b) => +new Date(b.data_hora_inicio) - +new Date(a.data_hora_inicio))
       const mapa: Record<number, Prontuario> = {}
       for (const p of (dataPr.dados ?? []) as Prontuario[]) mapa[p.agendamento_id] = p
-      const mapaReceitas: Record<number, ReceitaMedica[]> = {}
-      for (const r of (dataRe.dados ?? []) as ReceitaMedica[]) {
-        (mapaReceitas[r.agendamento_id] ??= []).push(r)
-      }
-      const mapaReceitasSistema: Record<number, ReceitaSistemaRegistro[]> = {}
-      for (const r of (dataRs.dados ?? []) as ReceitaSistemaRegistro[]) {
-        (mapaReceitasSistema[r.agendamento_id] ??= []).push(r)
-      }
-      const mapaAnexos: Record<number, ProntuarioAnexo[]> = {}
-      for (const a of (dataAn.dados ?? []) as ProntuarioAnexo[]) {
-        (mapaAnexos[a.agendamento_id] ??= []).push(a)
-      }
-      const mapaAtestados: Record<number, AtestadoMedicoRegistro[]> = {}
-      for (const a of (dataAt.dados ?? []) as AtestadoMedicoRegistro[]) {
-        (mapaAtestados[a.agendamento_id] ??= []).push(a)
-      }
-      const mapaReceituarios: Record<number, ReceituarioEspecialRegistro[]> = {}
-      for (const r of (dataRce.dados ?? []) as ReceituarioEspecialRegistro[]) {
-        (mapaReceituarios[r.agendamento_id] ??= []).push(r)
-      }
       setConsultas(lista)
       setProntuarios(mapa)
-      setReceitas(mapaReceitas)
-      setReceitasSistema(mapaReceitasSistema)
-      setAnexos(mapaAnexos)
-      setAtestados(mapaAtestados)
-      setReceituarios(mapaReceituarios)
     } finally {
       setLoading(false)
     }
-  }, [pacienteId, agendamentoAtual])
+
+    // Estágio 2 — o resto do histórico (documentos emitidos), em segundo plano, sem
+    // bloquear a tela nem reativar o spinner de "Carregando histórico...".
+    const [dataRe, dataRs, dataAn, dataAt, dataRce] = await Promise.all([
+      buscar(`/api/clinica/receitas?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
+      buscar(`/api/clinica/receitas-sistema?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
+      buscar(`/api/clinica/prontuarios/anexos?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
+      buscar(`/api/clinica/atestados?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
+      buscar(`/api/clinica/receituarios-especiais?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
+    ])
+    const mapaReceitas: Record<number, ReceitaMedica[]> = {}
+    for (const r of (dataRe.dados ?? []) as ReceitaMedica[]) {
+      (mapaReceitas[r.agendamento_id] ??= []).push(r)
+    }
+    const mapaReceitasSistema: Record<number, ReceitaSistemaRegistro[]> = {}
+    for (const r of (dataRs.dados ?? []) as ReceitaSistemaRegistro[]) {
+      (mapaReceitasSistema[r.agendamento_id] ??= []).push(r)
+    }
+    const mapaAnexos: Record<number, ProntuarioAnexo[]> = {}
+    for (const a of (dataAn.dados ?? []) as ProntuarioAnexo[]) {
+      (mapaAnexos[a.agendamento_id] ??= []).push(a)
+    }
+    const mapaAtestados: Record<number, AtestadoMedicoRegistro[]> = {}
+    for (const a of (dataAt.dados ?? []) as AtestadoMedicoRegistro[]) {
+      (mapaAtestados[a.agendamento_id] ??= []).push(a)
+    }
+    const mapaReceituarios: Record<number, ReceituarioEspecialRegistro[]> = {}
+    for (const r of (dataRce.dados ?? []) as ReceituarioEspecialRegistro[]) {
+      (mapaReceituarios[r.agendamento_id] ??= []).push(r)
+    }
+    setReceitas(mapaReceitas)
+    setReceitasSistema(mapaReceitasSistema)
+    setAnexos(mapaAnexos)
+    setAtestados(mapaAtestados)
+    setReceituarios(mapaReceituarios)
+  }, [pacienteId, agendamentoAtual, buscar])
 
   useEffect(() => { carregar() }, [carregar])
 
@@ -345,6 +367,17 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
     setEditandoId(null)
     setVoaAtivoId(null)
   }
+
+  // Dispara uma única vez, assim que o histórico terminar de carregar (precisa do
+  // prontuário já buscado pra não abrir o form em branco por cima de dados existentes).
+  // Usa ref em vez de checar editandoId pra não reabrir sozinho depois que o usuário
+  // clicar em "Cancelar" na edição.
+  const autoEditouRef = useRef(false)
+  useEffect(() => {
+    if (!autoEditarAtual || autoEditouRef.current || loading || !agendamentoAtual) return
+    autoEditouRef.current = true
+    iniciarEdicao(agendamentoAtual)
+  }, [autoEditarAtual, loading, agendamentoAtual])
 
   // Encerra de vez a gravação da Voa (desmonta o SDK) — diferente de só ocultar o
   // painel: usado quando o usuário clica em "Encerrar gravação" ou troca de consulta.
@@ -500,6 +533,17 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
       setSalvando(false)
     }
   }
+
+  useImperativeHandle(ref, () => ({
+    salvarPendente: async () => {
+      if (editandoId === null) return
+      const ag = consultas.find(c => c.id === editandoId) ?? (agendamentoAtual?.id === editandoId ? agendamentoAtual : null)
+      if (ag) await salvar(ag)
+    },
+    // form entra na dependência pra garantir que o closure de `salvar` usado aqui sempre
+    // reflita o que está digitado agora — sem isso, o handle memoizado poderia chamar uma
+    // versão antiga de `salvar` presa a um valor de `form` de vários keystrokes atrás.
+  }), [editandoId, consultas, agendamentoAtual, form])
 
   async function reimprimirReceitaSistema(reg: ReceitaSistemaRegistro, ag: AgendamentoListItem) {
     setReimprimindoId(reg.id)
@@ -1220,4 +1264,6 @@ export default function HistoricoClinico({ pacienteId, agendamentoAtual = null }
       })}
     </div>
   )
-}
+})
+
+export default HistoricoClinico

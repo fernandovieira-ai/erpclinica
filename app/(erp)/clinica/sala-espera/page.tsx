@@ -10,7 +10,6 @@ import {
   Clock, Users, RefreshCw, Stethoscope,
   CalendarDays, UserCheck, AlertTriangle, CheckCircle2, Timer, ClipboardList,
 } from 'lucide-react'
-import { toast } from 'sonner'
 import PacienteCheckInFormModal from '@/components/clinica/PacienteCheckInFormModal'
 import type { AgendamentoListItem, ProfissionalListItem } from '@/types/clinica.types'
 
@@ -131,23 +130,31 @@ export default function SalaEsperaPage() {
     carregar()
   }
 
-  async function abrirAtendimento(ag: AgendamentoListItem) {
-    try {
-      const res = await fetch(`/api/cadastro/pessoas/${ag.paciente_id}`)
-      if (!res.ok) { toast.error('Erro ao carregar dados do paciente'); return }
-      const data    = await res.json()
-      const diaAg   = format(parseISO(ag.data_hora_inicio), 'yyyy-MM-dd')
-      const todosNoDia = agendamentos.filter(a =>
-        a.paciente_id === ag.paciente_id &&
-        format(parseISO(a.data_hora_inicio), 'yyyy-MM-dd') === diaAg
-      ).sort((a, b) => new Date(a.data_hora_inicio).getTime() - new Date(b.data_hora_inicio).getTime())
-      setPacienteDados(data)
-      setAgendamentoAtual(ag)
-      setAgendamentosAtuais(todosNoDia.length > 1 ? todosNoDia : [])
-      setModalPacienteOpen(true)
-    } catch {
-      toast.error('Erro ao carregar dados do paciente')
-    }
+  function abrirAtendimento(ag: AgendamentoListItem) {
+    // Abre o modal na hora, com o nome que já veio na listagem — nesse fluxo (ocultarCadastro)
+    // a aba Cadastro nem é exibida, só nome/foto aparecem no cabeçalho e o HistoricoClinico só
+    // precisa do paciente_id, então não faz sentido travar a abertura esperando o cadastro
+    // completo (endereço, filiação, indicação...) que não vai ser usado aqui.
+    const diaAg = format(parseISO(ag.data_hora_inicio), 'yyyy-MM-dd')
+    const todosNoDia = agendamentos.filter(a =>
+      a.paciente_id === ag.paciente_id &&
+      format(parseISO(a.data_hora_inicio), 'yyyy-MM-dd') === diaAg
+    ).sort((a, b) => new Date(a.data_hora_inicio).getTime() - new Date(b.data_hora_inicio).getTime())
+
+    setPacienteDados({ id: ag.paciente_id, nome: ag.paciente_nome, tipo_pessoa: 'F' })
+    setAgendamentoAtual(ag)
+    setAgendamentosAtuais(todosNoDia.length > 1 ? todosNoDia : [])
+    setModalPacienteOpen(true)
+
+    // Completa em segundo plano (ex: foto) sem atrasar a abertura — se o usuário já tiver
+    // trocado de paciente quando isso responder, o guard abaixo descarta o resultado.
+    fetch(`/api/cadastro/pessoas/${ag.paciente_id}`)
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        if (!data) return
+        setPacienteDados((prev: any) => (prev && prev.id === ag.paciente_id ? { ...prev, ...data } : prev))
+      })
+      .catch(() => {})
   }
 
   function fecharModalPaciente() {
@@ -649,6 +656,7 @@ export default function SalaEsperaPage() {
         onClose={fecharModalPaciente}
         onSaved={carregar}
         ocultarRecebimento
+        ocultarCadastro
       />
     </>
   )
