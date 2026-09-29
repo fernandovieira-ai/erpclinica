@@ -1,7 +1,7 @@
 // Relatório impresso "Exames pelo médico executante" (Fechamento Diário).
 // Mesmo desenho do "Pacientes pelo tipo de atendimento" (identidade visual e cabeçalho vêm de relatorioImpressaoBase.ts),
 // mas só de EXAMES (tipos com eh_exame) e organizado pelo médico que EXECUTOU o exame, mostrando também o solicitante.
-// Colunas: Paciente / Categoria / Exame / [Executante] / Solicitante / Dt. Visita / Vlr. Pagar / Vlr. Pago / Forma de Pgto.
+// Colunas: Paciente / Categoria / Exame / [Executante] / Solicitante / Dt. Visita / Vlr. Pagar / Desconto / Vlr. Pago / Forma de Pgto.
 // Agrupado por executante = A4 retrato (sem a coluna Executante); lista única = A4 paisagem (com ela).
 // Exame ainda não recebido no "médico da clínica" (placeholder) não tem executante: cai no grupo "Executante a definir",
 // sempre por último, em âmbar. Regras de quem é o executante: padroes §22 e a rota relatorio-exames.
@@ -26,6 +26,7 @@ export interface ItemRelatorioExame {
   forma_pagamento:      string | null
   tipo_pagamento:       string | null   // dinheiro | pix | debito | credito | a_prazo
   valor_pagar:          number
+  valor_desconto:       number
   valor_pago:           number
 }
 
@@ -43,8 +44,8 @@ export interface OpcoesRelatorioExame {
 
 function somar(itens: ItemRelatorioExame[]) {
   return itens.reduce(
-    (acc, i) => ({ qtd: acc.qtd + 1, pagar: acc.pagar + i.valor_pagar, pago: acc.pago + i.valor_pago }),
-    { qtd: 0, pagar: 0, pago: 0 },
+    (acc, i) => ({ qtd: acc.qtd + 1, pagar: acc.pagar + i.valor_pagar, desconto: acc.desconto + i.valor_desconto, pago: acc.pago + i.valor_pago }),
+    { qtd: 0, pagar: 0, desconto: 0, pago: 0 },
   )
 }
 
@@ -69,7 +70,7 @@ function agruparPorExecutanteOrdenado(itens: ItemRelatorioExame[]): Grupo[] {
 
 export function gerarHtmlRelatorioExames(itens: ItemRelatorioExame[], op: OpcoesRelatorioExame): string {
   const comColunaExecutante = !op.agruparPorExecutante
-  const totalColunas        = comColunaExecutante ? 9 : 8
+  const totalColunas        = comColunaExecutante ? 10 : 9
   // colunas antes de "Vlr. Pagar": Paciente, Categoria, Exame, (Executante,) Solicitante, Dt. Visita
   const colunasAntesValores = comColunaExecutante ? 6 : 5
 
@@ -85,14 +86,16 @@ export function gerarHtmlRelatorioExames(itens: ItemRelatorioExame[], op: Opcoes
         <td>${i.solicitante_nome ? esc(semTitulo(i.solicitante_nome)) : '<span class="zero">-</span>'}</td>
         <td class="nowrap">${esc(i.data_visita)}</td>
         <td class="num">${brl(i.valor_pagar)}</td>
+        <td class="num ${i.valor_desconto > 0 ? 'desconto' : 'zero'}">${i.valor_desconto > 0 ? brl(i.valor_desconto) : ''}</td>
         <td class="num ${i.valor_pago > 0 ? 'pago' : 'zero'}">${brl(i.valor_pago)}</td>
         <td>${celulaFormaHtml(i)}</td>
       </tr>`
 
-  const linhaTotal = (rotulo: string, t: { pagar: number; pago: number }, classe: string) => `
+  const linhaTotal = (rotulo: string, t: { pagar: number; desconto: number; pago: number }, classe: string) => `
       <tr class="${classe}">
         <td colspan="${colunasAntesValores}" class="rotulo">${esc(rotulo)}</td>
         <td class="num">${brl(t.pagar)}</td>
+        <td class="num">${brl(t.desconto)}</td>
         <td class="num">${brl(t.pago)}</td>
         <td></td>
       </tr>`
@@ -123,10 +126,10 @@ export function gerarHtmlRelatorioExames(itens: ItemRelatorioExame[], op: Opcoes
   <div class="resumo">
     <div class="resumo-titulo">Resumo por médico executante</div>
     <table>
-      <thead><tr><th>Executante</th><th class="num">Exames</th><th class="num">Vlr. Pagar</th><th class="num">Vlr. Pago</th></tr></thead>
+      <thead><tr><th>Executante</th><th class="num">Exames</th><th class="num">Vlr. Pagar</th><th class="num">Desconto</th><th class="num">Vlr. Pago</th></tr></thead>
       <tbody>
-        ${grupos.map(g => { const t = somar(g.itens); return `<tr><td>${g.aDefinir ? '<span class="adefinir-txt">A definir</span>' : esc(g.nome)}</td><td class="num">${t.qtd}</td><td class="num">${brl(t.pagar)}</td><td class="num pago">${brl(t.pago)}</td></tr>` }).join('')}
-        <tr class="total"><td>Total geral</td><td class="num">${geral.qtd}</td><td class="num">${brl(geral.pagar)}</td><td class="num">${brl(geral.pago)}</td></tr>
+        ${grupos.map(g => { const t = somar(g.itens); return `<tr><td>${g.aDefinir ? '<span class="adefinir-txt">A definir</span>' : esc(g.nome)}</td><td class="num">${t.qtd}</td><td class="num">${brl(t.pagar)}</td><td class="num">${brl(t.desconto)}</td><td class="num pago">${brl(t.pago)}</td></tr>` }).join('')}
+        <tr class="total"><td>Total geral</td><td class="num">${geral.qtd}</td><td class="num">${brl(geral.pagar)}</td><td class="num">${brl(geral.desconto)}</td><td class="num">${brl(geral.pago)}</td></tr>
       </tbody>
     </table>
   </div>`
@@ -146,8 +149,8 @@ export function gerarHtmlRelatorioExames(itens: ItemRelatorioExame[], op: Opcoes
   // "R$ 6.500,00" cola em coluna mais estreita — ver fonteDosTotais). Nome de exame é longo e pode quebrar em 2 linhas.
   const papel = op.agruparPorExecutante ? 'A4 portrait' : 'A4 landscape'
   const W = comColunaExecutante
-    ? { pac: 15, cat: 10, exame: 16.5, exec: 13, sol: 13, dt: 6.5, pagar: 7.5, pago: 7.5, forma: 11 }         // paisagem
-    : { pac: 18.5, cat: 11, exame: 18, exec: 0, sol: 12, dt: 7.5, pagar: 10.5, pago: 10.5, forma: 12 }     // retrato
+    ? { pac: 13.5, cat: 9, exame: 15, exec: 12, sol: 12, dt: 6, pagar: 7, desconto: 7, pago: 7, forma: 11.5 }      // paisagem
+    : { pac: 17, cat: 10, exame: 16.5, exec: 0, sol: 11, dt: 7, pagar: 9.5, desconto: 8, pago: 9.5, forma: 11.5 }  // retrato
 
   const css = cssBase({
     papel,
@@ -192,6 +195,7 @@ ${css}
         <th style="width:${W.sol}%">Solicitante</th>
         <th style="width:${W.dt}%">Dt. Visita</th>
         <th class="num" style="width:${W.pagar}%">Vlr. Pagar</th>
+        <th class="num" style="width:${W.desconto}%">Desconto</th>
         <th class="num" style="width:${W.pago}%">Vlr. Pago</th>
         <th style="width:${W.forma}%">Forma de Pgto</th>
       </tr>

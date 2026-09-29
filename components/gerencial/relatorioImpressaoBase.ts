@@ -110,6 +110,7 @@ export function cssBase(o: OpcoesCss): string {
   .num { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
   .nowrap { white-space:nowrap; }
   .pago { font-weight:700; color:#0B5D54; }
+  .desconto { font-weight:700; color:#93540A; }
   .zero { color:#a4aaa7; }
   .pendente { color:#8f9694; font-style:italic; font-size:7pt; }
 

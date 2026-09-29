@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
            pro.id AS executante_id, pro.nome AS executante_nome, (pro.eh_clinica IS TRUE) AS executante_a_definir,
            sol.nome AS solicitante_nome,
            tp.descricao AS exame,
-           rc.valor_original, rc.total_recebimento,
+           rc.valor_original, rc.valor_desconto, rc.total_recebimento,
            cp.descricao AS forma_descricao, cp.tipo_pagamento, vc.qtd_parcelas,
            COALESCE(atc.valor, tp.valor) AS valor_tabela
          FROM tab_agendamento a
@@ -108,6 +108,7 @@ export async function GET(req: NextRequest) {
         exame:                r.exame as string,
         // Mesma regra do relatório de atendimentos: pago = valor gravado no recebimento; senão o valor atual de tabela
         valor_pagar:          pago ? Number(r.valor_original) || 0 : Number(r.valor_tabela) || 0,
+        valor_desconto:       pago ? Number(r.valor_desconto) || 0 : 0,
         valor_pago:           pago ? Number(r.total_recebimento) || 0 : 0,
       }
     })

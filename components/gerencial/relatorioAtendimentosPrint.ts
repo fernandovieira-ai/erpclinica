@@ -1,5 +1,5 @@
 // Relatório impresso "Pacientes pelo tipo de atendimento" (Fechamento Diário).
-// Colunas: Paciente / Categoria / Dt. Visita / Médico / Vlr. Pagar / Vlr. Pago / Forma de Pgto /
+// Colunas: Paciente / Categoria / Dt. Visita / Médico / Vlr. Pagar / Desconto / Vlr. Pago / Forma de Pgto /
 // Atendimento, com opção de agrupar por médico (subtotal por médico) e total geral no fim.
 // Agrupado = A4 retrato; lista única (com a coluna Médico) = A4 paisagem.
 // Layout COMPACTO de propósito: cabeçalho de uma faixa, filtros numa linha, fonte pequena e linhas justas,
@@ -24,6 +24,7 @@ export interface ItemRelatorioAtendimento {
   forma_pagamento:   string | null   // descrição da condição (+ "3x" no crédito parcelado); null = sem pagamento
   tipo_pagamento:    string | null   // dinheiro | pix | debito | credito | a_prazo
   valor_pagar:       number
+  valor_desconto:    number
   valor_pago:        number
 }
 
@@ -40,8 +41,8 @@ export interface OpcoesRelatorioAtendimento {
 
 function somar(itens: ItemRelatorioAtendimento[]) {
   return itens.reduce(
-    (acc, i) => ({ qtd: acc.qtd + 1, pagar: acc.pagar + i.valor_pagar, pago: acc.pago + i.valor_pago }),
-    { qtd: 0, pagar: 0, pago: 0 },
+    (acc, i) => ({ qtd: acc.qtd + 1, pagar: acc.pagar + i.valor_pagar, desconto: acc.desconto + i.valor_desconto, pago: acc.pago + i.valor_pago }),
+    { qtd: 0, pagar: 0, desconto: 0, pago: 0 },
   )
 }
 
@@ -62,7 +63,7 @@ export function gerarHtmlRelatorioAtendimentos(
   op: OpcoesRelatorioAtendimento,
 ): string {
   const comColunaMedico = !op.agruparPorMedico
-  const totalColunas    = comColunaMedico ? 8 : 7
+  const totalColunas    = comColunaMedico ? 9 : 8
   // colunas antes de "Vlr. Pagar": Paciente, Categoria, Dt. Visita (+ Médico)
   const colunasAntesValores = comColunaMedico ? 4 : 3
 
@@ -73,15 +74,17 @@ export function gerarHtmlRelatorioAtendimentos(
         <td class="nowrap">${esc(i.data_visita)}</td>
         ${comColunaMedico ? `<td>${esc(semTitulo(i.profissional_nome))}</td>` : ''}
         <td class="num">${brl(i.valor_pagar)}</td>
+        <td class="num ${i.valor_desconto > 0 ? 'desconto' : 'zero'}">${i.valor_desconto > 0 ? brl(i.valor_desconto) : ''}</td>
         <td class="num ${i.valor_pago > 0 ? 'pago' : 'zero'}">${brl(i.valor_pago)}</td>
         <td>${celulaFormaHtml(i)}</td>
         <td>${esc(i.tipo_descricao ?? '')}</td>
       </tr>`
 
-  const linhaTotal = (rotulo: string, t: { pagar: number; pago: number }, classe: string) => `
+  const linhaTotal = (rotulo: string, t: { pagar: number; desconto: number; pago: number }, classe: string) => `
       <tr class="${classe}">
         <td colspan="${colunasAntesValores}" class="rotulo">${esc(rotulo)}</td>
         <td class="num">${brl(t.pagar)}</td>
+        <td class="num">${brl(t.desconto)}</td>
         <td class="num">${brl(t.pago)}</td>
         <td colspan="2"></td>
       </tr>`
@@ -111,10 +114,10 @@ export function gerarHtmlRelatorioAtendimentos(
   <div class="resumo">
     <div class="resumo-titulo">Resumo por médico</div>
     <table>
-      <thead><tr><th>Médico</th><th class="num">Atendimentos</th><th class="num">Vlr. Pagar</th><th class="num">Vlr. Pago</th></tr></thead>
+      <thead><tr><th>Médico</th><th class="num">Atendimentos</th><th class="num">Vlr. Pagar</th><th class="num">Desconto</th><th class="num">Vlr. Pago</th></tr></thead>
       <tbody>
-        ${lista.map(g => { const t = somar(g.itens); return `<tr><td>${esc(g.nome)}</td><td class="num">${t.qtd}</td><td class="num">${brl(t.pagar)}</td><td class="num pago">${brl(t.pago)}</td></tr>` }).join('')}
-        <tr class="total"><td>Total geral</td><td class="num">${geral.qtd}</td><td class="num">${brl(geral.pagar)}</td><td class="num">${brl(geral.pago)}</td></tr>
+        ${lista.map(g => { const t = somar(g.itens); return `<tr><td>${esc(g.nome)}</td><td class="num">${t.qtd}</td><td class="num">${brl(t.pagar)}</td><td class="num">${brl(t.desconto)}</td><td class="num pago">${brl(t.pago)}</td></tr>` }).join('')}
+        <tr class="total"><td>Total geral</td><td class="num">${geral.qtd}</td><td class="num">${brl(geral.pagar)}</td><td class="num">${brl(geral.desconto)}</td><td class="num">${brl(geral.pago)}</td></tr>
       </tbody>
     </table>
   </div>`
@@ -134,8 +137,8 @@ export function gerarHtmlRelatorioAtendimentos(
   // Larguras — somam 100% nos dois modos; table-layout fixo pra as colunas não "dançarem".
   // Nome quebrado em 2 linhas dobra a altura da linha: Paciente e Médico precisam de largura folgada.
   const W = comColunaMedico
-    ? { pac: 21, cat: 11, dt: 7.5, med: 17.5, pagar: 7.5, pago: 7.5, forma: 10.5, atend: 17.5 }  // paisagem
-    : { pac: 23, cat: 13, dt: 8.5, med: 0, pagar: 10.5, pago: 10.5, forma: 11.5, atend: 23 }     // retrato
+    ? { pac: 19, cat: 10, dt: 7, med: 16, pagar: 7.5, desconto: 7.5, pago: 7.5, forma: 10, atend: 15.5 }     // paisagem
+    : { pac: 21, cat: 12, dt: 8, med: 0, pagar: 9.5, desconto: 8, pago: 9.5, forma: 10.5, atend: 21.5 }      // retrato
 
   const css = cssBase({
     papel,
@@ -171,6 +174,7 @@ ${css}
         <th style="width:${W.dt}%">Dt. Visita</th>
         ${comColunaMedico ? `<th style="width:${W.med}%">Médico</th>` : ''}
         <th class="num" style="width:${W.pagar}%">Vlr. Pagar</th>
+        <th class="num" style="width:${W.desconto}%">Desconto</th>
         <th class="num" style="width:${W.pago}%">Vlr. Pago</th>
         <th style="width:${W.forma}%">Forma de Pgto</th>
         <th style="width:${W.atend}%">Atendimento</th>

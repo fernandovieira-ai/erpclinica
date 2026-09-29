@@ -28,6 +28,7 @@ interface AgendamentoDia {
   recebimento_id: number | null
   status_recebimento: string | null
   total_recebimento: number | null
+  valor_desconto: number | string | null
   // Rateio gravado no recebimento (NUMERIC chega do pg como string). NULL = recebimento anterior ao rateio
   percentual_profissional: number | string | null
   valor_profissional: number | string | null
@@ -482,6 +483,7 @@ export default function FechamentoDiarioPage() {
                       <th style={{ width: 110 }}>Status</th>
                       <th style={{ width: 110 }}>Forma Pgto</th>
                       <th style={{ width: 110, textAlign: 'right' }}>Valor</th>
+                      <th style={{ width: 95, textAlign: 'right' }}>Desconto</th>
                       <th style={{ width: 120, textAlign: 'right' }}>Repasse</th>
                       <th style={{ width: 110, textAlign: 'right' }}>Clínica</th>
                       {isAdmin && <th style={{ width: 90 }}>Ação</th>}
@@ -489,7 +491,7 @@ export default function FechamentoDiarioPage() {
                   </thead>
                   <tbody>
                     {dados.agendamentos.length === 0 && (
-                      <tr><td colSpan={isAdmin ? 10 : 9} style={{ textAlign: 'center', padding: 24, color: 'var(--texto-terciario)', fontSize: 13 }}>Nenhum agendamento neste dia</td></tr>
+                      <tr><td colSpan={isAdmin ? 11 : 10} style={{ textAlign: 'center', padding: 24, color: 'var(--texto-terciario)', fontSize: 13 }}>Nenhum agendamento neste dia</td></tr>
                     )}
                     {dados.agendamentos.map(ag => {
                       const pago      = ag.status_recebimento === 'PAGO'
@@ -517,6 +519,9 @@ export default function FechamentoDiarioPage() {
                           </td>
                           <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)', fontWeight: 600, color: pago ? 'var(--cor-sucesso)' : 'var(--texto-terciario)' }}>
                             {pago ? formatBRL(ag.total_recebimento ?? 0) : '—'}
+                          </td>
+                          <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)', color: 'var(--cor-aviso)' }}>
+                            {pago && Number(ag.valor_desconto) > 0 ? formatBRL(Number(ag.valor_desconto)) : '—'}
                           </td>
                           <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)' }}>
                             {rateio && !rateio.semRateio ? (

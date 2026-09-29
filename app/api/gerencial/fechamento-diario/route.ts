@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
        pac.id AS paciente_id, pac.nome AS paciente_nome,
        pro.id AS profissional_id, pro.nome AS profissional_nome,
        tp.descricao AS tipo_descricao,
-       rc.id AS recebimento_id, rc.status_recebimento, rc.total_recebimento,
+       rc.id AS recebimento_id, rc.status_recebimento, rc.total_recebimento, rc.valor_desconto,
        rc.percentual_profissional, rc.valor_profissional, rc.valor_clinica,
        rc.batch_agendamento_id, rc.condicao_pagamento_id,
        cp.tipo_pagamento, cp.descricao AS condicao_descricao

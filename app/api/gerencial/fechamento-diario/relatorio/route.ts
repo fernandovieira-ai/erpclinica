@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
            TO_CHAR(a.data_hora_inicio, 'HH24:MI')    AS hora_visita,
            pro.id AS profissional_id, pro.nome AS profissional_nome,
            tp.descricao AS tipo_descricao,
-           rc.valor_original, rc.total_recebimento,
+           rc.valor_original, rc.valor_desconto, rc.total_recebimento,
            cp.descricao AS forma_descricao, cp.tipo_pagamento, vc.qtd_parcelas,
            COALESCE(atc.valor, tp.valor) AS valor_tabela
          FROM tab_agendamento a
@@ -97,6 +97,7 @@ export async function GET(req: NextRequest) {
         // Pago: o que foi recebido. A pagar: valor de tabela cobrado (com recebimento, o gravado
         // no momento do pagamento; sem recebimento, o valor atual do tipo pra categoria).
         valor_pagar:       pago ? Number(r.valor_original) || 0 : Number(r.valor_tabela) || 0,
+        valor_desconto:    pago ? Number(r.valor_desconto) || 0 : 0,
         valor_pago:        pago ? Number(r.total_recebimento) || 0 : 0,
       }
     })
