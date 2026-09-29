@@ -14,21 +14,32 @@ function isRetryableConnectionError(err: unknown): boolean {
   return RETRYABLE_ERROR.test(msg)
 }
 
-// Reexecuta uma vez só SELECTs que falharam por queda transitória de rede —
-// evita que uma instabilidade momentânea vire erro 500 pro usuário.
+// Reexecuta SELECTs que falharam por queda transitória de rede — evita que uma
+// instabilidade momentânea (comum no caminho público até o Postgres) vire
+// erro 500 pro usuário. Até 2 retentativas, com pequeno backoff entre elas.
+const RETRY_ATTEMPTS = 2
+const RETRY_BACKOFF_MS = 300
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 function withConnectionRetry(pool: Pool): void {
   const originalQuery = pool.query.bind(pool)
   ;(pool as any).query = async (...args: any[]) => {
-    try {
-      return await (originalQuery as any)(...args)
-    } catch (err) {
-      const text = typeof args[0] === 'string' ? args[0] : args[0]?.text ?? ''
-      const isSelect = /^\s*(select|with)\b/i.test(text)
-      if (isSelect && isRetryableConnectionError(err)) {
-        console.warn(`[db] retry após queda de conexão transitória: ${text.slice(0, 80)}`)
+    const text = typeof args[0] === 'string' ? args[0] : args[0]?.text ?? ''
+    const isSelect = /^\s*(select|with)\b/i.test(text)
+
+    for (let attempt = 0; ; attempt++) {
+      try {
         return await (originalQuery as any)(...args)
+      } catch (err) {
+        if (!isSelect || !isRetryableConnectionError(err) || attempt >= RETRY_ATTEMPTS) {
+          throw err
+        }
+        console.warn(`[db] retry ${attempt + 1}/${RETRY_ATTEMPTS} após queda de conexão transitória: ${text.slice(0, 80)}`)
+        await delay(RETRY_BACKOFF_MS * (attempt + 1))
       }
-      throw err
     }
   }
 }
@@ -83,7 +94,7 @@ export const dbControl = new Pool({
   database:                'saas_control',
   ssl:                     process.env.PG_SSL === 'false' ? false : { rejectUnauthorized: false },
   max:                     3,
-  idleTimeoutMillis:       30_000,
+  idleTimeoutMillis:       120_000,
   connectionTimeoutMillis: 5_000,
   keepAlive:               true,
   keepAliveInitialDelayMillis: 10_000,

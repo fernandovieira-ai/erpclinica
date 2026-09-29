@@ -74,8 +74,10 @@ export async function POST(req: NextRequest) {
       [usuario.id],
     )
 
-    // 4. Atualiza último acesso
-    await db.query(`UPDATE tab_usuario SET ultimo_acesso = NOW() WHERE id = $1`, [usuario.id])
+    // 4. Atualiza último acesso — best-effort: uma queda transitória de conexão
+    // aqui não pode derrubar um login que já autenticou com sucesso.
+    db.query(`UPDATE tab_usuario SET ultimo_acesso = NOW() WHERE id = $1`, [usuario.id])
+      .catch((err) => console.error('[login] falha ao atualizar ultimo_acesso (best-effort):', err))
 
     // 4a. Empresa única — gera session direto
     if (empresas.length === 1) {
