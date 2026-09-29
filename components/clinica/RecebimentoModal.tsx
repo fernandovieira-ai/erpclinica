@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { X, DollarSign, CreditCard, Percent, Check } from 'lucide-react'
+import { X, DollarSign, CreditCard, Percent, Check, Lock } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { AgendamentoListItem } from '@/types/clinica.types'
@@ -26,12 +26,15 @@ interface CondicaoPagamento {
 
 interface FormRecebimento {
   condicao_pagamento_id: number
-  valor_recebido: number
   desconto: number
   acrescimo: number
   observacao: string
   nsu: string
   parcelas_cartao: number
+}
+
+function round2(v: number) {
+  return Math.round(v * 100) / 100
 }
 
 interface ProfissionalOpcao {
@@ -70,7 +73,6 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
 
   const [form, setForm] = useState<FormRecebimento>({
     condicao_pagamento_id: 0,
-    valor_recebido: 0,
     desconto: 0,
     acrescimo: 0,
     observacao: '',
@@ -110,33 +112,23 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
     }
   }
 
-  // Recalcula valor ao abrir (valor à vista como base inicial)
+  // Zera desconto/acréscimo ao abrir — o valor base (Valor da Consulta) não é mais um
+  // campo de formulário: é sempre derivado de getValorBase(ag), travado no preço de
+  // tabela do tipo/categoria. Ver "Trava de valor no recebimento" em padroes.md — foi
+  // esse campo antes editável que permitiu registrar R$500 num TCP de R$800 sem desconto.
   useEffect(() => {
     if (!open) return
-    const list = (agendamentos && agendamentos.length > 0) ? agendamentos : (agendamento ? [agendamento] : [])
-    const soma = list.reduce((acc, ag) => acc + (Number(ag.tipo_valor) || 0), 0)
-    if (soma > 0) {
-      setForm(prev => ({ ...prev, valor_recebido: soma, desconto: 0, acrescimo: 0, observacao: '' }))
-    }
+    setForm(prev => ({ ...prev, desconto: 0, acrescimo: 0, observacao: '' }))
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Recalcula valor quando muda a condição de pagamento (à vista vs a prazo)
+  // Zera desconto/acréscimo quando muda a condição de pagamento (à vista vs a prazo têm
+  // valores de tabela diferentes — um desconto calculado sobre o valor errado confundiria).
   useEffect(() => {
     if (!open || condicoes.length === 0 || form.condicao_pagamento_id === 0) return
-    const list = (agendamentos && agendamentos.length > 0) ? agendamentos : (agendamento ? [agendamento] : [])
-    const condicao = condicoes.find(c => c.id === form.condicao_pagamento_id)
-    const isPrazo = condicao?.tipo === 'P'
-
-    const soma = list.reduce((acc, ag) => {
-      const valorVista = Number(ag.tipo_valor) || 0
-      const valorPrazo = ag.tipo_valor_prazo != null ? Number(ag.tipo_valor_prazo) : null
-      return acc + (isPrazo && valorPrazo !== null ? valorPrazo : valorVista)
-    }, 0)
-
-    if (soma > 0) {
-      setForm(prev => ({ ...prev, valor_recebido: soma, desconto: 0, acrescimo: 0 }))
-    }
+    setForm(prev => ({ ...prev, desconto: 0, acrescimo: 0 }))
   }, [form.condicao_pagamento_id, condicoes]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const valorBase = listaAgs.reduce((acc, ag) => acc + getValorBase(ag), 0)
 
   // Zera a quantidade de parcelas do cartão sempre que a condição de pagamento muda
   useEffect(() => {
@@ -160,7 +152,7 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
     }
   }
 
-  const totalComAjustes = form.valor_recebido - form.desconto + form.acrescimo
+  const totalComAjustes = valorBase - form.desconto + form.acrescimo
 
   async function handleSalvar() {
     if (listaAgs.length === 0) return
@@ -170,8 +162,13 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
       return
     }
 
-    if (form.valor_recebido <= 0) {
-      toast.error('Valor do recebimento deve ser maior que zero')
+    if (valorBase <= 0) {
+      toast.error('Valor da consulta inválido — verifique o cadastro do tipo de atendimento')
+      return
+    }
+
+    if (totalComAjustes <= 0) {
+      toast.error('Total a receber deve ser maior que zero')
       return
     }
 
@@ -186,31 +183,31 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
 
     setSaving(true)
     try {
-      const isPrazo = condicaoSelecionada?.tipo === 'P'
-      const somaOriginal = listaAgs.reduce((acc, ag) => {
-        const valorVista = Number(ag.tipo_valor) || 0
-        const valorPrazo = ag.tipo_valor_prazo != null ? Number(ag.tipo_valor_prazo) : null
-        return acc + (isPrazo && valorPrazo !== null ? valorPrazo : valorVista)
-      }, 0)
-
-      // Monta os itens com valores proporcionais — um único payload para todos os atendimentos
-      const itens = listaAgs.map(ag => {
-        const valorVista = Number(ag.tipo_valor) || 0
-        const valorPrazo = ag.tipo_valor_prazo != null ? Number(ag.tipo_valor_prazo) : null
-        const tipoValor = isPrazo && valorPrazo !== null ? valorPrazo : valorVista
-        const proporcao = somaOriginal > 0 ? tipoValor / somaOriginal : 1 / listaAgs.length
-        const valorRecebido_ag = form.valor_recebido * proporcao
-        const desconto_ag = form.desconto * proporcao
-        const acrescimo_ag = form.acrescimo * proporcao
-        const total_ag = valorRecebido_ag - desconto_ag + acrescimo_ag
+      // Monta os itens com desconto/acréscimo rateados proporcionalmente — um único
+      // payload para todos os atendimentos. valor_original vem sempre do preço de tabela
+      // (getValorBase), nunca de um valor digitado — é essa trava que o backend confere.
+      // O último item fica com o resto (mesmo padrão usado no rateio de parcelas a prazo
+      // na API), pra soma dos itens bater exatamente com form.desconto/form.acrescimo
+      // mesmo após arredondar cada item pra centavos.
+      let descontoAcumulado = 0
+      let acrescimoAcumulado = 0
+      const itens = listaAgs.map((ag, idx) => {
+        const isUltimo = idx === listaAgs.length - 1
+        const tipoValor = getValorBase(ag)
+        const proporcao = valorBase > 0 ? tipoValor / valorBase : 1 / listaAgs.length
+        const desconto_ag = isUltimo ? round2(form.desconto - descontoAcumulado) : round2(form.desconto * proporcao)
+        const acrescimo_ag = isUltimo ? round2(form.acrescimo - acrescimoAcumulado) : round2(form.acrescimo * proporcao)
+        descontoAcumulado += desconto_ag
+        acrescimoAcumulado += acrescimo_ag
+        const total_ag = round2(tipoValor - desconto_ag + acrescimo_ag)
         const def = ag.profissional_eh_clinica ? executores[ag.id] : undefined
         return {
           agendamento_id: ag.id,
           paciente_id: ag.paciente_id,
-          valor_original: tipoValor || valorRecebido_ag,
+          valor_original: tipoValor,
           valor_desconto: desconto_ag,
           valor_acrescimo: acrescimo_ag,
-          valor_recebido: valorRecebido_ag,
+          valor_recebido: total_ag,
           total_recebimento: total_ag,
           data_recebimento: format(parseISO(ag.data_hora_inicio), 'yyyy-MM-dd'),
           medico_solicitante_id: def?.medico_solicitante_id ?? null,
@@ -538,29 +535,17 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
                 borderRadius: 6,
                 border: '0.5px solid var(--borda-suave)',
               }}>
-                <DollarSign size={16} style={{ color: 'var(--cor-primaria)', flexShrink: 0 }} />
+                <Lock size={16} style={{ color: 'var(--texto-terciario)', flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginBottom: 2 }}>Valor Recebido</div>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={form.valor_recebido}
-                    onChange={e => setForm({ ...form, valor_recebido: Math.max(0, parseFloat(e.target.value) || 0) })}
-                    placeholder="0,00"
-                    style={{
-                      width: '100%',
-                      fontSize: 14,
-                      fontWeight: 600,
-                      color: 'var(--texto-principal)',
-                      background: 'transparent',
-                      border: 'none',
-                      outline: 'none',
-                      padding: 0,
-                    }}
-                  />
+                  <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginBottom: 2 }}>
+                    Valor da Consulta (tabela)
+                  </div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--texto-principal)' }}>
+                    {fmtValor(valorBase)}
+                  </div>
                 </div>
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--texto-principal)' }}>
-                  {fmtValor(form.valor_recebido)}
+                <span style={{ fontSize: 10, color: 'var(--texto-terciario)' }}>
+                  não editável — use o desconto abaixo
                 </span>
               </div>
 

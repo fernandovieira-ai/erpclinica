@@ -38,12 +38,67 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ erro: 'Dados inválidos' }, { status: 400 })
     }
 
+    // Trava anti-erro de digitação: nenhum valor de recebimento é aceito sem bater com
+    // a soma valor_original - desconto + acréscimo, e valor_original precisa bater com o
+    // preço cadastrado pro tipo/categoria do agendamento — ver seção "Trava de valor no
+    // recebimento" em padroes.md. Tolerância de 2 centavos absorve arredondamento de rateio
+    // proporcional entre múltiplos agendamentos no mesmo recebimento.
+    const TOLERANCIA_CENTAVOS = 0.02
+    const round2 = (v: number) => Math.round(v * 100) / 100
+
+    for (const item of payload.itens) {
+      const campos = [item.valor_original, item.valor_desconto, item.valor_acrescimo, item.valor_recebido, item.total_recebimento]
+      if (campos.some(v => typeof v !== 'number' || !Number.isFinite(v))) {
+        return NextResponse.json({ erro: `Valores inválidos no agendamento ${item.agendamento_id}` }, { status: 400 })
+      }
+      if (item.valor_desconto < 0 || item.valor_acrescimo < 0) {
+        return NextResponse.json({ erro: 'Desconto e acréscimo não podem ser negativos' }, { status: 400 })
+      }
+      // <= 0 (não só < 0): um item com valor de consulta > 0 não pode zerar via desconto — fecha o
+      // caso de um item pequeno num lote com vários agendamentos arredondar pra R$0,00 e ainda assim
+      // ser gravado como PAGO. Item cujo próprio valor de tabela já é 0 (tipo sem preço) continua ok.
+      if (item.total_recebimento <= 0 && item.valor_original > 0) {
+        return NextResponse.json({ erro: `Desconto maior ou igual ao valor da consulta no agendamento ${item.agendamento_id}` }, { status: 400 })
+      }
+      if (item.valor_recebido !== item.total_recebimento) {
+        return NextResponse.json({ erro: `valor_recebido e total_recebimento precisam ser iguais no agendamento ${item.agendamento_id}` }, { status: 400 })
+      }
+      const totalEsperado = round2(item.valor_original - item.valor_desconto + item.valor_acrescimo)
+      if (Math.abs(totalEsperado - item.total_recebimento) > TOLERANCIA_CENTAVOS) {
+        return NextResponse.json({
+          erro: `Valores não conferem no agendamento ${item.agendamento_id}: `
+            + `${item.valor_original.toFixed(2)} (original) - ${item.valor_desconto.toFixed(2)} (desconto) `
+            + `+ ${item.valor_acrescimo.toFixed(2)} (acréscimo) = ${totalEsperado.toFixed(2)}, `
+            + `mas foi enviado ${item.total_recebimento.toFixed(2)}`,
+        }, { status: 400 })
+      }
+    }
+
     const totalGeral = payload.itens.reduce((acc, i) => acc + i.total_recebimento, 0)
     if (totalGeral <= 0) {
       return NextResponse.json({ erro: 'Valor total deve ser maior que zero' }, { status: 400 })
     }
 
     await client.query('BEGIN')
+
+    const { rows: condRows } = await client.query(
+      'SELECT tipo_pagamento, conta_banco_pix_id, conta_banco_cartao_id, num_parcelas, intervalo_dias, entrada_pct FROM tab_condicao_pagamento WHERE id = $1 AND empresa_id = $2',
+      [payload.condicao_pagamento_id, session.empresa_id_ativa],
+    )
+    if (condRows.length === 0) {
+      await client.query('ROLLBACK')
+      return NextResponse.json({ erro: 'Condição de pagamento não encontrada' }, { status: 404 })
+    }
+
+    const tipoPagamento      = condRows[0].tipo_pagamento
+    const contaBancoPixId    = condRows[0].conta_banco_pix_id
+    const contaBancoCartaoId = condRows[0].conta_banco_cartao_id
+    const numParcelas        = parseInt(condRows[0].num_parcelas) || 1
+    const intervaloDias      = parseInt(condRows[0].intervalo_dias) || 30
+    const entradaPct         = parseFloat(condRows[0].entrada_pct) || 0
+
+    const isAPrazo  = tipoPagamento === 'a_prazo'
+    const isCartao  = tipoPagamento === 'debito' || tipoPagamento === 'credito'
 
     // agendamento_id -> { medico_solicitante_id, medico_executor_id } dos itens que
     // precisam definir solicitante/executor antes de confirmar (profissional_id atual = placeholder da clínica)
@@ -53,15 +108,29 @@ export async function POST(req: NextRequest) {
 
     for (const item of payload.itens) {
       const { rows } = await client.query(
-        `SELECT ag.id, ag.tipo_id, ag.profissional_id, pro.eh_clinica AS profissional_eh_clinica
+        `SELECT ag.id, ag.tipo_id, ag.profissional_id, pro.eh_clinica AS profissional_eh_clinica,
+                COALESCE(atc.valor, tp.valor) AS tipo_valor, atc.valor_prazo AS tipo_valor_prazo
          FROM tab_agendamento ag
            JOIN tab_pessoa pro ON pro.id = ag.profissional_id
+           LEFT JOIN tab_agendamento_tipo tp ON tp.id = ag.tipo_id
+           LEFT JOIN tab_agendamento_tipo_categoria atc ON atc.tipo_id = ag.tipo_id AND atc.categoria_id = ag.categoria_id
          WHERE ag.id = $1 AND ag.empresa_id = $2`,
         [item.agendamento_id, session.empresa_id_ativa],
       )
       if (rows.length === 0) {
         await client.query('ROLLBACK')
         return NextResponse.json({ erro: `Agendamento ${item.agendamento_id} não encontrado` }, { status: 404 })
+      }
+
+      const valorTabela = isAPrazo && rows[0].tipo_valor_prazo != null
+        ? Number(rows[0].tipo_valor_prazo)
+        : Number(rows[0].tipo_valor) || 0
+      if (valorTabela > 0 && Math.abs(item.valor_original - valorTabela) > TOLERANCIA_CENTAVOS) {
+        await client.query('ROLLBACK')
+        return NextResponse.json({
+          erro: `Valor da consulta do agendamento ${item.agendamento_id} mudou desde que a tela foi aberta `
+            + `(tabela: ${valorTabela.toFixed(2)}, enviado: ${item.valor_original.toFixed(2)}). Atualize a página e tente novamente.`,
+        }, { status: 409 })
       }
 
       infoAgendamento.set(item.agendamento_id, {
@@ -83,25 +152,6 @@ export async function POST(req: NextRequest) {
         })
       }
     }
-
-    const { rows: condRows } = await client.query(
-      'SELECT tipo_pagamento, conta_banco_pix_id, conta_banco_cartao_id, num_parcelas, intervalo_dias, entrada_pct FROM tab_condicao_pagamento WHERE id = $1 AND empresa_id = $2',
-      [payload.condicao_pagamento_id, session.empresa_id_ativa],
-    )
-    if (condRows.length === 0) {
-      await client.query('ROLLBACK')
-      return NextResponse.json({ erro: 'Condição de pagamento não encontrada' }, { status: 404 })
-    }
-
-    const tipoPagamento      = condRows[0].tipo_pagamento
-    const contaBancoPixId    = condRows[0].conta_banco_pix_id
-    const contaBancoCartaoId = condRows[0].conta_banco_cartao_id
-    const numParcelas        = parseInt(condRows[0].num_parcelas) || 1
-    const intervaloDias      = parseInt(condRows[0].intervalo_dias) || 30
-    const entradaPct         = parseFloat(condRows[0].entrada_pct) || 0
-
-    const isAPrazo  = tipoPagamento === 'a_prazo'
-    const isCartao  = tipoPagamento === 'debito' || tipoPagamento === 'credito'
 
     if (tipoPagamento === 'pix' && !contaBancoPixId) {
       await client.query('ROLLBACK')
