@@ -938,3 +938,23 @@ Mesmo desenho do §31, só de **exames**, organizado pelo **médico que executou
 **Arquivos:** `app/api/gerencial/fechamento-diario/route.ts`, `app/(erp)/gerencial/fechamento-diario/page.tsx`, `app/api/gerencial/fechamento-diario/relatorio/route.ts`, `app/api/gerencial/fechamento-diario/relatorio-exames/route.ts`, `components/gerencial/relatorioAtendimentosPrint.ts`, `components/gerencial/relatorioExamesPrint.ts`, `components/gerencial/relatorioImpressaoBase.ts` (classe `.desconto`).
 
 **Como foi testado:** `tsc --noEmit` limpo. `GET /api/gerencial/fechamento-diario?data=2026-09-29` e `GET /api/gerencial/fechamento-diario/relatorio?inicio=2026-09-29&fim=2026-09-29` contra o `next dev` real (só leitura) confirmando que o recebimento da IRIS CRUVINEL DOS REIS (ver [[37]]) aparece com `valor_desconto=300`/`valor_pagar=800`/`valor_pago=500` nos dois. Larguras de coluna dos 4 layouts de relatório somadas via script Node, todas fechando em 100%. Geração do HTML impresso em si (`gerarHtmlRelatorioAtendimentos`/`gerarHtmlRelatorioExames`) não foi aberta num navegador real nesta sessão — validada só por leitura de código e pelos dados de entrada.
+
+## 39. Correção da trava de preço de tabela: `tipo` (V/P) ≠ `tipo_pagamento` (implementado 2026-09-30)
+
+**Origem:** consequência de um bug introduzido em [[37]]. Operador tentou receber uma consulta com desconto usando a condição "UNIMED EXTERNA" (cartão de crédito parcelado) e a API rejeitou com 409 "Valor da consulta mudou desde que a tela foi aberta", mesmo sem nenhuma alteração de preço — falso-positivo bloqueando um recebimento legítimo.
+
+**Causa raiz:** `tab_condicao_pagamento` tem duas colunas independentes: `tipo` (`'V'` à vista / `'P'` parcelado — decide qual preço usar, `valor` ou `valor_prazo`, regra já documentada na seção "Valor por condição de pagamento") e `tipo_pagamento` (`dinheiro`/`debito`/`credito`/`pix`/`a_prazo` — decide o fluxo financeiro: gera título ou movimento de caixa/banco). O front (`RecebimentoModal.getValorBase`) sempre usou `tipo` corretamente pra escolher o preço. A trava de preço adicionada em [[37]] (`app/api/clinica/recebimentos/route.ts`) usou por engano `tipo_pagamento === 'a_prazo'` pra essa mesma decisão. As duas colunas divergem justamente nas condições de cartão parcelado (`tipo='P'`, `tipo_pagamento='credito'` — ex.: VISA CREDITO, UNIMED RV, UNIMED EXTERNA): o front mandava o preço "a prazo" (`valor_prazo`, mais caro) e o backend comparava contra o preço "à vista" (`valor`, mais barato), rejeitando qualquer recebimento nessas condições.
+
+**Correção:** `route.ts` passou a buscar também `cp.tipo` no SELECT de `tab_condicao_pagamento` e usar `isParcelado = condRows[0].tipo === 'P'` (em vez de `isAPrazo`) só pra decidir `valorTabela` (preço de referência da trava). `isAPrazo` (`tipo_pagamento === 'a_prazo'`) continua intacto pra decidir o fluxo financeiro (título x movimento) — são decisões diferentes que não devem compartilhar a mesma variável, mesmo tendo sido confundidas uma vez.
+
+**Como foi verificado:** consulta somente leitura no banco real confirmou o cenário — 3 condições ativas com `tipo='P'` e `tipo_pagamento≠'a_prazo'` (VISA CREDITO, UNIMED RV, UNIMED EXTERNA) e várias categorias com `valor ≠ valor_prazo` (ex.: CONSULTA CARDIOLÓGICA 450×500, POLISSONOGRAFIA 400×550) — e que nenhuma condição tem `tipo_pagamento='a_prazo'` com `tipo≠'P'` (não existe combinação que a correção deixaria de cobrir). `tsc --noEmit` limpo. Nenhuma escrita feita no banco durante a verificação.
+
+**Arquivos:** `app/api/clinica/recebimentos/route.ts`.
+
+## 40. Campo de texto expansível em modal no prontuário (implementado 2026-09-30)
+
+**Origem:** na edição do prontuário (`HistoricoClinico.tsx`), os campos de texto (Queixas, HDA, Exames, Diagnóstico, Medicação, Outras Condutas etc.) são `<textarea rows={2}>` — em consultas com texto longo (ex.: resultado de múltiplos exames complementares) o médico precisava rolar dentro de uma caixa pequena, difícil de revisar.
+
+**Decisão:** `CampoEdit` (componente interno de `HistoricoClinico.tsx`, reusado nos ~10 campos do formulário) ganhou um botão "Expandir" ao lado do rótulo, só nos campos `area` (textarea — não aparece em Peso/IMC/Pressão, que são `<input>`). O botão abre um modal (até 880px, 85vh) com uma textarea grande ocupando quase toda a área, seguindo o mesmo padrão visual dos outros modais do sistema (header na cor primária, X fecha, Esc fecha). Edição no modal usa um rascunho local (`draft`) — só grava no formulário (`onChange`) ao clicar "Aplicar"; "Cancelar"/Esc descarta.
+
+**Arquivos:** `components/clinica/HistoricoClinico.tsx` (`CampoEdit`, ~linha 179).
