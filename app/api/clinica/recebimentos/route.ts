@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
     await client.query('BEGIN')
 
     const { rows: condRows } = await client.query(
-      'SELECT tipo_pagamento, conta_banco_pix_id, conta_banco_cartao_id, num_parcelas, intervalo_dias, entrada_pct FROM tab_condicao_pagamento WHERE id = $1 AND empresa_id = $2',
+      'SELECT tipo, tipo_pagamento, conta_banco_pix_id, conta_banco_cartao_id, num_parcelas, intervalo_dias, entrada_pct FROM tab_condicao_pagamento WHERE id = $1 AND empresa_id = $2',
       [payload.condicao_pagamento_id, session.empresa_id_ativa],
     )
     if (condRows.length === 0) {
@@ -99,6 +99,12 @@ export async function POST(req: NextRequest) {
 
     const isAPrazo  = tipoPagamento === 'a_prazo'
     const isCartao  = tipoPagamento === 'debito' || tipoPagamento === 'credito'
+    // Preço de tabela (à vista x a prazo) segue tab_condicao_pagamento.tipo ('V'/'P' — parcelado),
+    // não tipo_pagamento. É o mesmo campo que RecebimentoModal.getValorBase() usa no front — as
+    // duas colunas são independentes (ex.: crédito parcelado tem tipo_pagamento='credito' e tipo='P'),
+    // usar tipo_pagamento aqui gera falso-positivo na trava de preço (valor_original enviado bate
+    // com o valor à vista, mas o backend compara contra o valor a prazo por engano, ou vice-versa).
+    const isParcelado = condRows[0].tipo === 'P'
 
     // agendamento_id -> { medico_solicitante_id, medico_executor_id } dos itens que
     // precisam definir solicitante/executor antes de confirmar (profissional_id atual = placeholder da clínica)
@@ -122,7 +128,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ erro: `Agendamento ${item.agendamento_id} não encontrado` }, { status: 404 })
       }
 
-      const valorTabela = isAPrazo && rows[0].tipo_valor_prazo != null
+      const valorTabela = isParcelado && rows[0].tipo_valor_prazo != null
         ? Number(rows[0].tipo_valor_prazo)
         : Number(rows[0].tipo_valor) || 0
       if (valorTabela > 0 && Math.abs(item.valor_original - valorTabela) > TOLERANCIA_CENTAVOS) {
