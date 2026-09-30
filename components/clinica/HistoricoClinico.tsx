@@ -6,6 +6,7 @@ import {
   ChevronDown, ChevronUp, Pencil, Save, X, FileText, Stethoscope, Users, User,
   Activity, AlertTriangle, ClipboardList, Scale, HeartPulse, FlaskConical, Pill, ListChecks, Mic,
   FileSignature, ExternalLink, Printer, Loader2, Paperclip, Trash2, ClipboardCheck, FileWarning,
+  Maximize2,
 } from 'lucide-react'
 import type { AgendamentoListItem, Prontuario, ProntuarioAnexo, ReceitaMedica, ReceitaSistemaRegistro, AtestadoMedicoRegistro, ReceituarioEspecialRegistro } from '@/types/clinica.types'
 import VoaPluginView, { preconectarVoa, type Status as VoaStatus, type VoaPluginHandle } from './VoaPluginView'
@@ -179,36 +180,145 @@ function Campo({ icone: Icone, label, valor, destaque }: {
 function CampoEdit({ label, value, onChange, area = true, placeholder }: {
   label: string; value: string; onChange: (v: string) => void; area?: boolean; placeholder?: string
 }) {
+  const [expandido, setExpandido] = useState(false)
+  const [draft, setDraft] = useState(value)
+
+  const abrirExpandido = useCallback(() => {
+    setDraft(value)
+    setExpandido(true)
+  }, [value])
+
+  const salvarExpandido = useCallback(() => {
+    onChange(draft)
+    setExpandido(false)
+  }, [draft, onChange])
+
+  useEffect(() => {
+    if (!expandido) return
+    const fn = (e: KeyboardEvent) => { if (e.key === 'Escape') setExpandido(false) }
+    window.addEventListener('keydown', fn)
+    return () => window.removeEventListener('keydown', fn)
+  }, [expandido])
+
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--texto-terciario)' }}>
-        {label}
-      </span>
-      {area ? (
-        <textarea
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          placeholder={placeholder}
-          rows={2}
-          style={{
-            width: '100%', resize: 'vertical', padding: '6px 8px', fontSize: 12.5,
-            border: '1px solid var(--borda-media)', borderRadius: 4, fontFamily: 'inherit',
-            backgroundColor: 'var(--bg-card)', color: 'var(--texto-principal)',
-          }}
-        />
-      ) : (
-        <input
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          placeholder={placeholder}
-          style={{
-            width: '100%', padding: '6px 8px', fontSize: 12.5,
-            border: '1px solid var(--borda-media)', borderRadius: 4,
-            backgroundColor: 'var(--bg-card)', color: 'var(--texto-principal)',
-          }}
-        />
+    <>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <span style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em',
+          color: 'var(--texto-terciario)',
+        }}>
+          {label}
+          {area && (
+            <button
+              type="button"
+              onClick={abrirExpandido}
+              title={`Expandir "${label}" em tela maior`}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 3, padding: '2px 6px',
+                fontSize: 9.5, fontWeight: 600, textTransform: 'none', letterSpacing: 0,
+                background: 'none', border: '1px solid var(--borda-media)', borderRadius: 4,
+                cursor: 'pointer', color: 'var(--texto-terciario)',
+              }}
+            >
+              <Maximize2 size={10} /> Expandir
+            </button>
+          )}
+        </span>
+        {area ? (
+          <textarea
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            placeholder={placeholder}
+            rows={2}
+            style={{
+              width: '100%', resize: 'vertical', padding: '6px 8px', fontSize: 12.5,
+              border: '1px solid var(--borda-media)', borderRadius: 4, fontFamily: 'inherit',
+              backgroundColor: 'var(--bg-card)', color: 'var(--texto-principal)',
+            }}
+          />
+        ) : (
+          <input
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            placeholder={placeholder}
+            style={{
+              width: '100%', padding: '6px 8px', fontSize: 12.5,
+              border: '1px solid var(--borda-media)', borderRadius: 4,
+              backgroundColor: 'var(--bg-card)', color: 'var(--texto-principal)',
+            }}
+          />
+        )}
+      </label>
+
+      {expandido && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+        }}>
+          <div style={{
+            background: 'var(--bg-card)', borderRadius: 8, width: '100%', maxWidth: 880, height: '85vh',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.25)', border: '1px solid var(--borda-media)',
+          }}>
+            <div style={{
+              padding: '10px 16px', background: 'var(--cor-primaria)', flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#fff', fontSize: 14, fontWeight: 600 }}>
+                <Maximize2 size={15} /> {label}
+              </div>
+              <button
+                type="button"
+                onClick={() => setExpandido(false)}
+                style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 4, width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff' }}
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <textarea
+              autoFocus
+              value={draft}
+              onChange={e => setDraft(e.target.value)}
+              placeholder={placeholder}
+              style={{
+                flex: 1, width: '100%', resize: 'none', padding: 16, fontSize: 14.5, lineHeight: 1.6,
+                border: 'none', outline: 'none', fontFamily: 'inherit',
+                backgroundColor: 'var(--bg-card)', color: 'var(--texto-principal)',
+              }}
+            />
+            <div style={{
+              display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '10px 16px',
+              borderTop: '1px solid var(--borda-suave)', flexShrink: 0,
+            }}>
+              <button
+                type="button"
+                onClick={() => setExpandido(false)}
+                style={{
+                  padding: '7px 14px', fontSize: 12.5,
+                  background: 'none', border: '1px solid var(--borda-media)', borderRadius: 5,
+                  cursor: 'pointer', color: 'var(--texto-secundario)',
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={salvarExpandido}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '7px 16px', fontSize: 12.5, fontWeight: 600,
+                  backgroundColor: 'var(--cor-primaria)', color: '#fff',
+                  border: 'none', borderRadius: 5, cursor: 'pointer',
+                }}
+              >
+                <Save size={13} /> Aplicar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
-    </label>
+    </>
   )
 }
 
