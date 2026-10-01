@@ -4,7 +4,7 @@ import { Suspense } from 'react'
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
-import { Plus, Search, ChevronLeft, ChevronRight, Pencil, PowerOff } from 'lucide-react'
+import { Plus, Search, ChevronLeft, ChevronRight, Pencil, PowerOff, FileBarChart } from 'lucide-react'
 import type { PessoaListItem, PessoaListResponse } from '@/types/cadastros.types'
 import { formatCpfCnpj } from '@/lib/utils'
 
@@ -104,10 +104,18 @@ function PessoasPageInner() {
             {subtitle}
           </div>
         </div>
-        <button className="btn-primary" onClick={() => router.push(novoHref)}>
-          <Plus size={15} />
-          {btnLabel}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {papel === 'paciente' && (
+            <button className="btn-ghost" onClick={() => router.push('/cadastro/pessoas/relatorio-indicacoes')}>
+              <FileBarChart size={15} />
+              Relatório de Indicações
+            </button>
+          )}
+          <button className="btn-primary" onClick={() => router.push(novoHref)}>
+            <Plus size={15} />
+            {btnLabel}
+          </button>
+        </div>
       </div>
 
       <div className="page-body">
