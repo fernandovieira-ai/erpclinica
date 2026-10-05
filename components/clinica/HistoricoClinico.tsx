@@ -8,15 +8,17 @@ import {
   FileSignature, ExternalLink, Printer, Loader2, Paperclip, Trash2, ClipboardCheck, FileWarning,
   Maximize2,
 } from 'lucide-react'
-import type { AgendamentoListItem, Prontuario, ProntuarioAnexo, ReceitaMedica, ReceitaSistemaRegistro, AtestadoMedicoRegistro, ReceituarioEspecialRegistro } from '@/types/clinica.types'
+import type { AgendamentoListItem, Prontuario, ProntuarioAnexo, ReceitaMedica, ReceitaSistemaRegistro, AtestadoMedicoRegistro, ReceituarioEspecialRegistro, SolicitacaoExameRegistro } from '@/types/clinica.types'
 import VoaPluginView, { preconectarVoa, type Status as VoaStatus, type VoaPluginHandle } from './VoaPluginView'
 import MemedPrescricao from './MemedPrescricao'
 import ReceitaSistema from './ReceitaSistema'
 import AtestadoMedico from './AtestadoMedico'
 import ReceituarioEspecial from './ReceituarioEspecial'
+import SolicitacaoExame from './SolicitacaoExame'
 import { gerarHtmlReceita, type DadosPrescritor } from './receitaSistemaPrint'
 import { gerarHtmlAtestado } from './atestadoPrint'
 import { gerarHtmlReceituarioEspecial } from './receituarioEspecialPrint'
+import { gerarHtmlSolicitacaoExame } from './solicitacaoExamePrint'
 
 const STATUS_COLOR: Record<string, string> = {
   AGENDADO:   '#378ADD',
@@ -41,6 +43,12 @@ const MEMED_COR  = '#059669'
 const SISTEMA_COR = '#1E7FC3'
 const ATESTADO_COR = '#0F766E'
 const RECEITUARIO_COR = '#B02A37'
+const SOLICITACAO_EXAME_COR = '#B45309'
+
+const CARATER_EXAME_LABEL: Record<SolicitacaoExameRegistro['caracter'], string> = {
+  ROTINA:   'Rotina',
+  URGENCIA: 'Urgência',
+}
 
 const TIPO_ATESTADO_LABEL: Record<AtestadoMedicoRegistro['tipo'], string> = {
   AFASTAMENTO:    'Afastamento',
@@ -370,6 +378,9 @@ const HistoricoClinico = forwardRef<HistoricoClinicoHandle, Props>(function Hist
   const [receituarioId, setReceituarioId] = useState<number | null>(null)
   const [receituarios, setReceituarios] = useState<Record<number, ReceituarioEspecialRegistro[]>>({})
   const [reimprimindoReceituarioId, setReimprimindoReceituarioId] = useState<number | null>(null)
+  const [solicitacaoExameId, setSolicitacaoExameId] = useState<number | null>(null)
+  const [solicitacoesExame, setSolicitacoesExame] = useState<Record<number, SolicitacaoExameRegistro[]>>({})
+  const [reimprimindoSolicitacaoExameId, setReimprimindoSolicitacaoExameId] = useState<number | null>(null)
   const [anexos, setAnexos] = useState<Record<number, ProntuarioAnexo[]>>({})
   const [enviandoAnexoId, setEnviandoAnexoId] = useState<number | null>(null)
   const [anexoAlvoId, setAnexoAlvoId] = useState<number | null>(null)
@@ -417,12 +428,13 @@ const HistoricoClinico = forwardRef<HistoricoClinicoHandle, Props>(function Hist
 
     // Estágio 2 — o resto do histórico (documentos emitidos), em segundo plano, sem
     // bloquear a tela nem reativar o spinner de "Carregando histórico...".
-    const [dataRe, dataRs, dataAn, dataAt, dataRce] = await Promise.all([
+    const [dataRe, dataRs, dataAn, dataAt, dataRce, dataSe] = await Promise.all([
       buscar(`/api/clinica/receitas?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
       buscar(`/api/clinica/receitas-sistema?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
       buscar(`/api/clinica/prontuarios/anexos?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
       buscar(`/api/clinica/atestados?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
       buscar(`/api/clinica/receituarios-especiais?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
+      buscar(`/api/clinica/solicitacoes-exame?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
     ])
     const mapaReceitas: Record<number, ReceitaMedica[]> = {}
     for (const r of (dataRe.dados ?? []) as ReceitaMedica[]) {
@@ -444,11 +456,16 @@ const HistoricoClinico = forwardRef<HistoricoClinicoHandle, Props>(function Hist
     for (const r of (dataRce.dados ?? []) as ReceituarioEspecialRegistro[]) {
       (mapaReceituarios[r.agendamento_id] ??= []).push(r)
     }
+    const mapaSolicitacoesExame: Record<number, SolicitacaoExameRegistro[]> = {}
+    for (const s of (dataSe.dados ?? []) as SolicitacaoExameRegistro[]) {
+      (mapaSolicitacoesExame[s.agendamento_id] ??= []).push(s)
+    }
     setReceitas(mapaReceitas)
     setReceitasSistema(mapaReceitasSistema)
     setAnexos(mapaAnexos)
     setAtestados(mapaAtestados)
     setReceituarios(mapaReceituarios)
+    setSolicitacoesExame(mapaSolicitacoesExame)
   }, [pacienteId, agendamentoAtual, buscar])
 
   useEffect(() => { carregar() }, [carregar])
@@ -720,6 +737,25 @@ const HistoricoClinico = forwardRef<HistoricoClinicoHandle, Props>(function Hist
     }
   }
 
+  async function reimprimirSolicitacaoExame(reg: SolicitacaoExameRegistro, ag: AgendamentoListItem) {
+    setReimprimindoSolicitacaoExameId(reg.id)
+    // Ver comentário em reimprimirReceitaSistema — janela abre antes do await de propósito.
+    const win = window.open('', '_blank', 'width=820,height=1050')
+    try {
+      const res = await fetch(`/api/clinica/receitas-sistema?dados=true&agendamento_id=${reg.agendamento_id}`)
+      if (!res.ok) throw new Error('Falha')
+      const d = await res.json()
+      const dados: DadosPrescritor | null = d.dados ?? null
+      const html = gerarHtmlSolicitacaoExame(reg.caracter, reg.indicacao_clinica, reg.exames, dados, ag.paciente_nome, ag.profissional_nome)
+      if (win) { win.document.write(html); win.document.close() }
+    } catch {
+      win?.close()
+      toast.error('Erro ao gerar solicitação de exame para impressão')
+    } finally {
+      setReimprimindoSolicitacaoExameId(null)
+    }
+  }
+
   if (loading) {
     return <div style={{ fontSize: 12, color: 'var(--texto-terciario)', padding: 12 }}>Carregando histórico...</div>
   }
@@ -807,6 +843,19 @@ const HistoricoClinico = forwardRef<HistoricoClinicoHandle, Props>(function Hist
                 }}
               >
                 <FileWarning size={12} /> Receituário Especial
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSolicitacaoExameId(ag.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
+                  background: 'none', border: `1px solid ${SOLICITACAO_EXAME_COR}`, borderRadius: 4,
+                  cursor: 'pointer', color: SOLICITACAO_EXAME_COR,
+                }}
+              >
+                <FlaskConical size={12} /> Solicitar Exame
               </button>
 
               <button
@@ -901,6 +950,16 @@ const HistoricoClinico = forwardRef<HistoricoClinicoHandle, Props>(function Hist
                 profissionalNome={ag.profissional_nome}
                 onFechar={() => setReceituarioId(null)}
                 onEmitido={() => { setReceituarioId(null); carregar() }}
+              />
+            )}
+
+            {solicitacaoExameId === ag.id && (
+              <SolicitacaoExame
+                agendamentoId={ag.id}
+                pacienteNome={ag.paciente_nome}
+                profissionalNome={ag.profissional_nome}
+                onFechar={() => setSolicitacaoExameId(null)}
+                onEmitido={() => { setSolicitacaoExameId(null); carregar() }}
               />
             )}
 
@@ -1041,6 +1100,44 @@ const HistoricoClinico = forwardRef<HistoricoClinicoHandle, Props>(function Hist
                       }}
                     >
                       {reimprimindoReceituarioId === r.id
+                        ? <Loader2 size={11} />
+                        : <Printer size={11} />}
+                      Ver/reimprimir
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!!solicitacoesExame[ag.id]?.length && (
+              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--texto-terciario)' }}>
+                  Solicitações de exame
+                </div>
+                {solicitacoesExame[ag.id].map(s => (
+                  <div key={s.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+                    backgroundColor: 'var(--bg-input)', borderRadius: 5, fontSize: 12,
+                  }}>
+                    <FlaskConical size={13} style={{ color: SOLICITACAO_EXAME_COR, flexShrink: 0 }} />
+                    <span style={{ color: 'var(--texto-terciario)', fontFamily: 'var(--fonte-mono)', fontSize: 11 }}>
+                      {new Date(s.created_at).toLocaleDateString('pt-BR')}
+                    </span>
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--texto-principal)' }}>
+                      {CARATER_EXAME_LABEL[s.caracter]} — {s.exames.split('\n')[0] || 'Solicitação emitida'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => reimprimirSolicitacaoExame(s, ag)}
+                      disabled={reimprimindoSolicitacaoExameId === s.id}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 3,
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: SOLICITACAO_EXAME_COR, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
+                        padding: 0, opacity: reimprimindoSolicitacaoExameId === s.id ? 0.6 : 1,
+                      }}
+                    >
+                      {reimprimindoSolicitacaoExameId === s.id
                         ? <Loader2 size={11} />
                         : <Printer size={11} />}
                       Ver/reimprimir

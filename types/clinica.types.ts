@@ -236,6 +236,23 @@ export interface ReceituarioEspecialRegistro {
   created_at:        string
 }
 
+export interface ExamePadrao {
+  id:         number
+  nome:       string
+  created_at: string
+}
+
+export interface SolicitacaoExameRegistro {
+  id:                number
+  agendamento_id:    number
+  paciente_id:       number
+  caracter:          'ROTINA' | 'URGENCIA'
+  indicacao_clinica: string | null
+  exames:            string
+  created_by:        string | null
+  created_at:        string
+}
+
 export interface ProfissionalListItem {
   id:              number
   nome:            string
