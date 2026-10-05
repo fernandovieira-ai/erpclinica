@@ -22,7 +22,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
             memed_api_key, memed_ambiente,
             (memed_secret_key IS NOT NULL) AS memed_secret_key_configured,
             logo_base64,
-            ativo, permite_agendamento_retroativo, created_at, updated_at
+            ativo, permite_agendamento_retroativo,
+            paciente_exige_data_nascimento, paciente_exige_cpf_cnpj, paciente_exige_celular,
+            created_at, updated_at
      FROM tab_empresa
      WHERE id = $1`,
     [params.id],
@@ -70,8 +72,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
        memed_api_key=$29, memed_ambiente=$30,
        memed_secret_key=COALESCE(NULLIF($31, ''), memed_secret_key),
        logo_base64=$32,
-       ativo=$33, permite_agendamento_retroativo=$34, updated_at=NOW()
-     WHERE id = $35`,
+       ativo=$33, permite_agendamento_retroativo=$34,
+       paciente_exige_data_nascimento=$35, paciente_exige_cpf_cnpj=$36, paciente_exige_celular=$37,
+       updated_at=NOW()
+     WHERE id = $38`,
     [
       up(d.razao_social), up(d.nome_fantasia), up(d.cnpj), up(d.ie), up(d.im),
       d.regime_tributario, d.crt,
@@ -87,6 +91,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       d.logo_base64 || null,
       d.ativo,
       d.permite_agendamento_retroativo,
+      d.paciente_exige_data_nascimento, d.paciente_exige_cpf_cnpj, d.paciente_exige_celular,
       params.id,
     ],
   )

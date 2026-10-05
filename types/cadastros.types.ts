@@ -120,6 +120,9 @@ export interface Empresa {
   logo_base64:       string | null
   ativo:             boolean
   permite_agendamento_retroativo: boolean
+  paciente_exige_data_nascimento: boolean
+  paciente_exige_cpf_cnpj:        boolean
+  paciente_exige_celular:         boolean
   created_at:        string
   updated_at:        string
 }

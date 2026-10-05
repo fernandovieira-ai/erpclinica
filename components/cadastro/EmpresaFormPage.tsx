@@ -176,6 +176,7 @@ export default function EmpresaFormPage({ empresa }: Props) {
       serie_nfe: '001', prox_num_nfe: 1, serie_nfce: '001', prox_num_nfce: 1,
       voa_ambiente: 'desenvolvimento',
       memed_ambiente: 'homologacao',
+      paciente_exige_celular: true,
     },
   })
 
@@ -225,6 +226,9 @@ export default function EmpresaFormPage({ empresa }: Props) {
       logo_base64:       empresa.logo_base64 ?? null,
       ativo:             empresa.ativo,
       permite_agendamento_retroativo: empresa.permite_agendamento_retroativo ?? false,
+      paciente_exige_data_nascimento: empresa.paciente_exige_data_nascimento ?? false,
+      paciente_exige_cpf_cnpj:        empresa.paciente_exige_cpf_cnpj ?? false,
+      paciente_exige_celular:         empresa.paciente_exige_celular ?? true,
     })
     setLogoPreview(empresa.logo_base64 ?? null)
   }, [empresa, reset])
@@ -592,6 +596,19 @@ export default function EmpresaFormPage({ empresa }: Props) {
               <Check label="Permite agendamento com data/horário retroativo" {...register('permite_agendamento_retroativo')} />
               <span style={{ fontSize: 11, color: 'var(--texto-secundario)' }}>
                 Quando marcado, a recepção pode lançar um novo agendamento com data/hora no passado (útil pra registrar atendimentos com atraso, sem precisar mudar a data do computador).
+              </span>
+            </div>
+
+            {/* Parâmetros de cadastro rápido de paciente */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingLeft: 126, marginTop: 12 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--texto-terciario)', textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                Cadastro rápido de paciente (modal de agendamento)
+              </span>
+              <Check label="Exige data de nascimento" {...register('paciente_exige_data_nascimento')} />
+              <Check label="Exige CPF / CNPJ" {...register('paciente_exige_cpf_cnpj')} />
+              <Check label="Exige celular" {...register('paciente_exige_celular')} />
+              <span style={{ fontSize: 11, color: 'var(--texto-secundario)' }}>
+                Define quais campos são obrigatórios ao cadastrar um paciente novo direto na tela de agendamento. Desmarcados, o campo fica opcional (nome continua sempre obrigatório).
               </span>
             </div>
             </div>

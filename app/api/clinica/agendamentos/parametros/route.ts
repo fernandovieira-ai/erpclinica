@@ -11,11 +11,16 @@ export async function GET(req: NextRequest) {
 
   const db = getDb(session.database_name)
   const { rows } = await db.query(
-    `SELECT permite_agendamento_retroativo FROM tab_empresa WHERE id = $1`,
+    `SELECT permite_agendamento_retroativo,
+            paciente_exige_data_nascimento, paciente_exige_cpf_cnpj, paciente_exige_celular
+     FROM tab_empresa WHERE id = $1`,
     [session.empresa_id_ativa],
   )
 
   return NextResponse.json({
     permite_agendamento_retroativo: rows[0]?.permite_agendamento_retroativo ?? false,
+    paciente_exige_data_nascimento: rows[0]?.paciente_exige_data_nascimento ?? false,
+    paciente_exige_cpf_cnpj:        rows[0]?.paciente_exige_cpf_cnpj ?? false,
+    paciente_exige_celular:         rows[0]?.paciente_exige_celular ?? true,
   })
 }

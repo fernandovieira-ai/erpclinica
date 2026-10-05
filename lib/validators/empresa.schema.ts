@@ -51,6 +51,10 @@ export const empresaSchema = z.object({
   ativo:              z.boolean().default(true),
   // Parametro de agendamento
   permite_agendamento_retroativo: z.boolean().default(false),
+  // Parametros de cadastro rapido de paciente (modal de agendamento)
+  paciente_exige_data_nascimento: z.boolean().default(false),
+  paciente_exige_cpf_cnpj:        z.boolean().default(false),
+  paciente_exige_celular:         z.boolean().default(true),
 })
 
 export type EmpresaInput = z.infer<typeof empresaSchema>

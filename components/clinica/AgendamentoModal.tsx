@@ -116,6 +116,10 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
   const [estornando,    setEstornando]    = useState(false)
   const [carregado,     setCarregado]     = useState(false)
   const [permiteRetroativo, setPermiteRetroativo] = useState(false)
+  // Valores seguros por padrão (exige tudo) até a resposta de /parametros chegar
+  const [exigeDataNascimento, setExigeDataNascimento] = useState(true)
+  const [exigeCpfCnpj,        setExigeCpfCnpj]        = useState(false)
+  const [exigeCelular,        setExigeCelular]        = useState(true)
 
   const [horarioPickerOpen, setHorarioPickerOpen] = useState(false)
 
@@ -171,6 +175,9 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
     let cancelado = false
     setCarregado(false)
     setPermiteRetroativo(false) // valor seguro por padrão até a resposta chegar (ou em caso de falha)
+    setExigeDataNascimento(true)
+    setExigeCpfCnpj(false)
+    setExigeCelular(true)
     Promise.all([
       fetch('/api/clinica/profissionais').then(r => r.json()),
       // limit=100 (máximo da rota): o padrão é 50 e cortaria em silêncio os tipos além do 50º
@@ -183,6 +190,9 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
       setTipos(t.dados ?? [])
       setCategorias(c.dados ?? [])
       setPermiteRetroativo(!!parametros.permite_agendamento_retroativo)
+      setExigeDataNascimento(!!parametros.paciente_exige_data_nascimento)
+      setExigeCpfCnpj(!!parametros.paciente_exige_cpf_cnpj)
+      setExigeCelular(parametros.paciente_exige_celular ?? true)
       setCarregado(true)
     }).catch(() => {
       if (cancelado) return
@@ -377,9 +387,10 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
       return
     }
 
-    if (!formCad.nome.trim())     { toast.error('Informe o nome do paciente'); return }
-    if (!formCad.data_nascimento) { toast.error('Informe a data de nascimento'); return }
-    if (!formCad.celular.trim())  { toast.error('Informe o celular'); return }
+    if (!formCad.nome.trim())                          { toast.error('Informe o nome do paciente'); return }
+    if (exigeDataNascimento && !formCad.data_nascimento) { toast.error('Informe a data de nascimento'); return }
+    if (exigeCelular && !formCad.celular.trim())        { toast.error('Informe o celular'); return }
+    if (exigeCpfCnpj && !formCad.cpf_cnpj.trim())       { toast.error('Informe o CPF / CNPJ'); return }
     if (formCad.cpf_cnpj.trim() && !validarCpfCnpj(formCad.cpf_cnpj)) { toast.error('CPF / CNPJ inválido'); return }
     if (temDuplicataAlta && !confirmarNaoDuplicado) {
       toast.error('Confirme que não é um cadastro duplicado antes de continuar')
@@ -783,7 +794,10 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     <div>
                       <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--texto-terciario)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>
-                        Data de Nascimento<span style={{ color: 'var(--cor-erro)', marginLeft: 2 }}>*</span>
+                        Data de Nascimento
+                        {exigeDataNascimento
+                          ? <span style={{ color: 'var(--cor-erro)', marginLeft: 2 }}>*</span>
+                          : <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}> (opcional)</span>}
                       </div>
                       <input
                         type="date"
@@ -799,7 +813,10 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                     </div>
                     <div>
                       <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--texto-terciario)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>
-                        CPF / CNPJ <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(opcional)</span>
+                        CPF / CNPJ
+                        {exigeCpfCnpj
+                          ? <span style={{ color: 'var(--cor-erro)', marginLeft: 2 }}>*</span>
+                          : <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}> (opcional)</span>}
                       </div>
                       <input
                         value={formCad.cpf_cnpj}
@@ -901,7 +918,10 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                   {!cpfJaCadastrado && (
                   <div>
                     <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--texto-terciario)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>
-                      Celular<span style={{ color: 'var(--cor-erro)', marginLeft: 2 }}>*</span>
+                      Celular
+                      {exigeCelular
+                        ? <span style={{ color: 'var(--cor-erro)', marginLeft: 2 }}>*</span>
+                        : <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}> (opcional)</span>}
                     </div>
                     <input
                       value={formCad.celular}
@@ -929,7 +949,12 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                       onClick={handleCadastroRapido}
                       disabled={
                         salvandoCad || verificandoCpf || verificandoDuplicidade ||
-                        (!cpfJaCadastrado && (!formCad.nome.trim() || !formCad.data_nascimento || !formCad.celular.trim())) ||
+                        (!cpfJaCadastrado && (
+                          !formCad.nome.trim() ||
+                          (exigeDataNascimento && !formCad.data_nascimento) ||
+                          (exigeCelular && !formCad.celular.trim()) ||
+                          (exigeCpfCnpj && !formCad.cpf_cnpj.trim())
+                        )) ||
                         (temDuplicataAlta && !confirmarNaoDuplicado)
                       }
                       style={{
