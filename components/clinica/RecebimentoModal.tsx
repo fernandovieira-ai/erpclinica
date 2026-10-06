@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { X, DollarSign, CreditCard, Percent, Check, Lock } from 'lucide-react'
+import { X, DollarSign, CreditCard, Percent, Check, Plus } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { AgendamentoListItem } from '@/types/clinica.types'
@@ -24,13 +24,20 @@ interface CondicaoPagamento {
   intervalo_dias: number
 }
 
-interface FormRecebimento {
+// Uma linha por forma de pagamento já adicionada ao recebimento — pagamento misto (ex.:
+// metade dinheiro, metade cartão) é só adicionar mais de uma. O caso comum (forma única)
+// é adicionar 1 vez só, com o valor cheio.
+interface FormaPagamentoLinha {
   condicao_pagamento_id: number
+  valor: number
+  nsu: string
+  parcelas_cartao: number
+}
+
+interface FormRecebimento {
   desconto: number
   acrescimo: number
   observacao: string
-  nsu: string
-  parcelas_cartao: number
 }
 
 function round2(v: number) {
@@ -72,21 +79,29 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
   const [executores, setExecutores] = useState<Record<number, Partial<ExecutorDef>>>({})
 
   const [form, setForm] = useState<FormRecebimento>({
-    condicao_pagamento_id: 0,
     desconto: 0,
     acrescimo: 0,
     observacao: '',
-    nsu: '',
-    parcelas_cartao: 1,
   })
+  // Formas já adicionadas (lista que será enviada pro backend) + a forma em edição
+  // (select + valor + botão "Adicionar", ainda não incluída na lista).
+  const [formasPagamento, setFormasPagamento] = useState<FormaPagamentoLinha[]>([])
+  const [novaForma, setNovaForma] = useState<FormaPagamentoLinha>({ condicao_pagamento_id: 0, valor: 0, nsu: '', parcelas_cartao: 1 })
 
   const listaAgs = (agendamentos && agendamentos.length > 0) ? agendamentos : (agendamento ? [agendamento] : [])
-  const condicaoSelecionada = condicoes.find(c => c.id === form.condicao_pagamento_id)
-  const isCartaoSelecionado = condicaoSelecionada?.tipo_pagamento === 'debito' || condicaoSelecionada?.tipo_pagamento === 'credito'
-  const isCreditoParcelavel = condicaoSelecionada?.tipo_pagamento === 'credito' && condicaoSelecionada.num_parcelas > 1
+  // A primeira forma JÁ ADICIONADA decide o preço de tabela (à vista x a prazo) — mesma
+  // condição que o backend usa como referência (ver app/api/clinica/recebimentos/route.ts).
+  // Antes de adicionar a primeira forma, usa a condição em edição (novaForma) como prévia —
+  // depois disso, fica travada no que já foi adicionado, pra trocar a forma seguinte (ex.:
+  // escolher o cartão da 2ª parcela) não mudar retroativamente o preço/total já alocado.
+  const condicaoPrimeira = condicoes.find(c => c.id === (formasPagamento[0]?.condicao_pagamento_id ?? novaForma.condicao_pagamento_id))
+  // Condição atualmente selecionada na linha "forma em edição" — usada só pros campos
+  // condicionais dela (PIX/parcelas/NSU), que precisam refletir a escolha atual mesmo depois
+  // que condicaoPrimeira já travou no preço da 1ª forma adicionada.
+  const condicaoNovaForma = condicoes.find(c => c.id === novaForma.condicao_pagamento_id)
 
   function getValorBase(ag: AgendamentoListItem): number {
-    const isPrazo = condicaoSelecionada?.tipo === 'P'
+    const isPrazo = condicaoPrimeira?.tipo === 'P'
     const valorVista = Number(ag.tipo_valor) || 0
     const valorPrazo = ag.tipo_valor_prazo != null ? Number(ag.tipo_valor_prazo) : null
     return isPrazo && valorPrazo !== null ? valorPrazo : valorVista
@@ -121,19 +136,35 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
     setForm(prev => ({ ...prev, desconto: 0, acrescimo: 0, observacao: '' }))
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Zera desconto/acréscimo quando muda a condição de pagamento (à vista vs a prazo têm
+  // Zera desconto/acréscimo quando muda a condição de referência (à vista vs a prazo têm
   // valores de tabela diferentes — um desconto calculado sobre o valor errado confundiria).
   useEffect(() => {
-    if (!open || condicoes.length === 0 || form.condicao_pagamento_id === 0) return
+    if (!open || condicoes.length === 0 || !condicaoPrimeira) return
     setForm(prev => ({ ...prev, desconto: 0, acrescimo: 0 }))
-  }, [form.condicao_pagamento_id, condicoes]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [condicaoPrimeira?.id, condicoes, open]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reabre do zero a cada abertura — a lista de formas já adicionadas é específica de cada
+  // recebimento, não pode vazar de uma abertura do modal pra outra.
+  useEffect(() => {
+    if (!open) return
+    setFormasPagamento([])
+  }, [open])
 
   const valorBase = listaAgs.reduce((acc, ag) => acc + getValorBase(ag), 0)
+  const totalComAjustes = valorBase - form.desconto + form.acrescimo
+  const somaFormas = round2(formasPagamento.reduce((acc, f) => acc + (Number(f.valor) || 0), 0))
+  const restanteAlocar = round2(totalComAjustes - somaFormas)
+  const formasBatem = Math.abs(restanteAlocar) <= 0.01
 
-  // Zera a quantidade de parcelas do cartão sempre que a condição de pagamento muda
+  // O valor sugerido da próxima forma a adicionar é sempre o que falta alocar — assim, no
+  // caso comum (1 forma só), já vem preenchido com o total e basta clicar "Adicionar".
   useEffect(() => {
-    setForm(prev => ({ ...prev, parcelas_cartao: 1 }))
-  }, [form.condicao_pagamento_id])
+    setNovaForma(prev => {
+      const sugestao = round2(Math.max(0, restanteAlocar))
+      if (prev.valor === sugestao) return prev
+      return { ...prev, valor: sugestao }
+    })
+  }, [restanteAlocar]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function carregarCondicoesPagamento() {
     setLoadingCondicoes(true)
@@ -143,7 +174,7 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
       const data = await res.json()
       setCondicoes(data.dados ?? [])
       if (data.dados?.length > 0) {
-        setForm(prev => ({ ...prev, condicao_pagamento_id: data.dados[0].id }))
+        setNovaForma(prev => ({ ...prev, condicao_pagamento_id: data.dados[0].id }))
       }
     } catch (error) {
       console.error('Erro ao carregar condições:', error)
@@ -152,24 +183,66 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
     }
   }
 
-  const totalComAjustes = valorBase - form.desconto + form.acrescimo
+  function adicionarForma() {
+    if (!novaForma.condicao_pagamento_id) {
+      toast.error('Selecione a condição de pagamento')
+      return
+    }
+    if (!novaForma.valor || novaForma.valor <= 0) {
+      toast.error('Informe um valor a receber maior que zero')
+      return
+    }
+    setFormasPagamento(prev => [...prev, { ...novaForma }])
+  }
+
+  function removerForma(idx: number) {
+    setFormasPagamento(prev => prev.filter((_, i) => i !== idx))
+  }
 
   async function handleSalvar() {
     if (listaAgs.length === 0) return
 
-    if (!form.condicao_pagamento_id) {
-      toast.error('Selecione uma condição de pagamento')
-      return
-    }
-
-    if (valorBase <= 0) {
+    if (valorBase < 0) {
       toast.error('Valor da consulta inválido — verifique o cadastro do tipo de atendimento')
       return
     }
 
-    if (totalComAjustes <= 0) {
-      toast.error('Total a receber deve ser maior que zero')
+    // valorBase === 0 é válido (ex.: RETORNO sem cobrança) — só bloqueia quando o
+    // desconto reduz uma consulta que tinha valor de tabela pra zero ou menos.
+    if (totalComAjustes < 0 || (valorBase > 0 && totalComAjustes <= 0)) {
+      toast.error('Total a receber inválido — desconto não pode ser maior ou igual ao valor da consulta')
       return
+    }
+
+    const ehCartaoOuPrazoPrimeira = condicaoPrimeira?.tipo_pagamento === 'debito'
+      || condicaoPrimeira?.tipo_pagamento === 'credito'
+      || condicaoPrimeira?.tipo_pagamento === 'a_prazo'
+
+    if (totalComAjustes === 0) {
+      // Sem valor a cobrar: nada a adicionar, só a condição selecionada acima — ela sozinha
+      // vira a única "forma" enviada (ver montagem do payload mais abaixo).
+      if (!novaForma.condicao_pagamento_id) {
+        toast.error('Selecione a condição de pagamento')
+        return
+      }
+      if (ehCartaoOuPrazoPrimeira) {
+        toast.error('Atendimento sem valor a cobrar (R$ 0,00) — selecione uma condição à vista em dinheiro ou PIX para confirmar')
+        return
+      }
+    } else {
+      if (formasPagamento.length === 0) {
+        toast.error('Adicione ao menos uma forma de pagamento')
+        return
+      }
+      if (!formasBatem) {
+        toast.error(`A soma das formas de pagamento (${fmtValor(somaFormas)}) não bate com o total a receber (${fmtValor(totalComAjustes)})`)
+        return
+      }
+      const qtdAPrazo = formasPagamento.filter(f => condicoes.find(c => c.id === f.condicao_pagamento_id)?.tipo_pagamento === 'a_prazo').length
+      if (qtdAPrazo > 1) {
+        toast.error('Só é permitida uma forma de pagamento a prazo por recebimento')
+        return
+      }
     }
 
     for (const ag of listaAgs) {
@@ -215,16 +288,31 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
         }
       })
 
-      // Uma única chamada — gera 1 movimento, 1 título (se necessário) e N recebimentos
+      // Sem valor a cobrar: a condição selecionada (sem lista de formas) vira a única forma
+      // enviada, com valor 0 — não passa pelas linhas já adicionadas (não existem nesse caso).
+      const linhasParaEnviar = totalComAjustes === 0
+        ? [{ ...novaForma, valor: 0 }]
+        : formasPagamento
+      const formasPayload = linhasParaEnviar.map(linha => {
+        const condicaoLinha = condicoes.find(c => c.id === linha.condicao_pagamento_id)
+        const linhaCartao = condicaoLinha?.tipo_pagamento === 'debito' || condicaoLinha?.tipo_pagamento === 'credito'
+        const linhaCreditoParcelavel = condicaoLinha?.tipo_pagamento === 'credito' && (condicaoLinha?.num_parcelas ?? 0) > 1
+        return {
+          condicao_pagamento_id: linha.condicao_pagamento_id,
+          valor: linha.valor,
+          nsu: linhaCartao ? (linha.nsu.trim() || null) : null,
+          parcelas_cartao: linhaCreditoParcelavel ? linha.parcelas_cartao : null,
+        }
+      })
+
+      // Uma única chamada — gera 1 instrumento por forma de pagamento e N recebimentos
       const res = await fetch('/api/clinica/recebimentos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          condicao_pagamento_id: form.condicao_pagamento_id,
           observacao: form.observacao,
-          nsu: isCartaoSelecionado ? (form.nsu.trim() || null) : null,
-          parcelas_cartao: isCreditoParcelavel ? form.parcelas_cartao : null,
           itens,
+          formas_pagamento: formasPayload,
         }),
       })
 
@@ -343,9 +431,9 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
                 <div>
                   <div style={{ color: 'var(--texto-terciario)', marginBottom: 2 }}>
                     Valor da Consulta
-                    {condicaoSelecionada && (
-                      <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: condicaoSelecionada.tipo === 'P' ? 'var(--cor-aviso)' : 'var(--cor-sucesso)' }}>
-                        ({condicaoSelecionada.tipo === 'P' ? 'A PRAZO' : 'À VISTA'})
+                    {condicaoPrimeira && (
+                      <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: condicaoPrimeira.tipo === 'P' ? 'var(--cor-aviso)' : 'var(--cor-sucesso)' }}>
+                        ({condicaoPrimeira.tipo === 'P' ? 'A PRAZO' : 'À VISTA'})
                       </span>
                     )}
                   </div>
@@ -449,105 +537,12 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
             </div>
           ))}
 
-          {/* Condição de Pagamento */}
-          <Field style={{ marginBottom: 20 }}>
-            <Label>Condição de Pagamento</Label>
-            <select
-              value={form.condicao_pagamento_id}
-              onChange={e => setForm({ ...form, condicao_pagamento_id: Number(e.target.value) })}
-              disabled={loadingCondicoes}
-              className="input-field"
-              style={{
-                fontSize: 13,
-                fontWeight: 500,
-                padding: '10px 12px',
-              }}
-            >
-              <option value={0}>Selecione uma condição...</option>
-              {condicoes.map(cond => {
-                const sufixoCartao = cond.tipo_pagamento === 'debito' ? ' [DÉBITO]' : cond.tipo_pagamento === 'credito' ? ' [CRÉDITO]' : ''
-                const label = `${cond.descricao}${cond.tipo === 'P' && cond.num_parcelas > 1 ? ` (${cond.num_parcelas}x)` : ''}${cond.tipo_pagamento === 'pix' ? ' [PIX]' : ''}${sufixoCartao}`
-                return (
-                  <option key={cond.id} value={cond.id}>
-                    {label}
-                  </option>
-                )
-              })}
-            </select>
-            {loadingCondicoes && (
-              <div style={{ fontSize: 12, color: 'var(--texto-terciario)', marginTop: 6 }}>
-                Carregando...
-              </div>
-            )}
-            {condicaoSelecionada?.tipo_pagamento === 'pix' && (
-              <div style={{
-                fontSize: 12,
-                color: 'var(--cor-primaria)',
-                marginTop: 8,
-                padding: '8px 10px',
-                background: 'var(--cor-primaria-light)',
-                borderRadius: 4,
-              }}>
-                ✓ PIX - Conta bancária pré-configurada
-              </div>
-            )}
-            {isCreditoParcelavel && (
-              <Field style={{ marginTop: 8 }}>
-                <Label>Nº de Parcelas</Label>
-                <select
-                  value={form.parcelas_cartao}
-                  onChange={e => setForm({ ...form, parcelas_cartao: Number(e.target.value) })}
-                  className="input-field"
-                  style={{ fontSize: 13, fontWeight: 500, padding: '10px 12px' }}
-                >
-                  {Array.from({ length: condicaoSelecionada!.num_parcelas }, (_, i) => i + 1).map(n => (
-                    <option key={n} value={n}>{n}x{n === 1 ? ' (à vista)' : ''}</option>
-                  ))}
-                </select>
-              </Field>
-            )}
-            {isCartaoSelecionado && (
-              <Field style={{ marginTop: 8 }}>
-                <Label>NSU do Cartão (opcional)</Label>
-                <input
-                  type="text"
-                  value={form.nsu}
-                  onChange={e => setForm({ ...form, nsu: e.target.value })}
-                  placeholder="Nº do comprovante da maquininha"
-                  className="input-field"
-                  style={{ fontSize: 13, padding: '10px 12px' }}
-                />
-              </Field>
-            )}
-          </Field>
-
-          {/* Valores */}
+          {/* Valores — o valor da consulta (tabela) já aparece acima, em "Informações da
+              Consulta"/"Atendimentos", então aqui só entram os campos realmente editáveis
+              (desconto/acréscimo) + o total. */}
           <Field style={{ marginBottom: 20 }}>
             <Label>Valores</Label>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: 10,
-                background: 'var(--bg-card)',
-                borderRadius: 6,
-                border: '0.5px solid var(--borda-suave)',
-              }}>
-                <Lock size={16} style={{ color: 'var(--texto-terciario)', flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginBottom: 2 }}>
-                    Valor da Consulta (tabela)
-                  </div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--texto-principal)' }}>
-                    {fmtValor(valorBase)}
-                  </div>
-                </div>
-                <span style={{ fontSize: 10, color: 'var(--texto-terciario)' }}>
-                  não editável — use o desconto abaixo
-                </span>
-              </div>
 
               <div style={{
                 display: 'flex',
@@ -638,6 +633,192 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
                 </div>
               </div>
             </div>
+          </Field>
+
+          {/* Formas de Pagamento — depois do Total a Receber, pra quem vai alocar já saber
+              quanto precisa somar. Sem valor a cobrar: só a condição, sem nada pra adicionar.
+              Com valor: escolhe a condição + valor e clica "Adicionar" — cada clique empilha
+              uma forma na lista abaixo, até a soma bater com o total. */}
+          <Field style={{ marginBottom: 20 }}>
+            <Label>Condição de Pagamento</Label>
+
+            {totalComAjustes === 0 ? (
+              <select
+                value={novaForma.condicao_pagamento_id}
+                onChange={e => setNovaForma(prev => ({ ...prev, condicao_pagamento_id: Number(e.target.value) }))}
+                disabled={loadingCondicoes}
+                className="input-field"
+                style={{ fontSize: 13, fontWeight: 500, padding: '10px 12px' }}
+              >
+                <option value={0}>Selecione uma condição...</option>
+                {condicoes.map(cond => (
+                  <option key={cond.id} value={cond.id}>{cond.descricao}</option>
+                ))}
+              </select>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+                {/* Forma em edição — vira uma linha na lista abaixo ao clicar "Adicionar" */}
+                <div style={{
+                  border: '0.5px solid var(--borda-suave)',
+                  borderRadius: 6,
+                  padding: 10,
+                  background: 'var(--bg-card)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                    <Field style={{ flex: 1 }}>
+                      <Label>Forma de Pagamento</Label>
+                      <select
+                        value={novaForma.condicao_pagamento_id}
+                        onChange={e => setNovaForma(prev => ({ ...prev, condicao_pagamento_id: Number(e.target.value), parcelas_cartao: 1 }))}
+                        disabled={loadingCondicoes}
+                        className="input-field"
+                        style={{ fontSize: 13, fontWeight: 500, padding: '10px 12px' }}
+                      >
+                        <option value={0}>Selecione uma condição...</option>
+                        {condicoes.map(cond => {
+                          const sufixoCartao = cond.tipo_pagamento === 'debito' ? ' [DÉBITO]' : cond.tipo_pagamento === 'credito' ? ' [CRÉDITO]' : ''
+                          const label = `${cond.descricao}${cond.tipo === 'P' && cond.num_parcelas > 1 ? ` (${cond.num_parcelas}x)` : ''}${cond.tipo_pagamento === 'pix' ? ' [PIX]' : ''}${sufixoCartao}`
+                          return (
+                            <option key={cond.id} value={cond.id}>
+                              {label}
+                            </option>
+                          )
+                        })}
+                      </select>
+                    </Field>
+                    <Field style={{ width: 120 }}>
+                      <Label>Valor a Receber</Label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={novaForma.valor}
+                        onChange={e => setNovaForma(prev => ({ ...prev, valor: Math.max(0, parseFloat(e.target.value) || 0) }))}
+                        className="input-field"
+                        style={{ fontSize: 13, padding: '10px 12px' }}
+                      />
+                    </Field>
+                    <button
+                      type="button"
+                      onClick={adicionarForma}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 4,
+                        padding: '10px 14px',
+                        background: 'var(--cor-primaria)',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        fontSize: 13,
+                        fontWeight: 600,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      <Plus size={14} />
+                      Adicionar
+                    </button>
+                  </div>
+
+                  {condicaoNovaForma?.tipo_pagamento === 'pix' && (
+                    <div style={{
+                      fontSize: 12,
+                      color: 'var(--cor-primaria)',
+                      padding: '8px 10px',
+                      background: 'var(--cor-primaria-light)',
+                      borderRadius: 4,
+                    }}>
+                      ✓ PIX - Conta bancária pré-configurada
+                    </div>
+                  )}
+                  {condicaoNovaForma?.tipo_pagamento === 'credito' && condicaoNovaForma.num_parcelas > 1 && (
+                    <Field>
+                      <Label>Nº de Parcelas</Label>
+                      <select
+                        value={novaForma.parcelas_cartao}
+                        onChange={e => setNovaForma(prev => ({ ...prev, parcelas_cartao: Number(e.target.value) }))}
+                        className="input-field"
+                        style={{ fontSize: 13, fontWeight: 500, padding: '10px 12px' }}
+                      >
+                        {Array.from({ length: condicaoNovaForma.num_parcelas }, (_, i) => i + 1).map(n => (
+                          <option key={n} value={n}>{n}x{n === 1 ? ' (à vista)' : ''}</option>
+                        ))}
+                      </select>
+                    </Field>
+                  )}
+                  {(condicaoNovaForma?.tipo_pagamento === 'debito' || condicaoNovaForma?.tipo_pagamento === 'credito') && (
+                    <Field>
+                      <Label>NSU do Cartão (opcional)</Label>
+                      <input
+                        type="text"
+                        value={novaForma.nsu}
+                        onChange={e => setNovaForma(prev => ({ ...prev, nsu: e.target.value }))}
+                        placeholder="Nº do comprovante da maquininha"
+                        className="input-field"
+                        style={{ fontSize: 13, padding: '10px 12px' }}
+                      />
+                    </Field>
+                  )}
+                </div>
+
+                {/* Formas já adicionadas */}
+                {formasPagamento.map((linha, idx) => {
+                  const condicaoLinha = condicoes.find(c => c.id === linha.condicao_pagamento_id)
+                  return (
+                    <div key={idx} style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '8px 10px',
+                      background: 'var(--bg-card)',
+                      border: '0.5px solid var(--borda-suave)',
+                      borderRadius: 6,
+                      fontSize: 13,
+                    }}>
+                      <div>
+                        <div style={{ fontWeight: 600, color: 'var(--texto-principal)' }}>{condicaoLinha?.descricao ?? '—'}</div>
+                        {linha.nsu && (
+                          <div style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>NSU: {linha.nsu}</div>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ fontWeight: 700, color: 'var(--cor-primaria)' }}>{fmtValor(linha.valor)}</span>
+                        <button
+                          onClick={() => removerForma(idx)}
+                          title="Remover forma de pagamento"
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--cor-erro)', padding: 2, display: 'flex' }}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+
+                {/* Soma + restante — mesmo peso visual do "Total a Receber" acima, pra ficar
+                    óbvio quando as formas já cobrem o total ou ainda falta algo. */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: 12,
+                  background: formasBatem ? 'var(--cor-sucesso)' : (restanteAlocar < 0 ? 'var(--cor-erro)' : 'var(--cor-aviso)'),
+                  borderRadius: 6,
+                }}>
+                  {formasBatem ? <Check size={16} style={{ color: '#fff', flexShrink: 0 }} /> : <DollarSign size={16} style={{ color: '#fff', flexShrink: 0 }} />}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.8)', marginBottom: 2 }}>
+                      {formasBatem ? 'Formas de pagamento conferem com o total' : restanteAlocar < 0 ? 'Valor alocado além do total' : 'Restante a alocar'}
+                    </div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>
+                      {fmtValor(formasBatem ? totalComAjustes : Math.abs(restanteAlocar))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </Field>
 
           {/* Observação */}

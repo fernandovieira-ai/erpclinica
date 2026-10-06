@@ -90,9 +90,11 @@ export async function DELETE(
     }
 
     // batch_agendamento_id é o grupo do lote — igual ao origem_id de todos os N títulos gerados
+    // e ao batch_agendamento_id em tab_recebimento_pagamento
     const batchAgendamentoId = (recRows[0].batch_agendamento_id ?? recRows[0].agendamento_id) as number
 
-    // 2. Todos os N títulos do lote (origem_id = batchAgendamentoId)
+    // 2. Todos os N títulos do lote (origem_id = batchAgendamentoId) — cobre tanto o título
+    // a prazo "sozinho" quanto o título a prazo de uma das formas num pagamento misto
     const { rows: tituloRows } = await client.query(
       `SELECT id, movimento_caixa_id, movimento_banco_id FROM tab_titulo_receber
        WHERE empresa_id = $1 AND origem_modulo = 'CLI' AND origem_id = $2`,
@@ -102,17 +104,34 @@ export async function DELETE(
     const movCaixaIds = tituloRows.map((r: { movimento_caixa_id: number | null }) => r.movimento_caixa_id).filter((x): x is number => x != null)
     const movBancoIds = tituloRows.map((r: { movimento_banco_id: number | null }) => r.movimento_banco_id).filter((x): x is number => x != null)
 
-    // 3. Todos os recebimentos do lote (mesmo batch_agendamento_id)
+    // 3. Todos os recebimentos do lote (mesmo batch_agendamento_id) — movimento_caixa_id/
+    // movimento_banco_id/venda_cartao_id aqui são as colunas LEGADAS (só a 1ª forma),
+    // mantidas como fallback pra recebimentos anteriores à migração 66 (pagamento misto),
+    // que nunca ganharam linha em tab_recebimento_pagamento — sem isso o estorno deixa
+    // o movimento/venda órfão (achado real: mesmo bug do "por_forma", ver padroes.md §45).
     const { rows: todosRecRows } = await client.query(
-      `SELECT id, agendamento_id, movimento_caixa_id, movimento_banco_id, venda_cartao_id FROM tab_recebimento_consulta
+      `SELECT id, agendamento_id, movimento_caixa_id, movimento_banco_id, venda_cartao_id
+       FROM tab_recebimento_consulta
        WHERE empresa_id = $1 AND batch_agendamento_id = $2`,
       [session.empresa_id_ativa, batchAgendamentoId]
     )
     const todosRecIds    = todosRecRows.map((r: { id: number }) => r.id)
     const agendamentoIds = [...new Set(todosRecRows.map((r: { agendamento_id: number }) => r.agendamento_id).filter((x): x is number => x != null))]
-    const recMovCaixaIds = todosRecRows.map((r: { movimento_caixa_id: number | null }) => r.movimento_caixa_id).filter((x): x is number => x != null)
-    const recMovBancoIds = todosRecRows.map((r: { movimento_banco_id: number | null }) => r.movimento_banco_id).filter((x): x is number => x != null)
-    const vendaCartaoIds = [...new Set(todosRecRows.map((r: { venda_cartao_id: number | null }) => r.venda_cartao_id).filter((x): x is number => x != null))]
+    const legadoMovCaixaIds = todosRecRows.map((r: { movimento_caixa_id: number | null }) => r.movimento_caixa_id).filter((x): x is number => x != null)
+    const legadoMovBancoIds = todosRecRows.map((r: { movimento_banco_id: number | null }) => r.movimento_banco_id).filter((x): x is number => x != null)
+    const legadoVendaCartaoIds = todosRecRows.map((r: { venda_cartao_id: number | null }) => r.venda_cartao_id).filter((x): x is number => x != null)
+
+    // 3b. Todas as formas de pagamento do lote (pagamento misto, migração 66 em diante) —
+    // fonte de verdade quando existe; recebimentos legados (acima) não têm linha aqui.
+    // Estorno é sempre tudo-ou-nada: reverte TODAS as formas do lote de uma vez.
+    const { rows: formasRows } = await client.query(
+      `SELECT movimento_caixa_id, movimento_banco_id, venda_cartao_id FROM tab_recebimento_pagamento
+       WHERE empresa_id = $1 AND batch_agendamento_id = $2`,
+      [session.empresa_id_ativa, batchAgendamentoId]
+    )
+    const recMovCaixaIds = [...legadoMovCaixaIds, ...formasRows.map((r: { movimento_caixa_id: number | null }) => r.movimento_caixa_id).filter((x): x is number => x != null)]
+    const recMovBancoIds = [...legadoMovBancoIds, ...formasRows.map((r: { movimento_banco_id: number | null }) => r.movimento_banco_id).filter((x): x is number => x != null)]
+    const vendaCartaoIds = [...new Set([...legadoVendaCartaoIds, ...formasRows.map((r: { venda_cartao_id: number | null }) => r.venda_cartao_id).filter((x): x is number => x != null)])]
 
     // Venda no cartão só pode ser desfeita enquanto nenhuma parcela tiver
     // sido faturada/conciliada — depois disso o valor já está comprometido
@@ -147,6 +166,12 @@ export async function DELETE(
         [todosRecIds]
       )
     }
+
+    // B2. Deleta as formas de pagamento do lote (libera FK pros mesmos instrumentos)
+    await client.query(
+      `DELETE FROM tab_recebimento_pagamento WHERE empresa_id = $1 AND batch_agendamento_id = $2`,
+      [session.empresa_id_ativa, batchAgendamentoId]
+    )
 
     // C. Deleta movimentos (IDs coletados de títulos + recebimentos)
     const allMovCaixaIds = [...new Set([...movCaixaIds, ...recMovCaixaIds])]

@@ -65,6 +65,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ erro: 'Este atendimento foi recebido em lote com outros agendamentos - estorne o lote completo na tela Recebimentos e refaça' }, { status: 400 })
     }
 
+    // 2b. Bloqueia lote com pagamento misto (mais de uma forma de pagamento) — reclassificar
+    // pressupõe 1 condição só; "qual das N formas" não está definido aqui. Ver padroes.md
+    // "Pagamento misto".
+    const { rows: formasRows } = await client.query(
+      `SELECT COUNT(*)::int AS n FROM tab_recebimento_pagamento WHERE batch_agendamento_id = $1 AND empresa_id = $2`,
+      [batchAgendamentoId, empresaId],
+    )
+    if (formasRows[0].n > 1) {
+      return NextResponse.json({ erro: 'Não é possível reclassificar um recebimento com múltiplas formas de pagamento' }, { status: 400 })
+    }
+
     // 3. Bloqueia se o dia já estiver fechado
     try {
       const { rows: fechRows } = await client.query(
@@ -147,6 +158,8 @@ export async function POST(req: NextRequest) {
     }
 
     await client.query(`DELETE FROM tab_recebimento_consulta WHERE id = $1`, [rec.id])
+    // Libera a FK dos instrumentos antes de deletá-los (mesma forma única já validada acima)
+    await client.query(`DELETE FROM tab_recebimento_pagamento WHERE batch_agendamento_id = $1 AND empresa_id = $2`, [batchAgendamentoId, empresaId])
 
     const allMovCaixaIds = [...new Set([...movCaixaIds, ...(rec.movimento_caixa_id != null ? [rec.movimento_caixa_id] : [])])]
     const allMovBancoIds = [...new Set([...movBancoIds, ...(rec.movimento_banco_id != null ? [rec.movimento_banco_id] : [])])]
@@ -172,6 +185,7 @@ export async function POST(req: NextRequest) {
     let novoMovimentoCaixaId: number | null = null
     let novoMovimentoBancoId: number | null = null
     let novaVendaCartaoId: number | null = null
+    let qtdParcelasCartaoFinal: number | null = null
 
     if (isAPrazo) {
       const tipoReceitaId = await obterTipoReceitaPadrao(client)
@@ -239,6 +253,7 @@ export async function POST(req: NextRequest) {
         ],
       )
       novaVendaCartaoId = vendaRows[0].id
+      qtdParcelasCartaoFinal = qtdParcelasCartao
     } else if (tipoPagamento === 'pix') {
       const { rows: movRows } = await client.query(
         `INSERT INTO tab_movimento_banco (
@@ -289,6 +304,19 @@ export async function POST(req: NextRequest) {
       ],
     )
     const recebimentoIdNovo = novoRecRows[0].id
+
+    // 7b. Recria a forma de pagamento (1 linha, lote continua de forma única)
+    await client.query(
+      `INSERT INTO tab_recebimento_pagamento (
+        empresa_id, batch_agendamento_id, condicao_pagamento_id, valor,
+        movimento_caixa_id, movimento_banco_id, venda_cartao_id, nsu, parcelas_cartao
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [
+        empresaId, batchAgendamentoId, payload.nova_condicao_pagamento_id, totalGeral,
+        novoMovimentoCaixaId, novoMovimentoBancoId, novaVendaCartaoId,
+        null, qtdParcelasCartaoFinal,
+      ],
+    )
 
     // 8. Auditoria
     await client.query(
