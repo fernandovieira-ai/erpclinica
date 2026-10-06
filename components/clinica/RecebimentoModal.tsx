@@ -115,11 +115,21 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
     if (open) {
       carregarCondicoesPagamento()
       carregarProfissionais()
-      carregarParametrosRecebimento()
     } else {
       setExecutores({})
     }
   }, [open])
+
+  // Buscado uma vez já no mount (não preso ao `open`) — o componente fica montado desde o
+  // carregamento da página/modal pai, bem antes do usuário clicar pra abrir o recebimento
+  // em si. Carregar isso só dentro do `if (open)` acima fazia o modal nascer sempre no
+  // layout normal (Desconto/Acréscimo visíveis) e só trocar pro layout de valor digitado
+  // depois que a resposta chegava — um "pulo" de tela visível toda vez que abria. Buscando
+  // cedo, a resposta já chegou muito antes do clique (reação humana é bem mais lenta que
+  // essa chamada), então o modal já abre direto no layout certo.
+  useEffect(() => {
+    carregarParametrosRecebimento()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function carregarProfissionais() {
     try {
