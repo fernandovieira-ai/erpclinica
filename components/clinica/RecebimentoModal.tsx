@@ -77,6 +77,10 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
   const [loadingCondicoes, setLoadingCondicoes] = useState(false)
   const [profissionais, setProfissionais] = useState<ProfissionalOpcao[]>([])
   const [executores, setExecutores] = useState<Record<number, Partial<ExecutorDef>>>({})
+  // Parâmetro por empresa (novos/67_recebimento_valor_digitado.sql): quando ativo, some o
+  // desconto/acréscimo manual — o operador digita o valor que cada forma recebeu de fato e
+  // o desconto/acréscimo necessário pra fechar com o valor de tabela é calculado sozinho.
+  const [modoValorDigitado, setModoValorDigitado] = useState(false)
 
   const [form, setForm] = useState<FormRecebimento>({
     desconto: 0,
@@ -111,6 +115,7 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
     if (open) {
       carregarCondicoesPagamento()
       carregarProfissionais()
+      carregarParametrosRecebimento()
     } else {
       setExecutores({})
     }
@@ -124,6 +129,17 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
       setProfissionais((data.dados ?? []).filter((p: ProfissionalOpcao) => !p.eh_clinica))
     } catch (error) {
       console.error('Erro ao carregar profissionais:', error)
+    }
+  }
+
+  async function carregarParametrosRecebimento() {
+    try {
+      const res = await fetch('/api/clinica/recebimentos/parametros')
+      if (!res.ok) return
+      const data = await res.json()
+      setModoValorDigitado(!!data.recebimento_permite_valor_digitado)
+    } catch (error) {
+      console.error('Erro ao carregar parâmetros de recebimento:', error)
     }
   }
 
@@ -151,20 +167,39 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
   }, [open])
 
   const valorBase = listaAgs.reduce((acc, ag) => acc + getValorBase(ag), 0)
-  const totalComAjustes = valorBase - form.desconto + form.acrescimo
   const somaFormas = round2(formasPagamento.reduce((acc, f) => acc + (Number(f.valor) || 0), 0))
+
+  // Modo valor digitado: desconto/acréscimo deixam de ser campos digitados e passam a ser a
+  // diferença entre o valor de tabela e o que foi efetivamente somado nas formas de
+  // pagamento — positivo (pagou menos) vira desconto automático, negativo (pagou mais) vira
+  // acréscimo automático. Ver parâmetro recebimento_permite_valor_digitado.
+  const diffValorDigitado = round2(valorBase - somaFormas)
+  const descontoAutomatico = Math.max(0, diffValorDigitado)
+  const acrescimoAutomatico = Math.max(0, -diffValorDigitado)
+  // Valores efetivamente usados no cálculo/payload — vêm do form (modo normal) ou são
+  // derivados automaticamente (modo valor digitado).
+  const descontoEfetivo = modoValorDigitado ? descontoAutomatico : form.desconto
+  const acrescimoEfetivo = modoValorDigitado ? acrescimoAutomatico : form.acrescimo
+
+  const totalComAjustes = modoValorDigitado
+    ? (formasPagamento.length > 0 ? somaFormas : valorBase)
+    : (valorBase - form.desconto + form.acrescimo)
   const restanteAlocar = round2(totalComAjustes - somaFormas)
-  const formasBatem = Math.abs(restanteAlocar) <= 0.01
+  const formasBatem = modoValorDigitado ? formasPagamento.length > 0 : Math.abs(restanteAlocar) <= 0.01
 
   // O valor sugerido da próxima forma a adicionar é sempre o que falta alocar — assim, no
-  // caso comum (1 forma só), já vem preenchido com o total e basta clicar "Adicionar".
+  // caso comum (1 forma só), já vem preenchido com o total e basta clicar "Adicionar". No
+  // modo valor digitado, a sugestão é sempre "o que falta pro valor de tabela cheio" — o
+  // operador edita pra baixo (desconto) ou deixa em branco/zero (cortesia).
   useEffect(() => {
     setNovaForma(prev => {
-      const sugestao = round2(Math.max(0, restanteAlocar))
+      const sugestao = modoValorDigitado
+        ? round2(Math.max(0, valorBase - somaFormas))
+        : round2(Math.max(0, restanteAlocar))
       if (prev.valor === sugestao) return prev
       return { ...prev, valor: sugestao }
     })
-  }, [restanteAlocar]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [restanteAlocar, modoValorDigitado, valorBase, somaFormas]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function carregarCondicoesPagamento() {
     setLoadingCondicoes(true)
@@ -188,9 +223,20 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
       toast.error('Selecione a condição de pagamento')
       return
     }
-    if (!novaForma.valor || novaForma.valor <= 0) {
-      toast.error('Informe um valor a receber maior que zero')
+    // Modo valor digitado: valor R$ 0,00 só é aceito como a ÚNICA forma do recebimento
+    // (cortesia 100%) — e só numa condição à vista (dinheiro/PIX), igual a trava do backend.
+    const permiteZero = modoValorDigitado && formasPagamento.length === 0
+    if (novaForma.valor == null || novaForma.valor < 0 || (!permiteZero && novaForma.valor === 0)) {
+      toast.error(permiteZero ? 'Informe o valor pago (pode ser R$ 0,00 para cortesia)' : 'Informe um valor a receber maior que zero')
       return
+    }
+    if (permiteZero && novaForma.valor === 0) {
+      const cond = condicoes.find(c => c.id === novaForma.condicao_pagamento_id)
+      const ehCartaoOuPrazo = cond?.tipo_pagamento === 'debito' || cond?.tipo_pagamento === 'credito' || cond?.tipo_pagamento === 'a_prazo'
+      if (ehCartaoOuPrazo) {
+        toast.error('Cortesia total (R$ 0,00) exige uma condição à vista em dinheiro ou PIX')
+        return
+      }
     }
     setFormasPagamento(prev => [...prev, { ...novaForma }])
   }
@@ -207,41 +253,72 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
       return
     }
 
-    // valorBase === 0 é válido (ex.: RETORNO sem cobrança) — só bloqueia quando o
-    // desconto reduz uma consulta que tinha valor de tabela pra zero ou menos.
-    if (totalComAjustes < 0 || (valorBase > 0 && totalComAjustes <= 0)) {
-      toast.error('Total a receber inválido — desconto não pode ser maior ou igual ao valor da consulta')
-      return
-    }
-
-    const ehCartaoOuPrazoPrimeira = condicaoPrimeira?.tipo_pagamento === 'debito'
-      || condicaoPrimeira?.tipo_pagamento === 'credito'
-      || condicaoPrimeira?.tipo_pagamento === 'a_prazo'
-
-    if (totalComAjustes === 0) {
-      // Sem valor a cobrar: nada a adicionar, só a condição selecionada acima — ela sozinha
-      // vira a única "forma" enviada (ver montagem do payload mais abaixo).
-      if (!novaForma.condicao_pagamento_id) {
-        toast.error('Selecione a condição de pagamento')
+    if (modoValorDigitado) {
+      // Modo valor digitado: o "total" é definido pelo que foi somado nas formas de
+      // pagamento (desconto/acréscimo são consequência, não causa) — por isso não existe
+      // aqui a trava "desconto >= valor da consulta" do modo normal: cortesia 100% (soma
+      // das formas = R$ 0,00) é uma escolha deliberada do operador.
+      if (formasPagamento.length === 0) {
+        toast.error('Adicione ao menos uma forma de pagamento (pode ser R$ 0,00 para cortesia)')
         return
       }
-      if (ehCartaoOuPrazoPrimeira) {
-        toast.error('Atendimento sem valor a cobrar (R$ 0,00) — selecione uma condição à vista em dinheiro ou PIX para confirmar')
-        return
+      if (somaFormas === 0) {
+        if (formasPagamento.length > 1) {
+          toast.error('Cortesia total (R$ 0,00) só pode ter uma forma de pagamento')
+          return
+        }
+        const condicaoUnica = condicoes.find(c => c.id === formasPagamento[0].condicao_pagamento_id)
+        const ehCartaoOuPrazoUnica = condicaoUnica?.tipo_pagamento === 'debito'
+          || condicaoUnica?.tipo_pagamento === 'credito'
+          || condicaoUnica?.tipo_pagamento === 'a_prazo'
+        if (ehCartaoOuPrazoUnica) {
+          toast.error('Cortesia total (R$ 0,00) exige uma condição à vista em dinheiro ou PIX')
+          return
+        }
+      } else {
+        const qtdAPrazoLivre = formasPagamento.filter(f => condicoes.find(c => c.id === f.condicao_pagamento_id)?.tipo_pagamento === 'a_prazo').length
+        if (qtdAPrazoLivre > 1) {
+          toast.error('Só é permitida uma forma de pagamento a prazo por recebimento')
+          return
+        }
       }
     } else {
-      if (formasPagamento.length === 0) {
-        toast.error('Adicione ao menos uma forma de pagamento')
+      // valorBase === 0 é válido (ex.: RETORNO sem cobrança) — só bloqueia quando o
+      // desconto reduz uma consulta que tinha valor de tabela pra zero ou menos.
+      if (totalComAjustes < 0 || (valorBase > 0 && totalComAjustes <= 0)) {
+        toast.error('Total a receber inválido — desconto não pode ser maior ou igual ao valor da consulta')
         return
       }
-      if (!formasBatem) {
-        toast.error(`A soma das formas de pagamento (${fmtValor(somaFormas)}) não bate com o total a receber (${fmtValor(totalComAjustes)})`)
-        return
-      }
-      const qtdAPrazo = formasPagamento.filter(f => condicoes.find(c => c.id === f.condicao_pagamento_id)?.tipo_pagamento === 'a_prazo').length
-      if (qtdAPrazo > 1) {
-        toast.error('Só é permitida uma forma de pagamento a prazo por recebimento')
-        return
+
+      const ehCartaoOuPrazoPrimeira = condicaoPrimeira?.tipo_pagamento === 'debito'
+        || condicaoPrimeira?.tipo_pagamento === 'credito'
+        || condicaoPrimeira?.tipo_pagamento === 'a_prazo'
+
+      if (totalComAjustes === 0) {
+        // Sem valor a cobrar: nada a adicionar, só a condição selecionada acima — ela sozinha
+        // vira a única "forma" enviada (ver montagem do payload mais abaixo).
+        if (!novaForma.condicao_pagamento_id) {
+          toast.error('Selecione a condição de pagamento')
+          return
+        }
+        if (ehCartaoOuPrazoPrimeira) {
+          toast.error('Atendimento sem valor a cobrar (R$ 0,00) — selecione uma condição à vista em dinheiro ou PIX para confirmar')
+          return
+        }
+      } else {
+        if (formasPagamento.length === 0) {
+          toast.error('Adicione ao menos uma forma de pagamento')
+          return
+        }
+        if (!formasBatem) {
+          toast.error(`A soma das formas de pagamento (${fmtValor(somaFormas)}) não bate com o total a receber (${fmtValor(totalComAjustes)})`)
+          return
+        }
+        const qtdAPrazo = formasPagamento.filter(f => condicoes.find(c => c.id === f.condicao_pagamento_id)?.tipo_pagamento === 'a_prazo').length
+        if (qtdAPrazo > 1) {
+          toast.error('Só é permitida uma forma de pagamento a prazo por recebimento')
+          return
+        }
       }
     }
 
@@ -260,16 +337,17 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
       // payload para todos os atendimentos. valor_original vem sempre do preço de tabela
       // (getValorBase), nunca de um valor digitado — é essa trava que o backend confere.
       // O último item fica com o resto (mesmo padrão usado no rateio de parcelas a prazo
-      // na API), pra soma dos itens bater exatamente com form.desconto/form.acrescimo
-      // mesmo após arredondar cada item pra centavos.
+      // na API), pra soma dos itens bater exatamente com descontoEfetivo/acrescimoEfetivo
+      // mesmo após arredondar cada item pra centavos. No modo valor digitado, esses dois
+      // vêm calculados automaticamente (ver descontoAutomatico/acrescimoAutomatico acima).
       let descontoAcumulado = 0
       let acrescimoAcumulado = 0
       const itens = listaAgs.map((ag, idx) => {
         const isUltimo = idx === listaAgs.length - 1
         const tipoValor = getValorBase(ag)
         const proporcao = valorBase > 0 ? tipoValor / valorBase : 1 / listaAgs.length
-        const desconto_ag = isUltimo ? round2(form.desconto - descontoAcumulado) : round2(form.desconto * proporcao)
-        const acrescimo_ag = isUltimo ? round2(form.acrescimo - acrescimoAcumulado) : round2(form.acrescimo * proporcao)
+        const desconto_ag = isUltimo ? round2(descontoEfetivo - descontoAcumulado) : round2(descontoEfetivo * proporcao)
+        const acrescimo_ag = isUltimo ? round2(acrescimoEfetivo - acrescimoAcumulado) : round2(acrescimoEfetivo * proporcao)
         descontoAcumulado += desconto_ag
         acrescimoAcumulado += acrescimo_ag
         const total_ag = round2(tipoValor - desconto_ag + acrescimo_ag)
@@ -288,11 +366,13 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
         }
       })
 
-      // Sem valor a cobrar: a condição selecionada (sem lista de formas) vira a única forma
-      // enviada, com valor 0 — não passa pelas linhas já adicionadas (não existem nesse caso).
-      const linhasParaEnviar = totalComAjustes === 0
-        ? [{ ...novaForma, valor: 0 }]
-        : formasPagamento
+      // Sem valor a cobrar no modo normal: a condição selecionada (sem lista de formas) vira
+      // a única forma enviada, com valor 0 — não passa pelas linhas já adicionadas (não
+      // existem nesse caso). No modo valor digitado, formasPagamento já contém a linha
+      // (inclusive a de R$ 0,00 da cortesia), então é sempre ela que vai.
+      const linhasParaEnviar = modoValorDigitado
+        ? formasPagamento
+        : (totalComAjustes === 0 ? [{ ...novaForma, valor: 0 }] : formasPagamento)
       const formasPayload = linhasParaEnviar.map(linha => {
         const condicaoLinha = condicoes.find(c => c.id === linha.condicao_pagamento_id)
         const linhaCartao = condicaoLinha?.tipo_pagamento === 'debito' || condicaoLinha?.tipo_pagamento === 'credito'
@@ -539,7 +619,10 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
 
           {/* Valores — o valor da consulta (tabela) já aparece acima, em "Informações da
               Consulta"/"Atendimentos", então aqui só entram os campos realmente editáveis
-              (desconto/acréscimo) + o total. */}
+              (desconto/acréscimo) + o total. Some inteiro no modo valor digitado — ali o
+              desconto/acréscimo é calculado sozinho a partir do que foi digitado nas formas
+              de pagamento (ver resumo somente-leitura logo abaixo da lista de formas). */}
+          {!modoValorDigitado && (
           <Field style={{ marginBottom: 20 }}>
             <Label>Valores</Label>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -634,15 +717,17 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
               </div>
             </div>
           </Field>
+          )}
 
           {/* Formas de Pagamento — depois do Total a Receber, pra quem vai alocar já saber
               quanto precisa somar. Sem valor a cobrar: só a condição, sem nada pra adicionar.
               Com valor: escolhe a condição + valor e clica "Adicionar" — cada clique empilha
-              uma forma na lista abaixo, até a soma bater com o total. */}
+              uma forma na lista abaixo, até a soma bater com o total. No modo valor digitado
+              sempre mostra a lista de adicionar (inclusive pra digitar R$ 0,00/cortesia). */}
           <Field style={{ marginBottom: 20 }}>
             <Label>Condição de Pagamento</Label>
 
-            {totalComAjustes === 0 ? (
+            {(!modoValorDigitado && totalComAjustes === 0) ? (
               <select
                 value={novaForma.condicao_pagamento_id}
                 onChange={e => setNovaForma(prev => ({ ...prev, condicao_pagamento_id: Number(e.target.value) }))}
@@ -691,7 +776,7 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
                       </select>
                     </Field>
                     <Field style={{ width: 120 }}>
-                      <Label>Valor a Receber</Label>
+                      <Label>{modoValorDigitado ? 'Valor Pago' : 'Valor a Receber'}</Label>
                       <input
                         type="number"
                         step="0.01"
@@ -797,26 +882,60 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
                   )
                 })}
 
-                {/* Soma + restante — mesmo peso visual do "Total a Receber" acima, pra ficar
-                    óbvio quando as formas já cobrem o total ou ainda falta algo. */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: 12,
-                  background: formasBatem ? 'var(--cor-sucesso)' : (restanteAlocar < 0 ? 'var(--cor-erro)' : 'var(--cor-aviso)'),
-                  borderRadius: 6,
-                }}>
-                  {formasBatem ? <Check size={16} style={{ color: '#fff', flexShrink: 0 }} /> : <DollarSign size={16} style={{ color: '#fff', flexShrink: 0 }} />}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.8)', marginBottom: 2 }}>
-                      {formasBatem ? 'Formas de pagamento conferem com o total' : restanteAlocar < 0 ? 'Valor alocado além do total' : 'Restante a alocar'}
-                    </div>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>
-                      {fmtValor(formasBatem ? totalComAjustes : Math.abs(restanteAlocar))}
+                {/* Resumo — modo valor digitado: desconto/acréscimo calculados sozinhos a
+                    partir do que foi somado nas formas (resumo somente-leitura, nada aqui é
+                    editável). Modo normal: soma + restante, mesmo peso visual do "Total a
+                    Receber" acima, pra ficar óbvio quando as formas já cobrem o total. */}
+                {modoValorDigitado ? (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: 12,
+                    background: Math.abs(diffValorDigitado) <= 0.004
+                      ? 'var(--cor-sucesso)'
+                      : (diffValorDigitado > 0 ? 'var(--cor-aviso)' : 'var(--cor-primaria)'),
+                    borderRadius: 6,
+                  }}>
+                    {Math.abs(diffValorDigitado) <= 0.004
+                      ? <Check size={16} style={{ color: '#fff', flexShrink: 0 }} />
+                      : <Percent size={16} style={{ color: '#fff', flexShrink: 0 }} />}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.8)', marginBottom: 2 }}>
+                        {Math.abs(diffValorDigitado) <= 0.004
+                          ? 'Confere com o valor da consulta — sem desconto/acréscimo'
+                          : diffValorDigitado > 0 ? 'Desconto automático' : 'Acréscimo automático'}
+                      </div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>
+                        Total pago: {fmtValor(somaFormas)}
+                        {Math.abs(diffValorDigitado) > 0.004 && (
+                          <span style={{ fontWeight: 600, fontSize: 13, marginLeft: 6 }}>
+                            ({diffValorDigitado > 0 ? '-' : '+'}{fmtValor(Math.abs(diffValorDigitado))})
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
+                ) : (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: 12,
+                    background: formasBatem ? 'var(--cor-sucesso)' : (restanteAlocar < 0 ? 'var(--cor-erro)' : 'var(--cor-aviso)'),
+                    borderRadius: 6,
+                  }}>
+                    {formasBatem ? <Check size={16} style={{ color: '#fff', flexShrink: 0 }} /> : <DollarSign size={16} style={{ color: '#fff', flexShrink: 0 }} />}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.8)', marginBottom: 2 }}>
+                        {formasBatem ? 'Formas de pagamento conferem com o total' : restanteAlocar < 0 ? 'Valor alocado além do total' : 'Restante a alocar'}
+                      </div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>
+                        {fmtValor(formasBatem ? totalComAjustes : Math.abs(restanteAlocar))}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </Field>

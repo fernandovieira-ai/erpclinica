@@ -123,6 +123,7 @@ export interface Empresa {
   paciente_exige_data_nascimento: boolean
   paciente_exige_cpf_cnpj:        boolean
   paciente_exige_celular:         boolean
+  recebimento_permite_valor_digitado: boolean
   created_at:        string
   updated_at:        string
 }

@@ -229,6 +229,7 @@ export default function EmpresaFormPage({ empresa }: Props) {
       paciente_exige_data_nascimento: empresa.paciente_exige_data_nascimento ?? false,
       paciente_exige_cpf_cnpj:        empresa.paciente_exige_cpf_cnpj ?? false,
       paciente_exige_celular:         empresa.paciente_exige_celular ?? true,
+      recebimento_permite_valor_digitado: empresa.recebimento_permite_valor_digitado ?? false,
     })
     setLogoPreview(empresa.logo_base64 ?? null)
   }, [empresa, reset])
@@ -609,6 +610,17 @@ export default function EmpresaFormPage({ empresa }: Props) {
               <Check label="Exige celular" {...register('paciente_exige_celular')} />
               <span style={{ fontSize: 11, color: 'var(--texto-secundario)' }}>
                 Define quais campos são obrigatórios ao cadastrar um paciente novo direto na tela de agendamento. Desmarcados, o campo fica opcional (nome continua sempre obrigatório).
+              </span>
+            </div>
+
+            {/* Parâmetro de recebimento de consulta */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingLeft: 126, marginTop: 12 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--texto-terciario)', textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                Recebimento de consulta
+              </span>
+              <Check label="Permite digitar o valor pago (sem desconto/acréscimo manual)" {...register('recebimento_permite_valor_digitado')} />
+              <span style={{ fontSize: 11, color: 'var(--texto-secundario)' }}>
+                Quando marcado, o recebimento esconde os campos de desconto e acréscimo: a recepção digita quanto cada forma de pagamento recebeu de fato (inclusive R$ 0,00 pra cortesia) e o sistema calcula sozinho o desconto ou acréscimo pra fechar a venda.
               </span>
             </div>
             </div>

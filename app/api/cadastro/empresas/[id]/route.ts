@@ -24,6 +24,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
             logo_base64,
             ativo, permite_agendamento_retroativo,
             paciente_exige_data_nascimento, paciente_exige_cpf_cnpj, paciente_exige_celular,
+            recebimento_permite_valor_digitado,
             created_at, updated_at
      FROM tab_empresa
      WHERE id = $1`,
@@ -74,8 +75,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
        logo_base64=$32,
        ativo=$33, permite_agendamento_retroativo=$34,
        paciente_exige_data_nascimento=$35, paciente_exige_cpf_cnpj=$36, paciente_exige_celular=$37,
+       recebimento_permite_valor_digitado=$38,
        updated_at=NOW()
-     WHERE id = $38`,
+     WHERE id = $39`,
     [
       up(d.razao_social), up(d.nome_fantasia), up(d.cnpj), up(d.ie), up(d.im),
       d.regime_tributario, d.crt,
@@ -92,6 +94,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       d.ativo,
       d.permite_agendamento_retroativo,
       d.paciente_exige_data_nascimento, d.paciente_exige_cpf_cnpj, d.paciente_exige_celular,
+      d.recebimento_permite_valor_digitado,
       params.id,
     ],
   )

@@ -55,6 +55,8 @@ export const empresaSchema = z.object({
   paciente_exige_data_nascimento: z.boolean().default(false),
   paciente_exige_cpf_cnpj:        z.boolean().default(false),
   paciente_exige_celular:         z.boolean().default(true),
+  // Parametro de recebimento de consulta
+  recebimento_permite_valor_digitado: z.boolean().default(false),
 })
 
 export type EmpresaInput = z.infer<typeof empresaSchema>

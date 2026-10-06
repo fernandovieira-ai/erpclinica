@@ -209,6 +209,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ erro: 'Dados inválidos' }, { status: 400 })
     }
 
+    // Dados da empresa usados neste handler, buscados uma única vez aqui em vez de duas
+    // (cod_tipo_cobranca tinha sua própria query redundante mais abaixo, só pra empresa).
+    // recebimento_permite_valor_digitado (novos/67_recebimento_valor_digitado.sql): quando
+    // ativo, o modal deixa digitar o valor pago em vez de desconto/acréscimo — inclusive
+    // cortesia 100% (valor pago = 0 numa consulta com preço de tabela > 0), que a trava
+    // abaixo bloquearia por padrão.
+    const { rows: empresaRows } = await client.query(
+      `SELECT recebimento_permite_valor_digitado, cod_tipo_cobranca FROM tab_empresa WHERE id = $1`,
+      [session.empresa_id_ativa],
+    )
+    const permiteValorDigitado = empresaRows[0]?.recebimento_permite_valor_digitado ?? false
+
     // Trava anti-erro de digitação: nenhum valor de recebimento é aceito sem bater com
     // a soma valor_original - desconto + acréscimo, e valor_original precisa bater com o
     // preço cadastrado pro tipo/categoria do agendamento — ver seção "Trava de valor no
@@ -217,11 +229,17 @@ export async function POST(req: NextRequest) {
     const TOLERANCIA_CENTAVOS = 0.02
     const round2 = (v: number) => Math.round(v * 100) / 100
 
+    // Valor 0 só é aceito quando é a ÚNICA forma do recebimento — representa "nada a
+    // cobrar" (RETORNO sem cobrança, ou cortesia 100% com o parâmetro acima ativo). Em
+    // qualquer lista com mais de 1 forma, cada linha precisa ter valor > 0 (não faz
+    // sentido empilhar uma forma de pagamento de R$ 0,00 junto de outras).
+    const permiteFormaZerada = payload.formas_pagamento.length === 1
     for (const forma of payload.formas_pagamento) {
       if (!forma.condicao_pagamento_id) {
         return NextResponse.json({ erro: 'Selecione a condição de pagamento em todas as formas' }, { status: 400 })
       }
-      if (typeof forma.valor !== 'number' || !Number.isFinite(forma.valor) || forma.valor <= 0) {
+      const valorValido = permiteFormaZerada ? forma.valor >= 0 : forma.valor > 0
+      if (typeof forma.valor !== 'number' || !Number.isFinite(forma.valor) || !valorValido) {
         return NextResponse.json({ erro: 'Valor inválido em uma das formas de pagamento' }, { status: 400 })
       }
     }
@@ -240,8 +258,10 @@ export async function POST(req: NextRequest) {
       // <= 0 (não só < 0): um item com valor de consulta > 0 não pode zerar via desconto — fecha o
       // caso de um item pequeno num lote com vários agendamentos arredondar pra R$0,00 e ainda assim
       // ser gravado como PAGO. Item cujo próprio valor de tabela já é 0 (tipo sem preço — ex.: RETORNO
-      // sem cobrança) continua ok, é o caso normal de "recebimento" só pra fazer check-in.
-      if (item.total_recebimento <= 0 && item.valor_original > 0) {
+      // sem cobrança) continua ok, é o caso normal de "recebimento" só pra fazer check-in. Com
+      // permiteValorDigitado ativo, cortesia 100% é uma escolha deliberada do operador (valor
+      // pago digitado = 0), não erro de digitação — a trava relaxa pra esse caso.
+      if (item.total_recebimento <= 0 && item.valor_original > 0 && !permiteValorDigitado) {
         return NextResponse.json({ erro: `Desconto maior ou igual ao valor da consulta no agendamento ${item.agendamento_id}` }, { status: 400 })
       }
       if (item.valor_recebido !== item.total_recebimento) {
@@ -413,10 +433,6 @@ export async function POST(req: NextRequest) {
     )
     let codTipoCobranca: number | null = pessoaRows[0]?.cod_tipo_cobranca ?? null
     if (codTipoCobranca == null) {
-      const { rows: empresaRows } = await client.query(
-        'SELECT cod_tipo_cobranca FROM tab_empresa WHERE id = $1',
-        [session.empresa_id_ativa],
-      )
       codTipoCobranca = empresaRows[0]?.cod_tipo_cobranca ?? null
     }
 
