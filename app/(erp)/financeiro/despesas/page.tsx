@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Plus, Search, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Search, ChevronLeft, ChevronRight, BarChart3 } from 'lucide-react'
 import type { DespesaListItem, DespesaListResponse } from '@/types/cadastros.types'
 
 const STATUS_LABEL: Record<string, { label: string; cor: string }> = {
@@ -59,9 +59,14 @@ export default function DespesasPage() {
           <h1 className="page-title">Despesas</h1>
           <div style={{ fontSize: 12, color: 'var(--texto-terciario)', marginTop: 2 }}>Lançamento de despesas operacionais</div>
         </div>
-        <button className="btn-primary" onClick={() => router.push('/financeiro/despesas/novo')}>
-          <Plus size={15} /> Nova Despesa
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn-ghost" onClick={() => router.push('/financeiro/despesas/relatorio-tipo')}>
+            <BarChart3 size={15} /> Relatório por Tipo
+          </button>
+          <button className="btn-primary" onClick={() => router.push('/financeiro/despesas/novo')}>
+            <Plus size={15} /> Nova Despesa
+          </button>
+        </div>
       </div>
 
       <div className="page-body">
