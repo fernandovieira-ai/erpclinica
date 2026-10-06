@@ -26,14 +26,20 @@ export function validarPeriodo(inicio: string, fim: string): ErroValidacao | nul
 }
 
 // Forma de pagamento do atendimento: condição escolhida no recebimento; crédito parcelado mostra o nº de parcelas.
+// Pagamento misto (mais de uma forma no mesmo lote) mostra "Misto (N formas)" em vez de uma
+// condição só — `descricao`/`tipoPagamento`/`qtdParcelas` vêm da primeira forma do lote
+// (coluna legada em tab_recebimento_consulta), que não representa o lote inteiro nesse caso.
 // null = sem pagamento.
 export function formaDePagamento(
   pago: boolean,
   descricao: string | null,
   tipoPagamento: string | null,
   qtdParcelas: unknown,
+  qtdFormas?: unknown,
 ): string | null {
   if (!pago) return null
+  const formas = Number(qtdFormas) || 1
+  if (formas > 1) return `Misto (${formas} formas)`
   const parcelas = Number(qtdParcelas) || 0
   return `${descricao ?? 'NÃO INFORMADA'}${tipoPagamento === 'credito' && parcelas > 1 ? ` ${parcelas}x` : ''}`
 }

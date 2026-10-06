@@ -121,6 +121,7 @@ export function cssBase(o: OpcoesCss): string {
   .f-car   { background:#ECE6F7; color:#4B2E90; }
   .f-prazo { background:#FCEFD9; color:#93540A; }
   .f-outro { background:#ECEEED; color:#4a4f4d; }
+  .f-misto { background:#F7E6EE; color:#8E2A52; }
 
   tr.grupo td { background:#E1EEEB; color:#0B3A35; font-weight:800; font-size:7.8pt;
                 border-left:4px solid #12857A; border-bottom:1px solid #b9d3cd; padding:2px 7px; break-after:avoid; }
@@ -181,7 +182,10 @@ export function periodoTexto(inicio: string, fim: string): string {
 // Etiqueta colorida da forma de pagamento; sem pagamento mostra "Pendente" (tem valor a pagar) ou "-".
 export function celulaFormaHtml(i: { pago: boolean; forma_pagamento: string | null; tipo_pagamento: string | null; valor_pagar: number }): string {
   if (i.pago && i.forma_pagamento) {
-    return `<span class="pill ${CLASSE_FORMA[i.tipo_pagamento ?? ''] ?? 'f-outro'}">${esc(i.forma_pagamento)}</span>`
+    // "Misto (N formas)" (ver formaDePagamento() em lib/gerencial/relatorio-fechamento.ts) não é
+    // UMA forma — tipo_pagamento aqui é só a 1ª do lote, não dá pra estilizar como se fosse só ela.
+    const classe = i.forma_pagamento.startsWith('Misto') ? 'f-misto' : (CLASSE_FORMA[i.tipo_pagamento ?? ''] ?? 'f-outro')
+    return `<span class="pill ${classe}">${esc(i.forma_pagamento)}</span>`
   }
   return i.valor_pagar > 0 ? '<span class="pendente">Pendente</span>' : '<span class="pendente">-</span>'
 }

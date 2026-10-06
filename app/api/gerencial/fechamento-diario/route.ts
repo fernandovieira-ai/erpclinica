@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
       throw err
     })
 
-  // As duas consultas são independentes: rodam juntas (uma ida ao banco a menos no tempo total)
+  // As consultas são independentes: rodam juntas (uma ida ao banco a menos no tempo total)
   const consultaAgendamentos = db.query(
     `SELECT
        a.id, a.data_hora_inicio, a.data_hora_fim, a.status, a.motivo,
@@ -40,7 +40,14 @@ export async function GET(req: NextRequest) {
        rc.id AS recebimento_id, rc.status_recebimento, rc.total_recebimento, rc.valor_desconto,
        rc.percentual_profissional, rc.valor_profissional, rc.valor_clinica,
        rc.batch_agendamento_id, rc.condicao_pagamento_id,
-       cp.tipo_pagamento, cp.descricao AS condicao_descricao
+       cp.tipo_pagamento, cp.descricao AS condicao_descricao,
+       (SELECT COALESCE(json_agg(json_build_object(
+                  'descricao', cp2.descricao, 'tipo_pagamento', cp2.tipo_pagamento, 'valor', rp.valor
+                ) ORDER BY rp.id), '[]')
+          FROM tab_recebimento_pagamento rp
+            JOIN tab_condicao_pagamento cp2 ON cp2.id = rp.condicao_pagamento_id
+          WHERE rp.empresa_id = a.empresa_id AND rp.batch_agendamento_id = rc.batch_agendamento_id
+       ) AS formas_pagamento
      FROM tab_agendamento a
        JOIN tab_pessoa pac ON pac.id = a.paciente_id
        JOIN tab_pessoa pro ON pro.id = a.profissional_id
@@ -54,20 +61,64 @@ export async function GET(req: NextRequest) {
     [empresaId, data],
   )
 
+  // Totais por forma de pagamento: lotes com split (pagamento misto, a partir da migração 66)
+  // vêm de tab_recebimento_pagamento (1 linha por forma, não atribui o lote inteiro a uma
+  // forma só). Lotes ANTERIORES à migração 66 (ou qualquer um sem linha lá, por qualquer
+  // motivo) caem no fallback: usam rc.condicao_pagamento_id como forma única do lote inteiro
+  // — é o mesmo dado que já existia antes do pagamento misto, só não pode ficar de fora da
+  // soma (senão total por forma < total_recebido, como aconteceu num recebimento legado real
+  // no dia 02/10/2026 que sumia da soma por forma). Ver padroes.md "Pagamento misto".
+  const consultaPorForma = db.query(
+    `WITH lotes_pagos AS (
+       SELECT rc.batch_agendamento_id, rc.condicao_pagamento_id, SUM(rc.total_recebimento) AS total_lote
+       FROM tab_recebimento_consulta rc
+         JOIN tab_agendamento a ON a.id = rc.agendamento_id
+       WHERE a.empresa_id = $1 AND rc.status_recebimento = 'PAGO'
+         AND a.data_hora_inicio >= $2::date
+         AND a.data_hora_inicio <  ($2::date + INTERVAL '1 day')
+       GROUP BY rc.batch_agendamento_id, rc.condicao_pagamento_id
+     ),
+     formas AS (
+       SELECT rp.batch_agendamento_id, rp.condicao_pagamento_id, rp.valor
+       FROM tab_recebimento_pagamento rp
+       WHERE rp.empresa_id = $1
+         AND rp.batch_agendamento_id IN (SELECT batch_agendamento_id FROM lotes_pagos)
+     )
+     SELECT cp.tipo_pagamento, SUM(f.valor) AS total
+     FROM (
+       SELECT batch_agendamento_id, condicao_pagamento_id, valor FROM formas
+       UNION ALL
+       SELECT lp.batch_agendamento_id, lp.condicao_pagamento_id, lp.total_lote
+       FROM lotes_pagos lp
+       WHERE NOT EXISTS (SELECT 1 FROM formas f WHERE f.batch_agendamento_id = lp.batch_agendamento_id)
+     ) f
+       JOIN tab_condicao_pagamento cp ON cp.id = f.condicao_pagamento_id
+     GROUP BY cp.tipo_pagamento`,
+    [empresaId, data],
+  )
+
   let fechamento: Record<string, unknown> | null
   let agendamentos: Record<string, any>[]
+  let porFormaRows: { tipo_pagamento: string; total: string }[]
   try {
-    const [f, a] = await Promise.all([consultaFechamento, consultaAgendamentos])
+    const [f, a, pf] = await Promise.all([consultaFechamento, consultaAgendamentos, consultaPorForma])
     fechamento   = f
     agendamentos = a.rows
+    porFormaRows = pf.rows
   } catch (err) {
     console.error('[GET /api/gerencial/fechamento-diario]', err)
     return NextResponse.json({ erro: 'Erro ao carregar o fechamento do dia' }, { status: 500 })
   }
 
-  // KPIs calculados em JS a partir do mesmo array de agendamentos, pra garantir
-  // que a lista exibida e os totais batem sempre (evita drift entre queries).
+  // KPIs de atendimento/repasse calculados em JS a partir do mesmo array de agendamentos,
+  // pra garantir que a lista exibida e os totais batem sempre (evita drift entre queries).
+  // por_forma vem da query dedicada acima (fonte: tab_recebimento_pagamento).
   const porForma: Record<string, number> = { dinheiro: 0, pix: 0, debito: 0, credito: 0, a_prazo: 0 }
+  for (const r of porFormaRows) {
+    if (r.tipo_pagamento && TIPOS_PAGAMENTO.includes(r.tipo_pagamento as typeof TIPOS_PAGAMENTO[number])) {
+      porForma[r.tipo_pagamento] = Number(r.total) || 0
+    }
+  }
   const porProfissionalMap = new Map<number, {
     profissional_id: number; profissional_nome: string
     total_agendados: number; atendidos: number; faltas: number; total_recebido: number
@@ -90,9 +141,6 @@ export async function GET(req: NextRequest) {
       totalRecebido += valor
       totalRepasse += repasse
       totalClinica += clinica
-      if (ag.tipo_pagamento && TIPOS_PAGAMENTO.includes(ag.tipo_pagamento)) {
-        porForma[ag.tipo_pagamento as string] += valor
-      }
     }
 
     let prof = porProfissionalMap.get(ag.profissional_id)

@@ -37,6 +37,10 @@ interface AgendamentoDia {
   condicao_pagamento_id: number | null
   tipo_pagamento: string | null
   condicao_descricao: string | null
+  // Detalhe de todas as formas do lote (tab_recebimento_pagamento) — tipo_pagamento/
+  // condicao_descricao acima são só a 1ª forma (legado), isso aqui é a fonte completa.
+  // [] quando não há recebimento; 1 item no caso comum; 2+ em pagamento misto.
+  formas_pagamento: { descricao: string; tipo_pagamento: string; valor: number }[]
 }
 
 interface Fechamento {
@@ -496,7 +500,10 @@ export default function FechamentoDiarioPage() {
                     {dados.agendamentos.map(ag => {
                       const pago      = ag.status_recebimento === 'PAGO'
                       const isLote    = ag.batch_agendamento_id != null && ag.batch_agendamento_id !== ag.id
-                      const podeCorrigir = isAdmin && pago && !diaFechado && !isLote
+                      const ehMisto   = (ag.formas_pagamento?.length ?? 0) > 1
+                      // Corrigir pressupõe 1 forma só — lote (N agendamentos) ou pagamento misto (N
+                      // formas no mesmo agendamento) não tem "a" condição única pra reclassificar.
+                      const podeCorrigir = isAdmin && pago && !diaFechado && !isLote && !ehMisto
                       const rateio    = pago ? rateioDoAtendimento(ag) : null
                       return (
                         <tr key={ag.id}>
@@ -514,7 +521,13 @@ export default function FechamentoDiarioPage() {
                             </span>
                           </td>
                           <td style={{ fontSize: 12, color: 'var(--texto-secundario)' }}>
-                            {ag.tipo_pagamento ? TIPO_PGTO_LABEL[ag.tipo_pagamento] ?? ag.tipo_pagamento : '—'}
+                            {ehMisto ? (
+                              <span title={ag.formas_pagamento.map(f => `${TIPO_PGTO_LABEL[f.tipo_pagamento] ?? f.descricao}: ${formatBRL(f.valor)}`).join(' + ')}>
+                                Misto ({ag.formas_pagamento.length})
+                              </span>
+                            ) : (
+                              ag.tipo_pagamento ? TIPO_PGTO_LABEL[ag.tipo_pagamento] ?? ag.tipo_pagamento : '—'
+                            )}
                             {isLote && <span style={{ marginLeft: 5, fontSize: 10, color: 'var(--texto-terciario)' }}>(lote)</span>}
                           </td>
                           <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)', fontWeight: 600, color: pago ? 'var(--cor-sucesso)' : 'var(--texto-terciario)' }}>
@@ -540,7 +553,7 @@ export default function FechamentoDiarioPage() {
                           </td>
                           {isAdmin && (
                             <td onClick={e => e.stopPropagation()}>
-                              {podeCorrigir && (
+                              {podeCorrigir ? (
                                 <button
                                   className="btn-ghost" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px' }}
                                   onClick={() => abrirCorrecao(ag)}
@@ -548,7 +561,14 @@ export default function FechamentoDiarioPage() {
                                 >
                                   <Pencil size={12} /> Corrigir
                                 </button>
-                              )}
+                              ) : (pago && !diaFechado && !isLote && ehMisto && (
+                                <span
+                                  style={{ fontSize: 10.5, color: 'var(--texto-terciario)' }}
+                                  title="Pagamento misto — estorne o recebimento na tela de Recebimentos e refaça pra corrigir"
+                                >
+                                  —
+                                </span>
+                              ))}
                             </td>
                           )}
                         </tr>
@@ -585,8 +605,16 @@ export default function FechamentoDiarioPage() {
             <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Corrigir Forma de Pagamento</div>
             <div style={{ fontSize: 12.5, color: 'var(--texto-secundario)', marginBottom: 14 }}>
               Paciente: <strong>{modalAg.paciente_nome}</strong><br />
-              Forma atual: <strong>{modalAg.tipo_pagamento ? TIPO_PGTO_LABEL[modalAg.tipo_pagamento] ?? modalAg.tipo_pagamento : '—'}</strong>
-              {modalAg.condicao_descricao && <> ({modalAg.condicao_descricao})</>}
+              Forma atual:{' '}
+              {modalAg.formas_pagamento.length > 0 ? (
+                <strong>
+                  {modalAg.formas_pagamento
+                    .map(f => `${TIPO_PGTO_LABEL[f.tipo_pagamento] ?? f.descricao} (${formatBRL(f.valor)})`)
+                    .join(' + ')}
+                </strong>
+              ) : (
+                <strong>{modalAg.tipo_pagamento ? TIPO_PGTO_LABEL[modalAg.tipo_pagamento] ?? modalAg.tipo_pagamento : '—'}</strong>
+              )}
             </div>
 
             <div style={{ marginBottom: 12 }}>

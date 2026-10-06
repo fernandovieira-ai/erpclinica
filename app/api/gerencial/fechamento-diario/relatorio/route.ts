@@ -50,6 +50,8 @@ export async function GET(req: NextRequest) {
            tp.descricao AS tipo_descricao,
            rc.valor_original, rc.valor_desconto, rc.total_recebimento,
            cp.descricao AS forma_descricao, cp.tipo_pagamento, vc.qtd_parcelas,
+           (SELECT COUNT(*) FROM tab_recebimento_pagamento rp
+             WHERE rp.batch_agendamento_id = rc.batch_agendamento_id AND rp.empresa_id = a.empresa_id) AS qtd_formas_pagamento,
            COALESCE(atc.valor, tp.valor) AS valor_tabela
          FROM tab_agendamento a
            JOIN tab_pessoa pac ON pac.id = a.paciente_id
@@ -81,7 +83,7 @@ export async function GET(req: NextRequest) {
 
     const itens = rows.map(r => {
       const pago = r.total_recebimento != null
-      const forma = formaDePagamento(pago, r.forma_descricao as string | null, r.tipo_pagamento as string | null, r.qtd_parcelas)
+      const forma = formaDePagamento(pago, r.forma_descricao as string | null, r.tipo_pagamento as string | null, r.qtd_parcelas, r.qtd_formas_pagamento)
       return {
         pago,
         forma_pagamento:   forma,
