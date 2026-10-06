@@ -40,7 +40,8 @@ export async function GET(req: NextRequest) {
               pc.descricao AS conta_desc, pc.codigo AS conta_codigo,
               td.ind_pis_cofins, td.ind_imposto, td.tipo_imposto,
               td.ind_capex, td.pai_id,
-              p.descricao AS pai_desc, td.ativo
+              p.descricao AS pai_desc, td.ativo,
+              EXISTS(SELECT 1 FROM tab_tipo_despesa f WHERE f.pai_id = td.id AND f.empresa_id = td.empresa_id) AS tem_filhos
        FROM tab_tipo_despesa td
        LEFT JOIN tab_plano_contas pc ON pc.id = td.conta_id
        LEFT JOIN tab_tipo_despesa p  ON p.id  = td.pai_id

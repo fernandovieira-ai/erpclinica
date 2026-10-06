@@ -352,6 +352,7 @@ export interface Despesa {
   tipo_despesa_id:       number
   tipo_despesa_desc:     string | null
   tipo_despesa_natureza: string | null
+  tipo_despesa_sintetico: boolean
   cod_tipo_cobranca:     number | null
   tipo_cobranca_desc:  string | null
   centro_custo_id:     number | null

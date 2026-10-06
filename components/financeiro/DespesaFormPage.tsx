@@ -50,13 +50,15 @@ function Sep() {
 
 // ── Modal picker genérico ─────────────────────────────────────────────────────
 
-function PickerModal<T extends { id: number }>({ title, url, params: extraParams, renderItem, onSelect, onClose }: {
-  title:      string
-  url:        string
-  params?:    Record<string, string>
-  renderItem: (item: T) => React.ReactNode
-  onSelect:   (item: T) => void
-  onClose:    () => void
+function PickerModal<T extends { id: number }>({ title, url, params: extraParams, renderItem, onSelect, onClose, isDisabled, disabledHint }: {
+  title:        string
+  url:          string
+  params?:      Record<string, string>
+  renderItem:   (item: T) => React.ReactNode
+  onSelect:     (item: T) => void
+  onClose:      () => void
+  isDisabled?:  (item: T) => boolean
+  disabledHint?: string
 }) {
   const [busca,   setBusca]   = useState('')
   const [lista,   setLista]   = useState<T[]>([])
@@ -97,15 +99,25 @@ function PickerModal<T extends { id: number }>({ title, url, params: extraParams
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {loading && <div style={{ padding: 20, textAlign: 'center', fontSize: 12, color: 'var(--texto-terciario)' }}>Carregando...</div>}
           {!loading && lista.length === 0 && <div style={{ padding: 20, textAlign: 'center', fontSize: 12, color: 'var(--texto-terciario)' }}>Nenhum resultado</div>}
-          {lista.map(item => (
-            <div key={item.id} onClick={() => onSelect(item)}
-              style={{ padding: '7px 14px', cursor: 'pointer', fontSize: 12, borderBottom: '1px solid var(--borda-suave)', transition: 'background 0.1s' }}
-              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--bg-hover)')}
-              onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
-            >
-              {renderItem(item)}
-            </div>
-          ))}
+          {lista.map(item => {
+            const desabilitado = isDisabled?.(item) ?? false
+            return (
+              <div key={item.id} onClick={() => !desabilitado && onSelect(item)}
+                style={{
+                  padding: '7px 14px', cursor: desabilitado ? 'not-allowed' : 'pointer', fontSize: 12,
+                  borderBottom: '1px solid var(--borda-suave)', transition: 'background 0.1s',
+                  opacity: desabilitado ? 0.45 : 1,
+                }}
+                onMouseEnter={e => { if (!desabilitado) e.currentTarget.style.backgroundColor = 'var(--bg-hover)' }}
+                onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+              >
+                {renderItem(item)}
+                {desabilitado && disabledHint && (
+                  <span style={{ marginLeft: 8, fontSize: 11, fontStyle: 'italic', color: 'var(--texto-terciario)' }}>{disabledHint}</span>
+                )}
+              </div>
+            )
+          })}
         </div>
       </div>
     </div>
@@ -115,7 +127,7 @@ function PickerModal<T extends { id: number }>({ title, url, params: extraParams
 // ── Pickers específicos ───────────────────────────────────────────────────────
 
 type PessoaItem        = { id: number; nome: string; cpf_cnpj: string | null }
-type TipoDespesaItem   = { id: number; codigo: string; descricao: string; natureza: string }
+type TipoDespesaItem   = { id: number; codigo: string; descricao: string; natureza: string; tem_filhos: boolean }
 type TipoCobrancaItem  = { id: number; des_tipo_cobranca: string }
 type CentroCustoItem   = { id: number; codigo: string; descricao: string }
 type ContaBancoItem    = { id: number; mnemonico: string; banco_nome: string | null }
@@ -141,6 +153,7 @@ export default function DespesaFormPage({ despesa }: Props) {
   const [nomePessoa,       setNomePessoa]       = useState('')
   const [nomeTipoDespesa,  setNomeTipoDespesa]  = useState('')
   const [tipoDespesaNatureza, setTipoDespesaNatureza] = useState('')
+  const [tipoDespesaSintetico, setTipoDespesaSintetico] = useState(false)
   const [nomeTipoCobranca, setNomeTipoCobranca] = useState('')
   const [nomeCentro,       setNomeCentro]       = useState('')
   const [nomeContaBanco,   setNomeContaBanco]   = useState('')
@@ -279,6 +292,7 @@ export default function DespesaFormPage({ despesa }: Props) {
     setNomePessoa(despesa.pessoa_nome         ?? '')
     setNomeTipoDespesa(despesa.tipo_despesa_desc   ?? '')
     setTipoDespesaNatureza(despesa.tipo_despesa_natureza ?? '')
+    setTipoDespesaSintetico(despesa.tipo_despesa_sintetico ?? false)
     setNomeCentro(despesa.centro_custo_desc    ?? '')
     setNomeContaBanco(despesa.conta_banco_desc ?? '')
     setNomeTipoCobranca(despesa.tipo_cobranca_desc ?? '')
@@ -310,6 +324,13 @@ export default function DespesaFormPage({ despesa }: Props) {
   }, [despesa, setValue])
 
   async function onSubmit(data: DespesaInput) {
+    // Tipo de despesa sintético (agrupador) não pode receber lançamento direto
+    if (tipoDespesaSintetico) {
+      toast.error('Este tipo de despesa é um grupo sintético (agrupador) — selecione um tipo analítico antes de salvar.')
+      setAba('Dados')
+      return
+    }
+
     // Despesa parcelada (sem banco/caixa) exige tipo de cobrança
     if (!data.destino && !data.cod_tipo_cobranca) {
       toast.error('Tipo de Cobrança é obrigatório para despesas parceladas.')
@@ -396,7 +417,15 @@ export default function DespesaFormPage({ despesa }: Props) {
           title="Tipo de Despesa"
           url="/api/cadastro/tipos-despesa"
           renderItem={t => <><span style={{ fontFamily: 'var(--fonte-mono)', marginRight: 8, color: 'var(--texto-terciario)' }}>{t.codigo}</span><strong>{t.descricao}</strong></>}
-          onSelect={t => { setValue('tipo_despesa_id', t.id); setNomeTipoDespesa(`${t.codigo} - ${t.descricao}`); setTipoDespesaNatureza(t.natureza); setPicker(null) }}
+          isDisabled={t => t.tem_filhos}
+          disabledHint="(grupo — não lança)"
+          onSelect={t => {
+            setValue('tipo_despesa_id', t.id)
+            setNomeTipoDespesa(`${t.codigo} - ${t.descricao}`)
+            setTipoDespesaNatureza(t.natureza)
+            setTipoDespesaSintetico(false)
+            setPicker(null)
+          }}
           onClose={() => setPicker(null)}
         />
       )}
@@ -477,9 +506,14 @@ export default function DespesaFormPage({ despesa }: Props) {
             label="Tipo de Despesa:*"
             nome={nomeTipoDespesa}
             onOpen={() => setPicker('tipo_despesa')}
-            onClear={() => { setValue('tipo_despesa_id', 0); setNomeTipoDespesa(''); setTipoDespesaNatureza('') }}
+            onClear={() => { setValue('tipo_despesa_id', 0); setNomeTipoDespesa(''); setTipoDespesaNatureza(''); setTipoDespesaSintetico(false) }}
             error={errors.tipo_despesa_id?.message}
           />
+          {tipoDespesaSintetico && (
+            <div style={{ padding: '6px 10px', marginBottom: 2, backgroundColor: 'var(--cor-erro)18', border: '1px solid var(--cor-erro)60', borderRadius: 4, fontSize: 12, color: 'var(--cor-erro)', fontWeight: 500 }}>
+              ⚠ Este tipo de despesa é um <strong>grupo sintético</strong> (agrupador) — selecione um tipo analítico antes de salvar.
+            </div>
+          )}
           <Sep />
 
           {/* Datas */}

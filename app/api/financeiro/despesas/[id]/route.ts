@@ -14,7 +14,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     db.query(
       `SELECT d.id, d.empresa_id,
               d.pessoa_id, p.nome AS pessoa_nome,
-              d.tipo_despesa_id, td.descricao AS tipo_despesa_desc,              td.natureza AS tipo_despesa_natureza,              d.cod_tipo_cobranca, tc.des_tipo_cobranca AS tipo_cobranca_desc,
+              d.tipo_despesa_id, td.descricao AS tipo_despesa_desc,              td.natureza AS tipo_despesa_natureza,
+              EXISTS(SELECT 1 FROM tab_tipo_despesa f WHERE f.pai_id = td.id AND f.empresa_id = td.empresa_id) AS tipo_despesa_sintetico,
+              d.cod_tipo_cobranca, tc.des_tipo_cobranca AS tipo_cobranca_desc,
               d.centro_custo_id, cc.descricao AS centro_custo_desc,
               d.conta_banco_id, cb.mnemonico AS conta_banco_desc,
               d.ind_avista, d.destino,
@@ -95,12 +97,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ erro: 'Tipo de Cobrança é obrigatório para despesas parceladas.' }, { status: 400 })
   }
 
-  // Valida: tipo_despesa Administrativa exige rateio
+  // Valida: tipo de despesa sintético (agrupador, tem filhos) não pode receber lançamento direto
   if (d.tipo_despesa_id) {
     const { rows: tdRows } = await db.query(
-      `SELECT natureza FROM tab_tipo_despesa WHERE id=$1 AND empresa_id=$2`,
+      `SELECT td.natureza, EXISTS(SELECT 1 FROM tab_tipo_despesa f WHERE f.pai_id = td.id AND f.empresa_id = td.empresa_id) AS tem_filhos
+       FROM tab_tipo_despesa td WHERE td.id=$1 AND td.empresa_id=$2`,
       [d.tipo_despesa_id, session.empresa_id_ativa],
     )
+    if (tdRows[0]?.tem_filhos) {
+      return NextResponse.json({ erro: 'Este tipo de despesa é um grupo sintético (agrupador) e não pode receber lançamentos diretos. Selecione um tipo analítico.' }, { status: 400 })
+    }
+    // Valida: tipo_despesa Administrativa exige rateio
     if (tdRows[0]?.natureza === 'A' && rateios.length === 0) {
       return NextResponse.json({ erro: 'Tipo de despesa Administrativa requer pelo menos um rateio de centro de custo.' }, { status: 400 })
     }

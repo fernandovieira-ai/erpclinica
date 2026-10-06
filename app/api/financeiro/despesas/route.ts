@@ -98,12 +98,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ erro: 'Tipo de Cobrança é obrigatório para despesas parceladas.' }, { status: 400 })
   }
 
-  // Valida: tipo_despesa Administrativa exige rateio
+  // Valida: tipo de despesa sintético (agrupador, tem filhos) não pode receber lançamento direto
   if (d.tipo_despesa_id) {
     const { rows: tdRows } = await db.query(
-      `SELECT natureza FROM tab_tipo_despesa WHERE id=$1 AND empresa_id=$2`,
+      `SELECT td.natureza, EXISTS(SELECT 1 FROM tab_tipo_despesa f WHERE f.pai_id = td.id AND f.empresa_id = td.empresa_id) AS tem_filhos
+       FROM tab_tipo_despesa td WHERE td.id=$1 AND td.empresa_id=$2`,
       [d.tipo_despesa_id, session.empresa_id_ativa],
     )
+    if (tdRows[0]?.tem_filhos) {
+      return NextResponse.json({ erro: 'Este tipo de despesa é um grupo sintético (agrupador) e não pode receber lançamentos diretos. Selecione um tipo analítico.' }, { status: 400 })
+    }
+    // Valida: tipo_despesa Administrativa exige rateio
     if (tdRows[0]?.natureza === 'A' && rateios.length === 0) {
       return NextResponse.json({ erro: 'Tipo de despesa Administrativa requer pelo menos um rateio de centro de custo.' }, { status: 400 })
     }
