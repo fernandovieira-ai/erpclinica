@@ -165,6 +165,9 @@ export default function EmpresaFormPage({ empresa }: Props) {
   const [tiposCobranca, setTiposCobranca] = useState<{ cod_tipo_cobranca: number; des_tipo_cobranca: string }[]>([])
   const [mostrarVoaToken, setMostrarVoaToken] = useState(false)
   const [mostrarMemedSecret, setMostrarMemedSecret] = useState(false)
+  const [ghlToken, setGhlToken] = useState<{ token: string; ativo: boolean } | null>(null)
+  const [gerandoGhlToken, setGerandoGhlToken] = useState(false)
+  const [mostrarGhlToken, setMostrarGhlToken] = useState(false)
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [processandoLogo, setProcessandoLogo] = useState(false)
   const logoInputRef = useRef<HTMLInputElement>(null)
@@ -186,6 +189,45 @@ export default function EmpresaFormPage({ empresa }: Props) {
       .then(d => setTiposCobranca(d.dados ?? []))
       .catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (!empresa?.id) return
+    fetch(`/api/cadastro/empresas/${empresa.id}/integracoes/gohighlevel`)
+      .then(r => r.json())
+      .then(d => setGhlToken(d ?? null))
+      .catch(() => {})
+  }, [empresa?.id])
+
+  async function handleGerarGhlToken() {
+    if (!empresa?.id) return
+    setGerandoGhlToken(true)
+    try {
+      const res = await fetch(`/api/cadastro/empresas/${empresa.id}/integracoes/gohighlevel`, { method: 'POST' })
+      if (!res.ok) throw new Error()
+      setGhlToken(await res.json())
+      setMostrarGhlToken(true)
+      toast.success('Token gerado')
+    } catch {
+      toast.error('Não foi possível gerar o token')
+    } finally {
+      setGerandoGhlToken(false)
+    }
+  }
+
+  async function handleToggleGhlAtivo(ativo: boolean) {
+    if (!empresa?.id) return
+    try {
+      const res = await fetch(`/api/cadastro/empresas/${empresa.id}/integracoes/gohighlevel`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ativo }),
+      })
+      if (!res.ok) throw new Error()
+      setGhlToken(await res.json())
+    } catch {
+      toast.error('Não foi possível atualizar')
+    }
+  }
 
   useEffect(() => {
     if (!empresa) return
@@ -813,6 +855,69 @@ export default function EmpresaFormPage({ empresa }: Props) {
               Solicitar as chaves em doc.memed.com.br/integracao-rapida. A secret key nunca é
               devolvida pelo sistema depois de salva — só um indicador de que já está configurada.
             </div>
+
+            <div style={{ height: 1, backgroundColor: 'var(--borda-suave)', margin: '16px 0' }} />
+
+            <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginBottom: 4 }}>
+              Token de API pra ferramentas externas (ex: GoHighLevel) consultarem os pacientes
+              desta empresa. Cada empresa tem o próprio token — gerar um novo invalida o anterior.
+            </div>
+
+            {!empresa?.id ? (
+              <div style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>
+                Salve a empresa primeiro para gerar o token de integração.
+              </div>
+            ) : (
+              <>
+                <Row label="Token GoHighLevel:">
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flex: 1, maxWidth: 480 }}>
+                    <div style={{ position: 'relative', flex: 1 }}>
+                      <Input
+                        value={ghlToken?.token ?? ''}
+                        readOnly
+                        type={mostrarGhlToken ? 'text' : 'password'}
+                        preserveCase
+                        placeholder="nenhum token gerado"
+                        style={{ fontFamily: 'var(--fonte-mono)', paddingRight: 30 }}
+                      />
+                      {ghlToken?.token && (
+                        <button
+                          type="button"
+                          onClick={() => setMostrarGhlToken(v => !v)}
+                          title={mostrarGhlToken ? 'Ocultar token' : 'Mostrar token'}
+                          style={{
+                            position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            display: 'flex', color: 'var(--texto-terciario)', padding: 2,
+                          }}
+                        >
+                          {mostrarGhlToken ? <EyeOff size={13} /> : <Eye size={13} />}
+                        </button>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleGerarGhlToken}
+                      disabled={gerandoGhlToken}
+                      className="btn-secondary"
+                      style={{ whiteSpace: 'nowrap', fontSize: 11, padding: '4px 10px' }}
+                    >
+                      {gerandoGhlToken ? 'Gerando...' : ghlToken?.token ? 'Regenerar' : 'Gerar token'}
+                    </button>
+                  </div>
+                </Row>
+
+                {ghlToken?.token && (
+                  <Row label="Ativo:">
+                    <input
+                      type="checkbox"
+                      checked={ghlToken.ativo}
+                      onChange={e => handleToggleGhlAtivo(e.target.checked)}
+                    />
+                  </Row>
+                )}
+              </>
+            )}
             </div>
           </fieldset>
         )}
