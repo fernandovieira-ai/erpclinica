@@ -45,6 +45,7 @@ const NAV: NavItem[] = [
     children: [
       { label: 'Fechamento Diário', href: '/gerencial/fechamento-diario', icon: <ClipboardCheck size={14} /> },
       { label: 'Fluxo de Caixa', href: '/gerencial/fluxo-caixa', icon: <Activity size={14} /> },
+      { label: 'Receitas', href: '/gerencial/receitas', icon: <DollarSign size={14} /> },
     ],
   },
   {
