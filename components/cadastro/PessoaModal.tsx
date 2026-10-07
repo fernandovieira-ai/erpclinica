@@ -94,15 +94,23 @@ export default function PessoaModal({ pessoa, onClose, onSaved }: Props) {
       const url    = pessoa ? `/api/cadastro/pessoas/${pessoa.id}` : '/api/cadastro/pessoas'
       const method = pessoa ? 'PATCH' : 'POST'
       const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
-      const json   = await res.json()
+
+      let json: { erro?: string | { fieldErrors?: Record<string, string[]>; formErrors?: string[] } } | null = null
+      try { json = await res.json() } catch { /* resposta sem corpo JSON (ex.: erro inesperado do servidor) */ }
 
       if (!res.ok) {
-        toast.error(json.erro?.formErrors?.[0] ?? json.erro ?? 'Erro ao salvar')
+        const erro = json?.erro
+        const mensagem = typeof erro === 'string'
+          ? erro
+          : erro?.formErrors?.[0] ?? Object.values(erro?.fieldErrors ?? {})[0]?.[0]
+        toast.error(mensagem ?? 'Não foi possível salvar o cadastro. Verifique os dados e tente novamente.')
         return
       }
 
       toast.success(pessoa ? 'Pessoa atualizada!' : 'Pessoa cadastrada!')
       onSaved()
+    } catch {
+      toast.error('Erro de comunicação com o servidor. Tente novamente.')
     } finally {
       setLoading(false)
     }
@@ -181,7 +189,10 @@ export default function PessoaModal({ pessoa, onClose, onSaved }: Props) {
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit(onSubmit)} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <form onSubmit={handleSubmit(onSubmit, (erros) => {
+            if (erros.nome) setAba('Dados')
+            toast.error(erros.nome?.message ?? 'Corrija os campos destacados antes de salvar')
+          })} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           <div style={{ padding: '20px', flex: 1 }}>
 
             {/* === ABA DADOS === */}

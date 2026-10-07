@@ -8,10 +8,10 @@ const emailOpcional = z.union([
 
 export const pessoaSchema = z.object({
   tipo_pessoa:        z.enum(['F', 'J']),
-  nome:               z.string().min(1, 'Nome é obrigatório').max(150),
+  nome:               z.string().trim().min(1, 'Nome é obrigatório').max(150),
   nome_fantasia:      z.string().max(100).optional().nullable(),
   cpf_cnpj:           z.string().max(18).optional().nullable(),
-  data_nascimento:    z.string().max(10).optional().nullable(),  // YYYY-MM-DD
+  data_nascimento:    z.preprocess(v => v === '' ? null : v, z.string().max(10).nullable().optional()),  // YYYY-MM-DD
   sexo:               z.preprocess(v => v === '' ? null : v, z.enum(['F', 'M']).nullable().optional()),
   cor_raca:           z.preprocess(v => v === '' ? null : v, z.string().max(20).nullable().optional()),
   estado_civil:       z.preprocess(v => v === '' ? null : v, z.string().max(20).nullable().optional()),

@@ -891,11 +891,25 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
       const url    = pessoa ? `/api/cadastro/pessoas/${pessoa.id}` : '/api/cadastro/pessoas'
       const method = pessoa ? 'PATCH' : 'POST'
       const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-      const json   = await res.json()
-      if (!res.ok) { toast.error(json.erro?.formErrors?.[0] ?? json.erro ?? 'Erro ao salvar'); return }
+
+      let json: { erro?: string | { fieldErrors?: Record<string, string[]>; formErrors?: string[] }; id?: number } | null = null
+      try { json = await res.json() } catch { /* resposta sem corpo JSON (ex.: erro inesperado do servidor) */ }
+
+      if (!res.ok) {
+        const erro = json?.erro
+        const mensagem = typeof erro === 'string'
+          ? erro
+          : erro?.formErrors?.[0] ?? Object.values(erro?.fieldErrors ?? {})[0]?.[0]
+        toast.error(mensagem ?? 'Não foi possível salvar o cadastro. Verifique os dados e tente novamente.')
+        return
+      }
+
       toast.success(pessoa ? 'Pessoa atualizada!' : 'Pessoa cadastrada!')
-      if (!pessoa) router.push(`/cadastro/pessoas/${json.id}${papelInicial ? `?papel=${papelInicial}` : ''}`)
+      if (!pessoa && json?.id) router.push(`/cadastro/pessoas/${json.id}${papelInicial ? `?papel=${papelInicial}` : ''}`)
+      else if (!pessoa) router.push(listaHref)
       else router.refresh()
+    } catch {
+      toast.error('Erro de comunicação com o servidor. Tente novamente.')
     } finally { setSaving(false) }
   }
 
@@ -1071,7 +1085,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <FormRow label="Nome:">
                 <Input {...register('nome')}
-                  style={{ border: errors.nome ? '1px solid var(--cor-erro)' : undefined }} />
+                  style={errors.nome ? { border: '1px solid var(--cor-erro)' } : undefined} />
               </FormRow>
               {errors.nome && <span style={{ fontSize: 11, color: 'var(--cor-erro)', paddingLeft: 116 }}>{errors.nome.message}</span>}
               <FormRow label="Nome Fantasia:">

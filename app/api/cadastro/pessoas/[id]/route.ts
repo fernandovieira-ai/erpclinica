@@ -58,52 +58,57 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const db = getDb(session.database_name)
   const up = (v: string | null | undefined) => v ? v.toUpperCase() : null
 
-  const result = await db.query(
-    `UPDATE tab_pessoa SET
-       tipo_pessoa=$1, nome=$2, nome_fantasia=$3, cpf_cnpj=$4, data_nascimento=$5, rg_ie=$6, im=$7,
-       ind_cliente=$8, ind_fornecedor=$9, ind_banco=$10, ind_transportador=$11,
-       ind_paciente=$12, ind_profissional=$13,
-       cep=$14, logradouro=$15, numero=$16, complemento=$17, bairro=$18, cidade=$19, uf=$20,
-       telefone=$21, celular=$22, whatsapp=$23, email=$24, email_nfe=$25,
-       limite_credito=$26, cod_tipo_cobranca=$27, banco_nome=$28, banco_agencia=$29, banco_conta=$30, banco_tipo=$31, chave_pix=$32,
-       contribuinte_icms=$33, optante_simples=$34, obs=$35,
-       sexo=$36, cor_raca=$37, estado_civil=$38, naturalidade=$39, foto=$40,
-       pai_pessoa_id=$41, pai_nome=$42, pai_paciente=$43,
-       mae_pessoa_id=$44, mae_nome=$45, mae_paciente=$46,
-       conjuge_pessoa_id=$47, conjuge_nome=$48, conjuge_paciente=$49,
-       indicacao_pessoa_id=$50, indicacao_nome=$51, indicacao_fone=$52, indicacao_ligacao=$53,
-       profissao=$54, altura=$55, peso=$56, crm=$57, crm_uf=$58,
-       eh_clinica=$59,
-       updated_at=NOW()
-     WHERE id = $60`,
-    [
-      d.tipo_pessoa, up(d.nome), up(d.nome_fantasia),
-      d.cpf_cnpj ?? null, d.data_nascimento || null, up(d.rg_ie), up(d.im),
-      d.ind_cliente, d.ind_fornecedor, d.ind_banco, d.ind_transportador,
-      d.ind_paciente ?? false, d.ind_profissional ?? false,
-      d.cep ?? null, up(d.logradouro), up(d.numero),
-      up(d.complemento), up(d.bairro), up(d.cidade), up(d.uf),
-      d.telefone ?? null, d.celular ?? null, d.whatsapp ?? null,
-      d.email || null, d.email_nfe || null,
-      d.limite_credito, d.cod_tipo_cobranca ?? null, up(d.banco_nome), d.banco_agencia ?? null,
-      d.banco_conta ?? null, up(d.banco_tipo), d.chave_pix ?? null,
-      d.contribuinte_icms, d.optante_simples, up(d.obs),
-      d.sexo ?? null, up(d.cor_raca), up(d.estado_civil), up(d.naturalidade), d.foto ?? null,
-      d.pai_pessoa_id ?? null, up(d.pai_nome), d.pai_paciente ?? false,
-      d.mae_pessoa_id ?? null, up(d.mae_nome), d.mae_paciente ?? false,
-      d.conjuge_pessoa_id ?? null, up(d.conjuge_nome), d.conjuge_paciente ?? false,
-      d.indicacao_pessoa_id ?? null, up(d.indicacao_nome), d.indicacao_fone ?? null, up(d.indicacao_ligacao),
-      up(d.profissao), d.altura ?? null, d.peso ?? null, up(d.crm), up(d.crm_uf),
-      d.eh_clinica ?? false,
-      params.id,
-    ],
-  )
+  try {
+    const result = await db.query(
+      `UPDATE tab_pessoa SET
+         tipo_pessoa=$1, nome=$2, nome_fantasia=$3, cpf_cnpj=$4, data_nascimento=$5, rg_ie=$6, im=$7,
+         ind_cliente=$8, ind_fornecedor=$9, ind_banco=$10, ind_transportador=$11,
+         ind_paciente=$12, ind_profissional=$13,
+         cep=$14, logradouro=$15, numero=$16, complemento=$17, bairro=$18, cidade=$19, uf=$20,
+         telefone=$21, celular=$22, whatsapp=$23, email=$24, email_nfe=$25,
+         limite_credito=$26, cod_tipo_cobranca=$27, banco_nome=$28, banco_agencia=$29, banco_conta=$30, banco_tipo=$31, chave_pix=$32,
+         contribuinte_icms=$33, optante_simples=$34, obs=$35,
+         sexo=$36, cor_raca=$37, estado_civil=$38, naturalidade=$39, foto=$40,
+         pai_pessoa_id=$41, pai_nome=$42, pai_paciente=$43,
+         mae_pessoa_id=$44, mae_nome=$45, mae_paciente=$46,
+         conjuge_pessoa_id=$47, conjuge_nome=$48, conjuge_paciente=$49,
+         indicacao_pessoa_id=$50, indicacao_nome=$51, indicacao_fone=$52, indicacao_ligacao=$53,
+         profissao=$54, altura=$55, peso=$56, crm=$57, crm_uf=$58,
+         eh_clinica=$59,
+         updated_at=NOW()
+       WHERE id = $60`,
+      [
+        d.tipo_pessoa, up(d.nome), up(d.nome_fantasia),
+        d.cpf_cnpj ?? null, d.data_nascimento || null, up(d.rg_ie), up(d.im),
+        d.ind_cliente, d.ind_fornecedor, d.ind_banco, d.ind_transportador,
+        d.ind_paciente ?? false, d.ind_profissional ?? false,
+        d.cep ?? null, up(d.logradouro), up(d.numero),
+        up(d.complemento), up(d.bairro), up(d.cidade), up(d.uf),
+        d.telefone ?? null, d.celular ?? null, d.whatsapp ?? null,
+        d.email || null, d.email_nfe || null,
+        d.limite_credito, d.cod_tipo_cobranca ?? null, up(d.banco_nome), d.banco_agencia ?? null,
+        d.banco_conta ?? null, up(d.banco_tipo), d.chave_pix ?? null,
+        d.contribuinte_icms, d.optante_simples, up(d.obs),
+        d.sexo ?? null, up(d.cor_raca), up(d.estado_civil), up(d.naturalidade), d.foto ?? null,
+        d.pai_pessoa_id ?? null, up(d.pai_nome), d.pai_paciente ?? false,
+        d.mae_pessoa_id ?? null, up(d.mae_nome), d.mae_paciente ?? false,
+        d.conjuge_pessoa_id ?? null, up(d.conjuge_nome), d.conjuge_paciente ?? false,
+        d.indicacao_pessoa_id ?? null, up(d.indicacao_nome), d.indicacao_fone ?? null, up(d.indicacao_ligacao),
+        up(d.profissao), d.altura ?? null, d.peso ?? null, up(d.crm), up(d.crm_uf),
+        d.eh_clinica ?? false,
+        params.id,
+      ],
+    )
 
-  if (result.rowCount === 0) {
-    return NextResponse.json({ erro: 'Registro não encontrado ou sem permissão' }, { status: 404 })
+    if (result.rowCount === 0) {
+      return NextResponse.json({ erro: 'Registro não encontrado ou sem permissão' }, { status: 404 })
+    }
+
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    console.error('[PATCH /api/cadastro/pessoas/:id]', err)
+    return NextResponse.json({ erro: 'Não foi possível salvar as alterações. Verifique os dados informados e tente novamente.' }, { status: 500 })
   }
-
-  return NextResponse.json({ ok: true })
 }
 
 // DELETE /api/cadastro/pessoas/[id]

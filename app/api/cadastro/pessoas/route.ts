@@ -71,47 +71,52 @@ export async function POST(req: NextRequest) {
   const db = getDb(session.database_name)
   const up = (v: string | null | undefined) => v ? v.toUpperCase() : null
 
-  const { rows } = await db.query(
-    `INSERT INTO tab_pessoa (
-       empresa_id, tipo_pessoa, nome, nome_fantasia, cpf_cnpj, data_nascimento, rg_ie, im,
-       ind_cliente, ind_fornecedor, ind_banco, ind_transportador, ind_paciente, ind_profissional,
-       cep, logradouro, numero, complemento, bairro, cidade, uf,
-       telefone, celular, whatsapp, email, email_nfe,
-       limite_credito, cod_tipo_cobranca, banco_nome, banco_agencia, banco_conta, banco_tipo, chave_pix,
-       contribuinte_icms, optante_simples, obs,
-       sexo, cor_raca, estado_civil, naturalidade, foto,
-       pai_pessoa_id, pai_nome, pai_paciente,
-       mae_pessoa_id, mae_nome, mae_paciente,
-       conjuge_pessoa_id, conjuge_nome, conjuge_paciente,
-       indicacao_pessoa_id, indicacao_nome, indicacao_fone, indicacao_ligacao,
-       profissao, altura, peso, crm, crm_uf, eh_clinica
-     ) VALUES (
-       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
-       $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,
-       $37,$38,$39,$40,$41,
-       $42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56,$57,$58,$59,$60
-     ) RETURNING id`,
-    [
-      session.empresa_id_ativa, d.tipo_pessoa, up(d.nome), up(d.nome_fantasia),
-      d.cpf_cnpj ?? null, d.data_nascimento ?? null, up(d.rg_ie), up(d.im),
-      d.ind_cliente, d.ind_fornecedor, d.ind_banco, d.ind_transportador,
-      d.ind_paciente ?? false, d.ind_profissional ?? false,
-      d.cep ?? null, up(d.logradouro), up(d.numero),
-      up(d.complemento), up(d.bairro), up(d.cidade), up(d.uf),
-      d.telefone ?? null, d.celular ?? null, d.whatsapp ?? null,
-      d.email || null, d.email_nfe || null,
-      d.limite_credito, d.cod_tipo_cobranca ?? null, up(d.banco_nome), d.banco_agencia ?? null,
-      d.banco_conta ?? null, up(d.banco_tipo), d.chave_pix ?? null,
-      d.contribuinte_icms, d.optante_simples, up(d.obs),
-      d.sexo ?? null, up(d.cor_raca), up(d.estado_civil), up(d.naturalidade), d.foto ?? null,
-      d.pai_pessoa_id ?? null, up(d.pai_nome), d.pai_paciente ?? false,
-      d.mae_pessoa_id ?? null, up(d.mae_nome), d.mae_paciente ?? false,
-      d.conjuge_pessoa_id ?? null, up(d.conjuge_nome), d.conjuge_paciente ?? false,
-      d.indicacao_pessoa_id ?? null, up(d.indicacao_nome), d.indicacao_fone ?? null, up(d.indicacao_ligacao),
-      up(d.profissao), d.altura ?? null, d.peso ?? null, up(d.crm), up(d.crm_uf),
-      d.eh_clinica ?? false,
-    ],
-  )
+  try {
+    const { rows } = await db.query(
+      `INSERT INTO tab_pessoa (
+         empresa_id, tipo_pessoa, nome, nome_fantasia, cpf_cnpj, data_nascimento, rg_ie, im,
+         ind_cliente, ind_fornecedor, ind_banco, ind_transportador, ind_paciente, ind_profissional,
+         cep, logradouro, numero, complemento, bairro, cidade, uf,
+         telefone, celular, whatsapp, email, email_nfe,
+         limite_credito, cod_tipo_cobranca, banco_nome, banco_agencia, banco_conta, banco_tipo, chave_pix,
+         contribuinte_icms, optante_simples, obs,
+         sexo, cor_raca, estado_civil, naturalidade, foto,
+         pai_pessoa_id, pai_nome, pai_paciente,
+         mae_pessoa_id, mae_nome, mae_paciente,
+         conjuge_pessoa_id, conjuge_nome, conjuge_paciente,
+         indicacao_pessoa_id, indicacao_nome, indicacao_fone, indicacao_ligacao,
+         profissao, altura, peso, crm, crm_uf, eh_clinica
+       ) VALUES (
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
+         $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,
+         $37,$38,$39,$40,$41,
+         $42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56,$57,$58,$59,$60
+       ) RETURNING id`,
+      [
+        session.empresa_id_ativa, d.tipo_pessoa, up(d.nome), up(d.nome_fantasia),
+        d.cpf_cnpj ?? null, d.data_nascimento ?? null, up(d.rg_ie), up(d.im),
+        d.ind_cliente, d.ind_fornecedor, d.ind_banco, d.ind_transportador,
+        d.ind_paciente ?? false, d.ind_profissional ?? false,
+        d.cep ?? null, up(d.logradouro), up(d.numero),
+        up(d.complemento), up(d.bairro), up(d.cidade), up(d.uf),
+        d.telefone ?? null, d.celular ?? null, d.whatsapp ?? null,
+        d.email || null, d.email_nfe || null,
+        d.limite_credito, d.cod_tipo_cobranca ?? null, up(d.banco_nome), d.banco_agencia ?? null,
+        d.banco_conta ?? null, up(d.banco_tipo), d.chave_pix ?? null,
+        d.contribuinte_icms, d.optante_simples, up(d.obs),
+        d.sexo ?? null, up(d.cor_raca), up(d.estado_civil), up(d.naturalidade), d.foto ?? null,
+        d.pai_pessoa_id ?? null, up(d.pai_nome), d.pai_paciente ?? false,
+        d.mae_pessoa_id ?? null, up(d.mae_nome), d.mae_paciente ?? false,
+        d.conjuge_pessoa_id ?? null, up(d.conjuge_nome), d.conjuge_paciente ?? false,
+        d.indicacao_pessoa_id ?? null, up(d.indicacao_nome), d.indicacao_fone ?? null, up(d.indicacao_ligacao),
+        up(d.profissao), d.altura ?? null, d.peso ?? null, up(d.crm), up(d.crm_uf),
+        d.eh_clinica ?? false,
+      ],
+    )
 
-  return NextResponse.json({ id: rows[0].id }, { status: 201 })
+    return NextResponse.json({ id: rows[0].id }, { status: 201 })
+  } catch (err) {
+    console.error('[POST /api/cadastro/pessoas]', err)
+    return NextResponse.json({ erro: 'Não foi possível salvar o cadastro. Verifique os dados informados e tente novamente.' }, { status: 500 })
+  }
 }
