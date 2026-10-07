@@ -215,11 +215,16 @@ export async function POST(req: NextRequest) {
     // ativo, o modal deixa digitar o valor pago em vez de desconto/acréscimo — inclusive
     // cortesia 100% (valor pago = 0 numa consulta com preço de tabela > 0), que a trava
     // abaixo bloquearia por padrão.
+    // recebimento_permite_editar_valor_atendimento (novos/70_recebimento_valor_atendimento_editavel.sql):
+    // quando ativo, valor_original não precisa bater com o preço de tabela do tipo/categoria —
+    // ver trava de preço mais abaixo.
     const { rows: empresaRows } = await client.query(
-      `SELECT recebimento_permite_valor_digitado, cod_tipo_cobranca FROM tab_empresa WHERE id = $1`,
+      `SELECT recebimento_permite_valor_digitado, recebimento_permite_editar_valor_atendimento, cod_tipo_cobranca
+       FROM tab_empresa WHERE id = $1`,
       [session.empresa_id_ativa],
     )
     const permiteValorDigitado = empresaRows[0]?.recebimento_permite_valor_digitado ?? false
+    const permiteEditarValorAtendimento = empresaRows[0]?.recebimento_permite_editar_valor_atendimento ?? false
 
     // Trava anti-erro de digitação: nenhum valor de recebimento é aceito sem bater com
     // a soma valor_original - desconto + acréscimo, e valor_original precisa bater com o
@@ -248,6 +253,9 @@ export async function POST(req: NextRequest) {
       const campos = [item.valor_original, item.valor_desconto, item.valor_acrescimo, item.valor_recebido, item.total_recebimento]
       if (campos.some(v => typeof v !== 'number' || !Number.isFinite(v))) {
         return NextResponse.json({ erro: `Valores inválidos no agendamento ${item.agendamento_id}` }, { status: 400 })
+      }
+      if (item.valor_original < 0) {
+        return NextResponse.json({ erro: `Valor do atendimento não pode ser negativo no agendamento ${item.agendamento_id}` }, { status: 400 })
       }
       if (item.valor_desconto < 0 || item.valor_acrescimo < 0) {
         return NextResponse.json({ erro: 'Desconto e acréscimo não podem ser negativos' }, { status: 400 })
@@ -393,7 +401,10 @@ export async function POST(req: NextRequest) {
       const valorTabela = isParcelado && rows[0].tipo_valor_prazo != null
         ? Number(rows[0].tipo_valor_prazo)
         : Number(rows[0].tipo_valor) || 0
-      if (valorTabela > 0 && Math.abs(item.valor_original - valorTabela) > TOLERANCIA_CENTAVOS) {
+      // Com recebimento_permite_editar_valor_atendimento ativo, o operador pode ter digitado
+      // um valor diferente do preço de tabela no topo do modal — a trava de preço relaxa
+      // pra esse caso (é uma escolha deliberada, parametrizada por empresa).
+      if (!permiteEditarValorAtendimento && valorTabela > 0 && Math.abs(item.valor_original - valorTabela) > TOLERANCIA_CENTAVOS) {
         await client.query('ROLLBACK')
         return NextResponse.json({
           erro: `Valor da consulta do agendamento ${item.agendamento_id} mudou desde que a tela foi aberta `

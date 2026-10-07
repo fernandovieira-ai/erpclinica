@@ -230,6 +230,7 @@ export default function EmpresaFormPage({ empresa }: Props) {
       paciente_exige_cpf_cnpj:        empresa.paciente_exige_cpf_cnpj ?? false,
       paciente_exige_celular:         empresa.paciente_exige_celular ?? true,
       recebimento_permite_valor_digitado: empresa.recebimento_permite_valor_digitado ?? false,
+      recebimento_permite_editar_valor_atendimento: empresa.recebimento_permite_editar_valor_atendimento ?? false,
     })
     setLogoPreview(empresa.logo_base64 ?? null)
   }, [empresa, reset])
@@ -621,6 +622,10 @@ export default function EmpresaFormPage({ empresa }: Props) {
               <Check label="Permite digitar o valor pago (sem desconto/acréscimo manual)" {...register('recebimento_permite_valor_digitado')} />
               <span style={{ fontSize: 11, color: 'var(--texto-secundario)' }}>
                 Quando marcado, o recebimento esconde os campos de desconto e acréscimo: a recepção digita quanto cada forma de pagamento recebeu de fato (inclusive R$ 0,00 pra cortesia) e o sistema calcula sozinho o desconto ou acréscimo pra fechar a venda.
+              </span>
+              <Check label="Permite editar o valor de cada atendimento" {...register('recebimento_permite_editar_valor_atendimento')} />
+              <span style={{ fontSize: 11, color: 'var(--texto-secundario)' }}>
+                Quando marcado, o valor de cada atendimento (topo da tela de recebimento) deixa de ser travado no preço de tabela e pode ser digitado manualmente antes de fechar o recebimento.
               </span>
             </div>
             </div>

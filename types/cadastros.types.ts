@@ -124,6 +124,7 @@ export interface Empresa {
   paciente_exige_cpf_cnpj:        boolean
   paciente_exige_celular:         boolean
   recebimento_permite_valor_digitado: boolean
+  recebimento_permite_editar_valor_atendimento: boolean
   created_at:        string
   updated_at:        string
 }

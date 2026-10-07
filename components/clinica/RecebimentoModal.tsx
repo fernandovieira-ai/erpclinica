@@ -81,6 +81,13 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
   // desconto/acréscimo manual — o operador digita o valor que cada forma recebeu de fato e
   // o desconto/acréscimo necessário pra fechar com o valor de tabela é calculado sozinho.
   const [modoValorDigitado, setModoValorDigitado] = useState(false)
+  // Parâmetro por empresa (novos/70_recebimento_valor_atendimento_editavel.sql): quando
+  // ativo, o valor de cada atendimento (topo do modal) deixa de ser travado no preço de
+  // tabela — vira um input editável, com o preço de tabela só como valor inicial sugerido.
+  const [permiteEditarValorAtendimento, setPermiteEditarValorAtendimento] = useState(false)
+  // agendamento_id -> valor editado manualmente (só usado quando permiteEditarValorAtendimento
+  // está ativo). Ausência de entrada = usa o preço de tabela (getValorBase).
+  const [valoresEditados, setValoresEditados] = useState<Record<number, number>>({})
 
   const [form, setForm] = useState<FormRecebimento>({
     desconto: 0,
@@ -109,6 +116,14 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
     const valorVista = Number(ag.tipo_valor) || 0
     const valorPrazo = ag.tipo_valor_prazo != null ? Number(ag.tipo_valor_prazo) : null
     return isPrazo && valorPrazo !== null ? valorPrazo : valorVista
+  }
+
+  // Valor efetivamente usado no cálculo (base de desconto/acréscimo e enviado como
+  // valor_original) — o editado manualmente, quando o parâmetro está ativo, senão o preço
+  // de tabela de sempre.
+  function getValorEfetivo(ag: AgendamentoListItem): number {
+    if (permiteEditarValorAtendimento && valoresEditados[ag.id] != null) return valoresEditados[ag.id]
+    return getValorBase(ag)
   }
 
   useEffect(() => {
@@ -148,6 +163,7 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
       if (!res.ok) return
       const data = await res.json()
       setModoValorDigitado(!!data.recebimento_permite_valor_digitado)
+      setPermiteEditarValorAtendimento(!!data.recebimento_permite_editar_valor_atendimento)
     } catch (error) {
       console.error('Erro ao carregar parâmetros de recebimento:', error)
     }
@@ -164,9 +180,13 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
 
   // Zera desconto/acréscimo quando muda a condição de referência (à vista vs a prazo têm
   // valores de tabela diferentes — um desconto calculado sobre o valor errado confundiria).
+  // Também zera valoresEditados pelo mesmo motivo: um valor editado manualmente na condição
+  // anterior (ex.: à vista) não faz sentido carregar pra outra condição de referência (ex.:
+  // a prazo, com preço de tabela diferente) sem o operador revisar.
   useEffect(() => {
     if (!open || condicoes.length === 0 || !condicaoPrimeira) return
     setForm(prev => ({ ...prev, desconto: 0, acrescimo: 0 }))
+    setValoresEditados({})
   }, [condicaoPrimeira?.id, condicoes, open]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reabre do zero a cada abertura — a lista de formas já adicionadas é específica de cada
@@ -174,9 +194,10 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
   useEffect(() => {
     if (!open) return
     setFormasPagamento([])
+    setValoresEditados({})
   }, [open])
 
-  const valorBase = listaAgs.reduce((acc, ag) => acc + getValorBase(ag), 0)
+  const valorBase = listaAgs.reduce((acc, ag) => acc + getValorEfetivo(ag), 0)
   const somaFormas = round2(formasPagamento.reduce((acc, f) => acc + (Number(f.valor) || 0), 0))
 
   // Modo valor digitado: desconto/acréscimo deixam de ser campos digitados e passam a ser a
@@ -344,8 +365,10 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
     setSaving(true)
     try {
       // Monta os itens com desconto/acréscimo rateados proporcionalmente — um único
-      // payload para todos os atendimentos. valor_original vem sempre do preço de tabela
-      // (getValorBase), nunca de um valor digitado — é essa trava que o backend confere.
+      // payload para todos os atendimentos. valor_original vem do preço de tabela
+      // (getValorBase) — ou do valor editado manualmente (getValorEfetivo), só quando
+      // recebimento_permite_editar_valor_atendimento está ativo; o backend confere o
+      // preço de tabela a não ser que o mesmo parâmetro esteja ativo lá também.
       // O último item fica com o resto (mesmo padrão usado no rateio de parcelas a prazo
       // na API), pra soma dos itens bater exatamente com descontoEfetivo/acrescimoEfetivo
       // mesmo após arredondar cada item pra centavos. No modo valor digitado, esses dois
@@ -354,7 +377,7 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
       let acrescimoAcumulado = 0
       const itens = listaAgs.map((ag, idx) => {
         const isUltimo = idx === listaAgs.length - 1
-        const tipoValor = getValorBase(ag)
+        const tipoValor = getValorEfetivo(ag)
         const proporcao = valorBase > 0 ? tipoValor / valorBase : 1 / listaAgs.length
         const desconto_ag = isUltimo ? round2(descontoEfetivo - descontoAcumulado) : round2(descontoEfetivo * proporcao)
         const acrescimo_ag = isUltimo ? round2(acrescimoEfetivo - acrescimoAcumulado) : round2(acrescimoEfetivo * proporcao)
@@ -527,9 +550,33 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
                       </span>
                     )}
                   </div>
-                  <div style={{ fontWeight: 700, color: 'var(--cor-primaria)', fontSize: 14 }}>
-                    {fmtValor(getValorBase(listaAgs[0]))}
-                  </div>
+                  {permiteEditarValorAtendimento ? (
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={getValorEfetivo(listaAgs[0])}
+                      onChange={e => {
+                        const id = listaAgs[0].id
+                        const v = Math.max(0, parseFloat(e.target.value) || 0)
+                        setValoresEditados(prev => ({ ...prev, [id]: v }))
+                      }}
+                      style={{
+                        width: '100%',
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: 'var(--cor-primaria)',
+                        background: 'transparent',
+                        border: 'none',
+                        borderBottom: '1px dashed var(--borda-media)',
+                        outline: 'none',
+                        padding: 0,
+                      }}
+                    />
+                  ) : (
+                    <div style={{ fontWeight: 700, color: 'var(--cor-primaria)', fontSize: 14 }}>
+                      {fmtValor(getValorBase(listaAgs[0]))}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <div style={{ color: 'var(--texto-terciario)', marginBottom: 2 }}>Status</div>
@@ -556,9 +603,34 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
                         {ag.profissional_nome}
                       </div>
                     </div>
-                    <div style={{ fontWeight: 700, color: 'var(--cor-primaria)', flexShrink: 0 }}>
-                      {fmtValor(getValorBase(ag))}
-                    </div>
+                    {permiteEditarValorAtendimento ? (
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={getValorEfetivo(ag)}
+                        onChange={e => {
+                          const v = Math.max(0, parseFloat(e.target.value) || 0)
+                          setValoresEditados(prev => ({ ...prev, [ag.id]: v }))
+                        }}
+                        style={{
+                          width: 90,
+                          textAlign: 'right',
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color: 'var(--cor-primaria)',
+                          background: 'transparent',
+                          border: 'none',
+                          borderBottom: '1px dashed var(--borda-media)',
+                          outline: 'none',
+                          padding: 0,
+                          flexShrink: 0,
+                        }}
+                      />
+                    ) : (
+                      <div style={{ fontWeight: 700, color: 'var(--cor-primaria)', flexShrink: 0 }}>
+                        {fmtValor(getValorBase(ag))}
+                      </div>
+                    )}
                   </div>
                 ))}
                 <div style={{
@@ -568,7 +640,7 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
                 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--texto-terciario)' }}>Total</div>
                   <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--cor-primaria)' }}>
-                    {fmtValor(listaAgs.reduce((acc, ag) => acc + getValorBase(ag), 0))}
+                    {fmtValor(listaAgs.reduce((acc, ag) => acc + getValorEfetivo(ag), 0))}
                   </div>
                 </div>
               </div>
