@@ -17,6 +17,7 @@ export async function GET(req: NextRequest, { params }: Params) {
     `SELECT
        a.id, a.empresa_id, a.data_hora_inicio, a.data_hora_fim, a.status, a.motivo, a.observacao,
        a.horario_chegada, a.horario_inicio_atendimento,
+       a.eh_encaixe, a.encaixe_motivo, a.periodo,
        a.created_by, a.created_at, a.updated_at,
        pac.id   AS paciente_id,    pac.nome  AS paciente_nome,
        pac.celular AS paciente_celular, pac.cpf_cnpj AS paciente_cpf,
@@ -86,7 +87,10 @@ export async function PUT(req: NextRequest, { params }: Params) {
       new Date(antes.data_hora_fim as Date).getTime()    !== new Date(d.data_hora_fim).getTime() ||
       Number(antes.profissional_id) !== d.profissional_id
     )
-    if (horarioMudou) {
+    // Encaixe: furo explícito e auditado (eh_encaixe + período obrigatório, validado no schema;
+    // motivo fica opcional) de disponibilidade e conflito de horário — ver
+    // novos/68_agendamento_encaixe.sql e novos/69_agendamento_encaixe_periodo.sql
+    if (horarioMudou && !d.eh_encaixe) {
       const dataLocal = `($3::timestamptz)::date`
       const { rows: [v] } = await client.query(
         `SELECT
@@ -103,27 +107,29 @@ export async function PUT(req: NextRequest, { params }: Params) {
     }
 
     // Verificar conflito excluindo o próprio registro (dentro da transação para evitar race condition)
-    const { rows: conflito } = await client.query(
-      `SELECT id FROM tab_agendamento
-       WHERE profissional_id = $1 AND empresa_id = $2 AND id <> $3
-         AND status NOT IN ('CANCELADO','FALTOU')
-         AND (data_hora_inicio, data_hora_fim) OVERLAPS ($4::timestamptz, $5::timestamptz)`,
-      [d.profissional_id, session.empresa_id_ativa, params.id, d.data_hora_inicio, d.data_hora_fim],
-    )
-
-    if (conflito.length > 0) {
-      await client.query('ROLLBACK')
-      return NextResponse.json(
-        { erro: 'Profissional já possui agendamento nesse horário' },
-        { status: 409 },
+    if (!d.eh_encaixe) {
+      const { rows: conflito } = await client.query(
+        `SELECT id FROM tab_agendamento
+         WHERE profissional_id = $1 AND empresa_id = $2 AND id <> $3
+           AND status NOT IN ('CANCELADO','FALTOU')
+           AND (data_hora_inicio, data_hora_fim) OVERLAPS ($4::timestamptz, $5::timestamptz)`,
+        [d.profissional_id, session.empresa_id_ativa, params.id, d.data_hora_inicio, d.data_hora_fim],
       )
+
+      if (conflito.length > 0) {
+        await client.query('ROLLBACK')
+        return NextResponse.json(
+          { erro: 'Profissional já possui agendamento nesse horário' },
+          { status: 409 },
+        )
+      }
     }
 
     depoisRows = (await client.query(
       `UPDATE tab_agendamento SET
          paciente_id=$1, profissional_id=$2, tipo_id=$3, especialidade_id=$4,
          data_hora_inicio=$5, data_hora_fim=$6, status=$7, motivo=$8, observacao=$9,
-         categoria_id=$10
+         categoria_id=$10, eh_encaixe=$13, encaixe_motivo=$14, periodo=$15
        WHERE id=$11 AND empresa_id=$12
        RETURNING *`,
       [
@@ -133,6 +139,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
         d.status, d.motivo ?? null, d.observacao ?? null,
         d.categoria_id ?? null,
         params.id, session.empresa_id_ativa,
+        d.eh_encaixe, d.encaixe_motivo ?? null, d.periodo ?? null,
       ],
     )).rows
 

@@ -131,22 +131,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ erro: MSG_TIPO_NAO_HABILITADO }, { status: 422 })
     }
 
-    const disp = avaliarDisponibilidade(v, v.hora_inicio, v.hora_fim)
-    if (!disp.disponivel) {
-      return NextResponse.json({ erro: disp.razao }, { status: 422 })
+    // Encaixe: furo explícito e auditado (eh_encaixe + período obrigatório, validado no schema;
+    // motivo fica opcional) de conflito de horário e disponibilidade — ver
+    // novos/68_agendamento_encaixe.sql e novos/69_agendamento_encaixe_periodo.sql
+    if (!d.eh_encaixe) {
+      const disp = avaliarDisponibilidade(v, v.hora_inicio, v.hora_fim)
+      if (!disp.disponivel) {
+        return NextResponse.json({ erro: disp.razao }, { status: 422 })
+      }
     }
 
     // O NOT EXISTS fica no próprio INSERT: a janela de corrida entre checar e gravar cai de uma
-    // ida de rede ao banco pra microssegundos. 0 linhas = horário tomado por outro lançamento.
+    // ida de rede ao banco pra microssegundos. 0 linhas = horário tomado por outro lançamento
+    // (encaixe pula essa checagem via $13::boolean).
     const { rows } = await db.query(
       `WITH ins AS (
          INSERT INTO tab_agendamento (
            empresa_id, paciente_id, profissional_id, tipo_id, especialidade_id,
-           data_hora_inicio, data_hora_fim, status, motivo, observacao, categoria_id, created_by
+           data_hora_inicio, data_hora_fim, status, motivo, observacao, categoria_id, created_by,
+           eh_encaixe, encaixe_motivo, periodo
          )
          SELECT $1::int, $2::int, $3::int, $4::int, $5::int,
-                $6::timestamptz, $7::timestamptz, $8::varchar, $9::varchar, $10::text, $11::int, $12::varchar
-         WHERE NOT EXISTS (
+                $6::timestamptz, $7::timestamptz, $8::varchar, $9::varchar, $10::text, $11::int, $12::varchar,
+                $13::boolean, $14::varchar, $15::varchar
+         WHERE $13::boolean OR NOT EXISTS (
            SELECT 1 FROM tab_agendamento
            WHERE profissional_id = $3::int AND empresa_id = $1::int
              AND status NOT IN ('CANCELADO','FALTOU')
@@ -164,6 +172,7 @@ export async function POST(req: NextRequest) {
         d.status, d.motivo ?? null, d.observacao ?? null,
         d.categoria_id ?? null,
         session.nome,
+        d.eh_encaixe, d.encaixe_motivo ?? null, d.periodo ?? null,
       ],
     )
 

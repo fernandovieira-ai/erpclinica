@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ChevronLeft, ChevronRight, Plus, CalendarDays, LayoutGrid, List,
-  Stethoscope, RefreshCw, UserCheck, Search, Ban,
+  Stethoscope, RefreshCw, UserCheck, Search, Ban, Zap,
 } from 'lucide-react'
 import {
   format, startOfWeek, endOfWeek, addWeeks, subWeeks,
@@ -88,6 +88,7 @@ export default function AgendamentoPage() {
   const [agsConfirmar, setAgsConfirmar]   = useState<AgendamentoListItem[]>([])
 
   const [modalOpen, setModalOpen]       = useState(false)
+  const [modoEncaixe, setModoEncaixe]   = useState(false)
   const [editAg, setEditAg]             = useState<AgendamentoListItem | null>(null)
   const [slotInicio, setSlotInicio]     = useState<Date | null>(null)
   const [novoHorarioAg, setNovoHorarioAg] = useState<AgendamentoListItem | null>(null)
@@ -536,6 +537,7 @@ export default function AgendamentoPage() {
     const dt = hora ? setMinutes(setHours(dia, hora.h), hora.m) : setHours(dia, 8)
     setEditAg(null)
     setSlotInicio(dt)
+    setModoEncaixe(false)
     setModalOpen(true)
   }
 
@@ -543,6 +545,17 @@ export default function AgendamentoPage() {
     e.stopPropagation()
     setEditAg(ag)
     setSlotInicio(null)
+    setModoEncaixe(false)
+    setModalOpen(true)
+  }
+
+  // Encaixe: abre o modal já marcado pra furar conflito de horário + disponibilidade do
+  // profissional de forma explícita (usuário escolhe paciente/horário normalmente) — ver
+  // novos/68_agendamento_encaixe.sql
+  function abrirEncaixe() {
+    setEditAg(null)
+    setSlotInicio(null)
+    setModoEncaixe(true)
     setModalOpen(true)
   }
 
@@ -555,6 +568,7 @@ export default function AgendamentoPage() {
     setBuscaPacienteOpen(false)
     setEditAg(ag)
     setSlotInicio(null)
+    setModoEncaixe(false)
     setModalOpen(true)
   }
 
@@ -643,6 +657,7 @@ export default function AgendamentoPage() {
     }
     setEditAg(null)
     setSlotInicio(null)
+    setModoEncaixe(false)
     setModalOpen(true)
   }
 
@@ -817,6 +832,20 @@ export default function AgendamentoPage() {
           >
             <Ban size={12} /> Bloquear Agenda
           </button>
+
+          <button
+            onClick={abrirEncaixe}
+            title="Criar um agendamento furando o conflito de horário e a disponibilidade do profissional — ação explícita, fica marcada como encaixe"
+            style={{
+              width: '100%', marginTop: 6,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              padding: '7px 10px', fontSize: 11.5, fontWeight: 600,
+              background: 'none', border: '1px dashed #F59E0B', borderRadius: 5,
+              color: '#F59E0B', cursor: 'pointer',
+            }}
+          >
+            <Zap size={12} /> Encaixar Paciente
+          </button>
         </div>
 
         {/* Logo da empresa (cadastro > Dados Gerais) — empurrada pro rodapé via marginTop: auto */}
@@ -850,6 +879,12 @@ export default function AgendamentoPage() {
     const agsHoje = agendamentos.filter(ag =>
       isSameDay(parseISO(ag.data_hora_inicio), selectedDay)
     )
+    // Encaixe não ocupa slot da grade (não tem horário exato, só período) — fica numa lista
+    // separada no final do dia. Ver novos/69_agendamento_encaixe_periodo.sql
+    const agsHojeGrade    = agsHoje.filter(ag => !ag.eh_encaixe)
+    const agsHojeEncaixes = agsHoje
+      .filter(ag => ag.eh_encaixe)
+      .sort((a, b) => (a.periodo !== b.periodo ? (a.periodo === 'TARDE' ? 1 : -1) : a.id - b.id))
 
     const agora = new Date()
     const minutoAtual = agora.getHours() * 60 + agora.getMinutes()
@@ -944,12 +979,12 @@ export default function AgendamentoPage() {
           const isPrimeiraDaHora = slotIdx === 0 || horasDia[slotIdx - 1].h !== slot.h
           const slotDt    = setMinutes(setHours(selectedDay, slot.h), slot.m)
           const isPast    = slotDt < agora && !isAtual
-          const ags       = agsHoje.filter(ag => {
+          const ags       = agsHojeGrade.filter(ag => {
             const ini = parseISO(ag.data_hora_inicio)
             return ini.getHours() === slot.h && ini.getMinutes() === slot.m
           })
           // slot coberto por agendamento que começou antes
-          const isOccupied = agsHoje.some(ag => {
+          const isOccupied = agsHojeGrade.some(ag => {
             const ini = parseISO(ag.data_hora_inicio)
             const fim = parseISO(ag.data_hora_fim)
             return slotDt >= ini && slotDt < fim
@@ -1175,6 +1210,101 @@ export default function AgendamentoPage() {
             </div>
           )
         })}
+
+        {/* Encaixes do dia — sem horário fixo, só período (manhã/tarde). Fica no final da
+            agenda, fora da grade de horários. Ver novos/69_agendamento_encaixe_periodo.sql */}
+        {agsHojeEncaixes.length > 0 && (
+          <div style={{ borderTop: '2px solid var(--borda-media)', marginTop: 4 }}>
+            <div style={{ padding: '12px 16px 6px', display: 'flex', alignItems: 'center', gap: 7 }}>
+              <Zap size={13} style={{ color: '#F59E0B' }} />
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--texto-principal)', textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                Encaixes
+              </span>
+              <span style={{
+                fontSize: 11, fontWeight: 600, color: 'var(--texto-terciario)',
+                background: 'var(--bg-hover)', padding: '1px 9px', borderRadius: 20,
+              }}>
+                {agsHojeEncaixes.length}
+              </span>
+            </div>
+
+            <div style={{ padding: '2px 16px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {agsHojeEncaixes.map(ag => {
+                const tipoColor = ag.tipo_cor ?? '#F59E0B'
+                return (
+                  <div
+                    key={ag.id}
+                    onClick={e => abrirEditar(ag, e)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      background: '#F59E0B0C',
+                      border: '1px dashed #F59E0B55',
+                      borderRadius: 7,
+                      padding: '7px 12px',
+                      cursor: 'pointer',
+                      transition: 'background 0.12s',
+                    }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#F59E0B1A' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#F59E0B0C' }}
+                  >
+                    <div style={{
+                      fontSize: 10.5, fontWeight: 700, color: '#F59E0B',
+                      background: '#F59E0B1E', borderRadius: 20,
+                      padding: '4px 0', width: 56, textAlign: 'center', flexShrink: 0,
+                      textTransform: 'uppercase', letterSpacing: '.03em',
+                    }}>
+                      {ag.periodo === 'TARDE' ? 'Tarde' : 'Manhã'}
+                    </div>
+
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontWeight: 600, fontSize: 13, color: 'var(--texto-principal)',
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      }}>
+                        {ag.paciente_nome}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {ag.tipo_descricao && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                            <span style={{ width: 7, height: 7, borderRadius: 2, background: tipoColor, flexShrink: 0, display: 'inline-block' }} />
+                            {ag.tipo_descricao}
+                          </span>
+                        )}
+                        {!profFiltro && (
+                          <>
+                            {ag.tipo_descricao && <span>·</span>}
+                            <span>{ag.profissional_nome}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {ag.encaixe_motivo && (
+                      <div
+                        title={ag.encaixe_motivo}
+                        style={{
+                          fontSize: 11, color: 'var(--texto-terciario)', fontStyle: 'italic',
+                          maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {ag.encaixe_motivo}
+                      </div>
+                    )}
+
+                    {/* Status badge */}
+                    <div style={{
+                      fontSize: 11, fontWeight: 600, color: STATUS_COLOR[ag.status] ?? '#378ADD',
+                      background: (STATUS_COLOR[ag.status] ?? '#378ADD') + '18',
+                      padding: '2px 9px', borderRadius: 20, flexShrink: 0,
+                    }}>
+                      {STATUS_LABEL[ag.status]}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -1327,7 +1457,7 @@ export default function AgendamentoPage() {
                             position: 'absolute', left: 2, right: 2, top: 2,
                             height, zIndex: 2,
                             background: statusColor + '20',
-                            borderLeft: `3px solid ${statusColor}`,
+                            borderLeft: ag.eh_encaixe ? '3px dashed #F59E0B' : `3px solid ${statusColor}`,
                             borderRadius: 4,
                             padding: '2px 6px',
                             overflow: 'hidden',
@@ -1430,7 +1560,7 @@ export default function AgendamentoPage() {
                         style={{
                           fontSize: 11, fontWeight: 500,
                           background: statusColor + '20',
-                          borderLeft: `2px solid ${statusColor}`,
+                          borderLeft: ag.eh_encaixe ? '2px dashed #F59E0B' : `2px solid ${statusColor}`,
                           borderRadius: 3,
                           padding: '1px 5px',
                           marginBottom: 2,
@@ -1495,7 +1625,7 @@ export default function AgendamentoPage() {
                     display: 'flex', alignItems: 'center', gap: 12,
                     background: statusColor + '12',
                     border: `0.5px solid ${statusColor}35`,
-                    borderLeft: `3px solid ${statusColor}`,
+                    borderLeft: ag.eh_encaixe ? '3px dashed #F59E0B' : `3px solid ${statusColor}`,
                     borderRadius: 7,
                     padding: '8px 12px',
                     marginBottom: 4,
@@ -1633,6 +1763,21 @@ export default function AgendamentoPage() {
                     </div>
                   )}
 
+                  {/* Badge de encaixe */}
+                  {ag.eh_encaixe && (
+                    <div
+                      title={ag.encaixe_motivo ?? undefined}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 3,
+                        fontSize: 11, fontWeight: 600, color: '#F59E0B',
+                        background: '#F59E0B18',
+                        padding: '2px 9px', borderRadius: 20,
+                        flexShrink: 0,
+                      }}>
+                      <Zap size={10} /> Encaixe
+                    </div>
+                  )}
+
                   {/* Status badge */}
                   {ag.status !== 'AGUARDANDO' && ag.status !== 'AGENDADO' && (
                     <div style={{
@@ -1690,7 +1835,7 @@ export default function AgendamentoPage() {
                 display: 'flex', alignItems: 'center', gap: 12,
                 background: statusColor + '12',
                 border: `0.5px solid ${statusColor}35`,
-                borderLeft: `3px solid ${statusColor}`,
+                borderLeft: ag.eh_encaixe ? '3px dashed #F59E0B' : `3px solid ${statusColor}`,
                 borderRadius: 7,
                 padding: '8px 12px',
                 marginBottom: 4,
@@ -1804,6 +1949,21 @@ export default function AgendamentoPage() {
                       : 'Aguardando'
                     : 'Chegou?'}
                 </button>
+              )}
+
+              {/* Badge de encaixe */}
+              {ag.eh_encaixe && (
+                <div
+                  title={ag.encaixe_motivo ?? undefined}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 3,
+                    fontSize: 11, fontWeight: 600, color: '#F59E0B',
+                    background: '#F59E0B18',
+                    padding: '2px 9px', borderRadius: 20,
+                    flexShrink: 0,
+                  }}>
+                  <Zap size={10} /> Encaixe
+                </div>
               )}
 
               {/* Status badge */}
@@ -1936,11 +2096,12 @@ export default function AgendamentoPage() {
 
       <AgendamentoModal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => { setModalOpen(false); setModoEncaixe(false) }}
         onSaved={aoSalvarAgendamento}
         agendamento={editAg}
         dataHoraInicio={slotInicio}
         profissionalPre={profissionais.find(p => p.id === profFiltro) ?? null}
+        encaixeInicial={modoEncaixe}
       />
 
       <NovoHorarioModal

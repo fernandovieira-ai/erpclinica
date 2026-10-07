@@ -11,7 +11,16 @@ export const agendamentoSchema = z.object({
   motivo:           z.string().max(255).optional().nullable(),
   observacao:       z.string().optional().nullable(),
   categoria_id: z.number().int().positive().optional().nullable(),
-})
+  // Encaixe: furar conflito de horário + disponibilidade do profissional de forma explícita
+  // e auditável — ver novos/68_agendamento_encaixe.sql. Sem hora exata, só período (manhã/tarde)
+  // — ver novos/69_agendamento_encaixe_periodo.sql. Motivo é opcional (decisão do usuário).
+  eh_encaixe:       z.boolean().default(false),
+  encaixe_motivo:   z.string().max(255).optional().nullable(),
+  periodo:          z.enum(['MANHA', 'TARDE']).optional().nullable(),
+}).refine(
+  d => !d.eh_encaixe || !!d.periodo,
+  { message: 'Selecione o período do encaixe (manhã ou tarde)', path: ['periodo'] },
+)
 
 export type AgendamentoInput = z.infer<typeof agendamentoSchema>
 
