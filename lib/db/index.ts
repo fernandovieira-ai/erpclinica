@@ -83,9 +83,12 @@ export function getDb(database: string): Pool {
   return entry.pool
 }
 
-// Conexão fixa para o banco de controle SaaS — usado apenas em /admin e no login.
-// Usuário dedicado (PG_CONTROL_USER) porque o pg_hba.conf do servidor libera
-// cada usuário só nos bancos que ele efetivamente precisa acessar.
+// Conexão fixa para o banco de controle SaaS legado — usado pelo painel /admin
+// interno do ERP (tab_instancia) e pelo token de integracao do GoHighLevel
+// (tab_integracao_api_token). O login/recuperacao de senha/logo do cliente
+// migraram para dbSaas (drfticket) — ver nota abaixo. Usuário dedicado
+// (PG_CONTROL_USER) porque o pg_hba.conf do servidor libera cada usuário só
+// nos bancos que ele efetivamente precisa acessar.
 export const dbControl = new Pool({
   host:                    process.env.PG_HOST,
   port:                    Number(process.env.PG_PORT) || 5432,
@@ -105,3 +108,27 @@ dbControl.on('error', (err) => {
 })
 
 withConnectionRetry(dbControl)
+
+// Conexão para o banco drfticket (digitalrf-help) — fonte de verdade pra
+// liberacao de clientes desde a migracao do painel Configuracoes > SaaS
+// (ver saas_instancias). Mesmo servidor do dbControl, role dedicado
+// 'drfticket' (mesma credencial que o digitalrf-help ja usa).
+export const dbSaas = new Pool({
+  host:                    process.env.PG_HOST,
+  port:                    Number(process.env.PG_PORT) || 5432,
+  user:                    process.env.PG_DRFTICKET_USER,
+  password:                process.env.PG_DRFTICKET_PASSWORD,
+  database:                'drfticket',
+  ssl:                     process.env.PG_SSL === 'false' ? false : { rejectUnauthorized: false },
+  max:                     3,
+  idleTimeoutMillis:       120_000,
+  connectionTimeoutMillis: 5_000,
+  keepAlive:               true,
+  keepAliveInitialDelayMillis: 10_000,
+})
+
+dbSaas.on('error', (err) => {
+  console.error('[db:drfticket]', err.message)
+})
+
+withConnectionRetry(dbSaas)

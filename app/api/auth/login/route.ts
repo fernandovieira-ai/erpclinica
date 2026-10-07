@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
-import { dbControl, getDb } from '@/lib/db'
+import { dbSaas, getDb } from '@/lib/db'
 import { signToken } from '@/lib/auth/jwt'
 import type { Session, SelectToken } from '@/types/session'
 
@@ -27,9 +27,9 @@ export async function POST(req: NextRequest) {
   const { email, senha, slug } = body.data
 
   try {
-    // 1. Busca instância ativa no saas_control
-    const { rows: inst } = await dbControl.query<{ database_name: string; status: string }>(
-      `SELECT database_name, status FROM tab_instancia WHERE LOWER(slug) = LOWER($1) LIMIT 1`,
+    // 1. Busca instância ativa em saas_instancias (drfticket)
+    const { rows: inst } = await dbSaas.query<{ database_name: string; status: string }>(
+      `SELECT database_name, status FROM saas_instancias WHERE LOWER(slug) = LOWER($1) LIMIT 1`,
       [slug],
     )
 

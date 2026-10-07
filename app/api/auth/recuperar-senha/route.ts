@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { z } from 'zod'
-import { dbControl, getDb } from '@/lib/db'
+import { dbSaas, getDb } from '@/lib/db'
 import { signToken } from '@/lib/auth/jwt'
 import { emailRecuperacaoSenha } from '@/lib/email/send'
 import { rateLimited, getClientIp } from '@/lib/rate-limit'
@@ -41,8 +41,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { rows: inst } = await dbControl.query<{ database_name: string; status: string }>(
-      `SELECT database_name, status FROM tab_instancia WHERE LOWER(slug) = LOWER($1) LIMIT 1`,
+    const { rows: inst } = await dbSaas.query<{ database_name: string; status: string }>(
+      `SELECT database_name, status FROM saas_instancias WHERE LOWER(slug) = LOWER($1) LIMIT 1`,
       [slug],
     )
 

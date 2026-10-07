@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { dbControl, getDb } from '@/lib/db'
+import { dbSaas, getDb } from '@/lib/db'
 import { rateLimited, getClientIp } from '@/lib/rate-limit'
 
 // Rota pública (tela de login) — devolve a logo do cliente identificado pelo
@@ -20,8 +20,8 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { rows: inst } = await dbControl.query<{ database_name: string; status: string }>(
-      `SELECT database_name, status FROM tab_instancia WHERE LOWER(slug) = $1 LIMIT 1`,
+    const { rows: inst } = await dbSaas.query<{ database_name: string; status: string }>(
+      `SELECT database_name, status FROM saas_instancias WHERE LOWER(slug) = $1 LIMIT 1`,
       [slug],
     )
     if (!inst.length || (inst[0].status !== 'ativo' && inst[0].status !== 'trial')) {
