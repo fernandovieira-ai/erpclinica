@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { ArrowLeft, ChevronDown, ChevronRight, Printer, Search, Loader2 } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, Printer, FileSpreadsheet, Search, Loader2 } from 'lucide-react'
 import { gerarHtmlRelatorioDespesasTipo, type SinteticoRelatorioDespesa } from '@/components/financeiro/relatorioDespesasTipoPrint'
 
 interface Resumo {
@@ -41,14 +41,27 @@ function CardResumo({ titulo, valor }: { titulo: string; valor: string }) {
   )
 }
 
+function toISO(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function primeiroDiaMesAtual() {
+  const hoje = new Date()
+  return toISO(new Date(hoje.getFullYear(), hoje.getMonth(), 1))
+}
+function ultimoDiaMesAtual() {
+  const hoje = new Date()
+  return toISO(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0))
+}
+
 export default function RelatorioDespesasTipoPage() {
   const router = useRouter()
-  const [inicio, setInicio]           = useState('')
-  const [fim, setFim]                 = useState('')
+  const [inicio, setInicio]           = useState(primeiroDiaMesAtual)
+  const [fim, setFim]                 = useState(ultimoDiaMesAtual)
   const [busca, setBusca]             = useState('')
   const [dados, setDados]             = useState<RespostaRelatorio | null>(null)
   const [loading, setLoading]         = useState(false)
   const [imprimindo, setImprimindo]   = useState(false)
+  const [exportando, setExportando]   = useState(false)
   const [sinteticosAbertos, setSinteticosAbertos] = useState<Set<number>>(new Set())
   const [analiticosAbertos, setAnaliticosAbertos] = useState<Set<string>>(new Set())
 
@@ -117,6 +130,47 @@ export default function RelatorioDespesasTipoPage() {
     }
   }
 
+  async function exportarExcel() {
+    if (!dados || dados.grupos.length === 0) return
+    setExportando(true)
+    try {
+      const XLSX = await import('xlsx')
+      const linhas: Record<string, string | number>[] = []
+      for (const s of dados.grupos) {
+        for (const a of s.analiticos) {
+          for (const i of a.itens) {
+            linhas.push({
+              'Tipo Sintético':  `${s.codigo} — ${s.descricao}`,
+              'Tipo Analítico':  `${a.codigo} — ${a.descricao}`,
+              'Data':            fmtData(i.data_despesa),
+              'Fornecedor':      i.pessoa_nome ?? '',
+              'Documento':       i.documento ?? '',
+              'Observação':      i.observacao ?? '',
+              'Valor (R$)':      i.valor,
+            })
+          }
+        }
+      }
+      linhas.push({
+        'Tipo Sintético': '', 'Tipo Analítico': '', 'Data': '', 'Fornecedor': '', 'Documento': '',
+        'Observação':     'TOTAL GERAL',
+        'Valor (R$)':     dados.resumo.valor_total,
+      })
+      const planilha = XLSX.utils.json_to_sheet(linhas)
+      planilha['!cols'] = [
+        { wch: 28 }, { wch: 28 }, { wch: 11 }, { wch: 28 }, { wch: 16 }, { wch: 28 }, { wch: 14 },
+      ]
+      const livro = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(livro, planilha, 'Despesas por Tipo')
+      const sufixoPeriodo = inicio && fim ? `${inicio}_a_${fim}` : 'todos'
+      XLSX.writeFile(livro, `despesas_por_tipo_${sufixoPeriodo}.xlsx`)
+    } catch {
+      toast.error('Erro ao exportar para Excel')
+    } finally {
+      setExportando(false)
+    }
+  }
+
   return (
     <>
       <div className="page-header">
@@ -129,10 +183,16 @@ export default function RelatorioDespesasTipoPage() {
             Agrupado pelo plano de contas — sintético e analítico
           </div>
         </div>
-        <button className="btn-primary" onClick={imprimir} disabled={imprimindo || !dados?.grupos.length}>
-          {imprimindo ? <Loader2 size={15} className="spin" /> : <Printer size={15} />}
-          Imprimir
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn-ghost" onClick={exportarExcel} disabled={exportando || !dados?.grupos.length}>
+            {exportando ? <Loader2 size={15} className="spin" /> : <FileSpreadsheet size={15} />}
+            Exportar Excel
+          </button>
+          <button className="btn-primary" onClick={imprimir} disabled={imprimindo || !dados?.grupos.length}>
+            {imprimindo ? <Loader2 size={15} className="spin" /> : <Printer size={15} />}
+            Imprimir
+          </button>
+        </div>
       </div>
 
       <div className="page-body">
