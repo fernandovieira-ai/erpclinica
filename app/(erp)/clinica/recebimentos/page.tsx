@@ -9,10 +9,11 @@ import { ptBR } from 'date-fns/locale'
 import { toast } from 'sonner'
 import {
   DollarSign, Calendar, User, Stethoscope, CreditCard,
-  ChevronLeft, ChevronRight, RefreshCw, Undo2,
+  ChevronLeft, ChevronRight, RefreshCw, Undo2, Plus, Trash2,
 } from 'lucide-react'
 import type { AgendamentoListItem } from '@/types/clinica.types'
 import RecebimentoModal from '@/components/clinica/RecebimentoModal'
+import LancamentoAvulsoModal from '@/components/clinica/LancamentoAvulsoModal'
 
 const STATUS_LABEL: Record<string, { label: string; cor: string }> = {
   AGENDADO:   { label: 'Agendado',   cor: '#378ADD' },
@@ -69,6 +70,7 @@ export default function RecebimentosPage() {
   const [modalOpen, setModalOpen]       = useState(false)
   const [agendamentosSel, setAgendamentosSel] = useState<AgendamentoListItem[]>([])
   const [filtroStatus, setFiltroStatus] = useState<string>('')
+  const [avulsoModalOpen, setAvulsoModalOpen] = useState(false)
 
   const periodoUnico = dataInicio === dataFim
 
@@ -107,7 +109,7 @@ export default function RecebimentosPage() {
   const carregar = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/clinica/agendamentos?inicio=${dataInicio}&fim=${dataFim}`)
+      const res = await fetch(`/api/clinica/agendamentos?inicio=${dataInicio}&fim=${dataFim}&incluir_avulso=true`)
       if (!res.ok) { toast.error('Erro ao carregar agendamentos'); return }
       const data = await res.json()
       setAgendamentos(data.dados ?? [])
@@ -121,6 +123,29 @@ export default function RecebimentosPage() {
   function abrirRecebimento(ags: AgendamentoListItem[]) {
     setAgendamentosSel(ags)
     setModalOpen(true)
+  }
+
+  function agendamentoAvulsoCriado(ag: AgendamentoListItem) {
+    setAvulsoModalOpen(false)
+    abrirRecebimento([ag])
+  }
+
+  // Só exclui lançamentos avulsos (criados direto nesta tela) ainda sem recebimento
+  // confirmado — um avulso já pago precisa ser estornado primeiro (botão "Estornar" acima).
+  async function excluirAvulso(ag: AgendamentoListItem) {
+    if (!window.confirm(`Excluir o lançamento avulso de ${ag.paciente_nome} (${ag.tipo_descricao ?? 'atendimento'})?`)) return
+    try {
+      const res = await fetch(`/api/clinica/agendamentos/${ag.id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        toast.error(err.erro ?? 'Erro ao excluir lançamento')
+        return
+      }
+      toast.success('Lançamento avulso excluído!')
+      carregar()
+    } catch {
+      toast.error('Erro ao excluir lançamento')
+    }
   }
 
   async function estornarTudo(agPagos: AgendamentoListItem[]) {
@@ -201,6 +226,23 @@ export default function RecebimentosPage() {
             Processamento de recebimentos de consultas
           </div>
         </div>
+        <button
+          onClick={() => setAvulsoModalOpen(true)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '8px 14px',
+            background: 'var(--cor-primaria)',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 6,
+            cursor: 'pointer',
+            fontSize: 13,
+            fontWeight: 600,
+          }}
+        >
+          <Plus size={14} />
+          Lançamento Avulso
+        </button>
       </div>
 
       <div className="page-body">
@@ -488,6 +530,18 @@ export default function RecebimentosPage() {
                           </span>
                         )}
 
+                        {/* Excluir lançamento avulso — só antes de confirmar o recebimento
+                            (um avulso já pago precisa ser estornado primeiro) */}
+                        {ag.avulso && ag.status_recebimento !== 'PAGO' && (
+                          <button
+                            onClick={() => excluirAvulso(ag)}
+                            title="Excluir lançamento avulso"
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--cor-erro)', padding: 2, display: 'flex', flexShrink: 0 }}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+
                       </div>
                     )
                   })}
@@ -503,10 +557,20 @@ export default function RecebimentosPage() {
         onClose={() => {
           setModalOpen(false)
           setAgendamentosSel([])
+          // Recarrega tanto ao confirmar (pra atualizar os badges de status) quanto ao
+          // cancelar (um Lançamento Avulso criado antes de abrir este modal já existe no
+          // banco mesmo sem recebimento confirmado — precisa aparecer como pendente).
+          carregar()
         }}
         agendamento={null}
         agendamentos={agendamentosSel}
-        onRecebimentoSalvo={carregar}
+      />
+
+      <LancamentoAvulsoModal
+        open={avulsoModalOpen}
+        onClose={() => setAvulsoModalOpen(false)}
+        onCriado={agendamentoAvulsoCriado}
+        dataPadrao={periodoUnico ? dataInicio : fmtISO(new Date())}
       />
     </>
   )

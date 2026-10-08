@@ -6,7 +6,7 @@
 export const AGENDAMENTO_LISTA_COLUNAS = `
        a.id, a.data_hora_inicio, a.data_hora_fim, a.status, a.motivo, a.observacao,
        a.horario_chegada, a.horario_inicio_atendimento,
-       a.eh_encaixe, a.encaixe_motivo, a.periodo,
+       a.eh_encaixe, a.encaixe_motivo, a.periodo, a.avulso,
        pac.id   AS paciente_id,    pac.nome  AS paciente_nome,
        pac.celular AS paciente_celular, pac.cpf_cnpj AS paciente_cpf,
        pro.id   AS profissional_id, pro.nome AS profissional_nome,

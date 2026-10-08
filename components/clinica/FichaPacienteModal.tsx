@@ -155,7 +155,7 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento }
       // Histórico completo: sem filtro de status/data — passado e futuro, mesma fonte
       // de dados da agenda (AGENDAMENTO_LISTA_COLUNAS), então já traz tipo/categoria/profissional.
       const [resAg, resPr] = await Promise.all([
-        fetch(`/api/clinica/agendamentos?${new URLSearchParams({ paciente_id: String(p.id), order: 'desc', limit: '500' })}`),
+        fetch(`/api/clinica/agendamentos?${new URLSearchParams({ paciente_id: String(p.id), order: 'desc', limit: '500', incluir_avulso: 'true' })}`),
         fetch(`/api/clinica/prontuarios?${new URLSearchParams({ paciente_id: String(p.id) })}`),
       ])
       const dataAg = resAg.ok ? await resAg.json() : { dados: [] }

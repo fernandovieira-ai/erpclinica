@@ -412,7 +412,7 @@ const HistoricoClinico = forwardRef<HistoricoClinicoHandle, Props>(function Hist
         // Sem filtro de status: a aba precisa mostrar TODO o histórico do paciente (agendado,
         // confirmado, aguardando, faltou, cancelado — não só atendido), senão consultas que
         // ainda vão acontecer ou que foram canceladas somem da timeline sem explicação.
-        buscar(`/api/clinica/agendamentos?${new URLSearchParams({ paciente_id: String(pacienteId), order: 'desc', limit: '500' })}`),
+        buscar(`/api/clinica/agendamentos?${new URLSearchParams({ paciente_id: String(pacienteId), order: 'desc', limit: '500', incluir_avulso: 'true' })}`),
         buscar(`/api/clinica/prontuarios?${new URLSearchParams({ paciente_id: String(pacienteId) })}`),
       ])
       const lista: AgendamentoListItem[] = [...(dataAg.dados ?? [])]

@@ -17,6 +17,10 @@ export const agendamentoSchema = z.object({
   eh_encaixe:       z.boolean().default(false),
   encaixe_motivo:   z.string().max(255).optional().nullable(),
   periodo:          z.enum(['MANHA', 'TARDE']).optional().nullable(),
+  // Lançamento direto na tela de Recebimento — ver novos/73_agendamento_avulso.sql.
+  // Furar conflito de horário/disponibilidade igual ao encaixe (não disputa a agenda,
+  // nem aparece nela), mas sem período — tem hora normal (default: agora).
+  avulso:           z.boolean().default(false),
 }).refine(
   d => !d.eh_encaixe || !!d.periodo,
   { message: 'Selecione o período do encaixe (manhã ou tarde)', path: ['periodo'] },

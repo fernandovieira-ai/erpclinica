@@ -69,6 +69,7 @@ export interface Agendamento {
   eh_encaixe:                   boolean
   encaixe_motivo:               string | null
   periodo:                      'MANHA' | 'TARDE' | null
+  avulso:                       boolean
   created_by:                   string | null
   created_at:                   string
   updated_at:                   string
@@ -84,7 +85,7 @@ export type AgendamentoListItem = Pick<
   | 'data_hora_inicio' | 'data_hora_fim' | 'status' | 'motivo' | 'observacao'
   | 'categoria_id' | 'categoria_descricao'
   | 'horario_chegada' | 'horario_inicio_atendimento'
-  | 'eh_encaixe' | 'encaixe_motivo' | 'periodo'
+  | 'eh_encaixe' | 'encaixe_motivo' | 'periodo' | 'avulso'
 > & {
   tipo_valor?: number | null
   tipo_valor_prazo?: number | null
