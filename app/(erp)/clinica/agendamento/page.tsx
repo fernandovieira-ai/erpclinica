@@ -989,14 +989,13 @@ export default function AgendamentoPage() {
             const fim = parseISO(ag.data_hora_fim)
             return slotDt >= ini && slotDt < fim
           })
-          // slot dentro de um período de pausa cadastrado pro profissional filtrado — não vale
-          // pra horário que já passou, senão um dia antigo mostra o destaque de "bloqueado
-          // por pausa" em vez do cinza neutro de horário passado (a pausa já nem é o motivo
-          // relevante ali, o dia inteiro está no passado)
+          // slot dentro de um período de pausa cadastrado pro profissional filtrado — mostra o
+          // rótulo mesmo em horário já passado (ex.: hoje às 10h, pausa cadastrada 08:30-15:30
+          // ainda deve aparecer marcada das 08:30 em diante, não só a partir da hora atual)
           const pausa   = pausaDoSlot(selectedDay, slotMin, slot.dur)
           const bloqueioFaixa  = bloqueioDoSlot(selectedDay, slotMin, slot.dur)
-          const bloqueadoManual = (diaBloqueadoInteiro || !!bloqueioFaixa) && !isOccupied && !isPast
-          const bloqueadoPausa = (!!pausa && !isOccupied && !isPast) || bloqueadoManual
+          const bloqueadoManual = (diaBloqueadoInteiro || !!bloqueioFaixa) && !isOccupied
+          const bloqueadoPausa = (!!pausa && !isOccupied) || bloqueadoManual
           const rotuloBloqueio = diaBloqueadoInteiro
             ? `Dia bloqueado${excecoesDesc.get(diaStr) ? ` — ${excecoesDesc.get(diaStr)}` : ''}`
             : bloqueioFaixa
