@@ -312,12 +312,53 @@
     font-size: 13px; color: var(--sidebar-fg);
     text-decoration: none; transition: all 0.12s;
   }
+
+  /* Card de mensagem não lida empilhado acima do item "Mensagens" da sidebar —
+     fica destacado (fundo claro, acento vermelho) até o usuário abrir a conversa,
+     não é um toast que some sozinho. */
+  .mensagem-destaque {
+    display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+    background-color: var(--bg-card); border: none; border-left: 4px solid var(--cor-erro);
+    border-radius: var(--radius-md); box-shadow: 0 6px 18px rgba(0,0,0,0.3);
+    padding: 7px 10px; cursor: pointer; transition: transform 0.12s;
+  }
+  .mensagem-destaque:hover { transform: translateY(-1px); }
+  .mensagem-destaque-label {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--cor-erro);
+  }
+  .mensagem-destaque-nome { font-size: 13px; font-weight: 700; color: var(--texto-principal); }
+  .mensagem-destaque-texto {
+    font-size: 12px; color: var(--texto-secundario);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
   .sidebar-sub:hover { background-color: var(--sidebar-hover); color: var(--sidebar-fg); }
   .sidebar-sub.active {
     background-color: var(--sidebar-active-bg); color: var(--sidebar-active-fg);
     font-weight: 500; border-radius: 6px;
     width: calc(100% - 16px); margin: 0 8px;
   }
+
+  /* Botão de excluir na bolha de mensagem do chat — só aparece no hover */
+  .msg-excluir-btn {
+    position: absolute; top: 4px; right: 4px; opacity: 0; transition: opacity 0.15s;
+    background: none; border: none; cursor: pointer; color: inherit;
+    display: flex; padding: 2px; border-radius: 4px;
+  }
+  .msg-bolha:hover .msg-excluir-btn { opacity: 0.75; }
+  .msg-excluir-btn:hover { opacity: 1 !important; background-color: rgba(0,0,0,0.15); }
+
+  /* Botão de excluir a conversa inteira na lista do chat — só aparece no hover da linha */
+  .conversa-linha { position: relative; }
+  .conversa-excluir-btn {
+    position: absolute; top: 50%; right: 8px; transform: translateY(-50%);
+    opacity: 0; transition: opacity 0.15s;
+    background: none; border: none; cursor: pointer; color: var(--texto-terciario);
+    display: flex; padding: 4px; border-radius: 4px;
+  }
+  .conversa-linha:hover .conversa-excluir-btn { opacity: 1; }
+  .conversa-excluir-btn:hover { background-color: var(--bg-hover); color: var(--cor-erro); }
 
   /* --- Layout ERP --- */
 
@@ -336,6 +377,20 @@
 
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   .spin { animation: spin 1s linear infinite; }
+
+  /* --- Badge de notificação (mensagens) --- */
+
+  @keyframes badgePulse {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.35); }
+  }
+  .badge-pulse { animation: badgePulse 0.6s ease-in-out 3; }
+
+  @keyframes toastIn {
+    from { opacity: 0; transform: translateX(16px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  .toast-mensagem { animation: toastIn 0.2s ease-out; }
 
   .stat-card { background-color: var(--bg-card); border: 0.5px solid var(--borda-suave); border-radius: var(--radius-lg); padding: 16px; }
   .stat-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--texto-terciario); margin-bottom: 6px; }
