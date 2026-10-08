@@ -100,6 +100,10 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
   const [novaForma, setNovaForma] = useState<FormaPagamentoLinha>({ condicao_pagamento_id: 0, valor: 0, nsu: '', parcelas_cartao: 1 })
 
   const listaAgs = (agendamentos && agendamentos.length > 0) ? agendamentos : (agendamento ? [agendamento] : [])
+  // Médico Solicitante é sempre uma pessoa física — a clínica (placeholder eh_clinica) fica
+  // de fora. Médico Executor aceita a clínica também: alguns exames (ex.: feitos por
+  // aparelho/equipe, sem um médico específico atribuído) são executados "pela clínica".
+  const profissionaisSolicitante = profissionais.filter(p => !p.eh_clinica)
   // A primeira forma JÁ ADICIONADA decide o preço de tabela (à vista x a prazo) — mesma
   // condição que o backend usa como referência (ver app/api/clinica/recebimentos/route.ts).
   // Antes de adicionar a primeira forma, usa a condição em edição (novaForma) como prévia —
@@ -151,7 +155,7 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
       const res = await fetch('/api/clinica/profissionais')
       if (!res.ok) return
       const data = await res.json()
-      setProfissionais((data.dados ?? []).filter((p: ProfissionalOpcao) => !p.eh_clinica))
+      setProfissionais(data.dados ?? [])
     } catch (error) {
       console.error('Erro ao carregar profissionais:', error)
     }
@@ -673,7 +677,7 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
                     style={{ fontSize: 13, padding: '8px 10px' }}
                   >
                     <option value={0}>Selecione...</option>
-                    {profissionais.map(p => (
+                    {profissionaisSolicitante.map(p => (
                       <option key={p.id} value={p.id}>{p.nome}</option>
                     ))}
                   </select>
@@ -691,7 +695,7 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
                   >
                     <option value={0}>Selecione...</option>
                     {profissionais.map(p => (
-                      <option key={p.id} value={p.id}>{p.nome}</option>
+                      <option key={p.id} value={p.id}>{p.eh_clinica ? `${p.nome} (Clínica)` : p.nome}</option>
                     ))}
                   </select>
                 </Field>
