@@ -7,6 +7,7 @@ import { MSG_TIPO_NAO_HABILITADO } from '@/lib/clinica/tipo-habilitado'
 import {
   AGENDAMENTO_LISTA_COLUNAS, AGENDAMENTO_LISTA_JOINS, AGENDAMENTO_LISTA_SEM_RECEBIMENTO,
 } from '@/lib/clinica/agendamento-lista'
+import { autoFinalizarAgendamentosPagos } from '@/lib/clinica/auto-finalizar'
 import type { Pool } from 'pg'
 
 const _tableCache = new Map<string, boolean>()
@@ -73,6 +74,13 @@ export async function GET(req: NextRequest) {
   const where = conds.join(' AND ')
 
   const temTabelaRecebimento = await tabelaExiste(db, session.database_name, 'tab_recebimento_consulta')
+
+  // Autocorrige sozinho agendamentos de dias já fechados que foram pagos mas ninguém
+  // clicou "Finalizar atendimento" — ver lib/clinica/auto-finalizar.ts. Roda em toda
+  // listagem (agenda, recebimentos, ficha do paciente), não depende de login/cron.
+  if (temTabelaRecebimento) {
+    await autoFinalizarAgendamentosPagos(db, session.empresa_id_ativa)
+  }
 
   const selectRecebimento = temTabelaRecebimento
     ? `, rc.id AS recebimento_id, rc.status_recebimento, rc.total_recebimento, rc.movimento_caixa_id, rc.movimento_banco_id, rc.batch_agendamento_id`
