@@ -71,7 +71,9 @@ export function avaliarDisponibilidade(
       }
     }
     for (const pausa of pausas ?? []) {
-      if (horaInicio < pausa.hora_fim && horaFim > pausa.hora_inicio) {
+      // Fim da pausa é inclusivo: um agendamento que começa exatamente no minuto de fim ainda
+      // conflita — só o slot seguinte fica livre (mesma regra do front em pausaDoSlot()).
+      if (horaInicio <= pausa.hora_fim && horaFim > pausa.hora_inicio) {
         return { disponivel: false, razao: `Conflito com período de pausa (${pausa.hora_inicio} - ${pausa.hora_fim})` }
       }
     }
