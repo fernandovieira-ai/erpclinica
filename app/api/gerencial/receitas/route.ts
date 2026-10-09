@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
            sol.nome AS solicitante_nome,
            tp.descricao AS procedimento,
            cp.descricao AS forma_pagamento, cp.tipo_pagamento,
-           vc.qtd_parcelas, vc.valor_bruto AS venda_valor_bruto, vc.percentual_mdr_aplicado,
+           vc.qtd_parcelas, vc.percentual_mdr_aplicado,
            rc.percentual_profissional, rc.valor_profissional, rc.valor_clinica
          FROM tab_recebimento_consulta rc
          JOIN tab_agendamento a ON a.id = rc.agendamento_id
@@ -75,8 +75,11 @@ export async function GET(req: NextRequest) {
     const itens = rows.map((r) => {
       const valorBruto   = Number(r.total_recebimento)
       const percentualMdr = r.percentual_mdr_aplicado != null ? Number(r.percentual_mdr_aplicado) : 0
-      const baseTaxa     = r.venda_valor_bruto != null ? Number(r.venda_valor_bruto) : valorBruto
-      const valorTaxa    = percentualMdr > 0 ? Math.round(baseTaxa * (percentualMdr / 100) * 100) / 100 : 0
+      // Taxa rateada pelo valor do próprio item, não pelo valor total da venda de cartão
+      // (vc.valor_bruto) — um recebimento em lote (N atendimentos pagos numa única tacada de
+      // cartão) compartilha o mesmo venda_cartao_id entre as N linhas de tab_recebimento_consulta,
+      // então usar vc.valor_bruto como base repetia a taxa cheia da venda em cada linha.
+      const valorTaxa    = percentualMdr > 0 ? Math.round(valorBruto * (percentualMdr / 100) * 100) / 100 : 0
       const valorLiquido = Math.round((valorBruto - valorTaxa) * 100) / 100
       return {
         id: r.id,
