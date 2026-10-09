@@ -94,7 +94,9 @@ export default function AgendamentoPage() {
   const [novoHorarioAg, setNovoHorarioAg] = useState<AgendamentoListItem | null>(null)
   const [buscaPacienteOpen, setBuscaPacienteOpen] = useState(false)
   const [buscandoSlot, setBuscandoSlot] = useState(false)
-  const [diasIndisponíveis, setDiasIndisponíveis] = useState<Set<string>>(new Set())
+  // true enquanto a config do profissional filtrado (grade semanal/exceções/pausas) ainda não
+  // chegou do servidor — usado pra não tratar "ainda não sei" como "bloqueado" (ver diasIndisponíveis)
+  const [carregandoConfigProf, setCarregandoConfigProf] = useState(true)
   const [agendaSemanaRaw, setAgendaSemanaRaw]     = useState<Map<number, boolean>>(new Map())
   const [agendaConfigRaw, setAgendaConfigRaw]     = useState<Map<number, { hora_inicio: string; hora_fim: string; intervalo_min: number }>>(new Map())
   const [excecoesRaw, setExcecoesRaw]             = useState<Map<string, boolean>>(new Map())
@@ -140,18 +142,26 @@ export default function AgendamentoPage() {
     return { ini: startOfMonth(refDate), fim: endOfMonth(refDate) }
   }, [view, refDate, selectedDay])
 
-  const carregarDiasIndisponíveis = useCallback(async () => {
+  // Config "por profissional" (grade semanal, exceções pontuais e pausas): só muda quando o
+  // profissional filtrado muda, não a cada navegação de dia/semana/mês. Antes essas 3 chamadas
+  // eram refeitas a cada clique nas setas de navegação da Visão Dia (periodo mudava a cada dia),
+  // mesmo a resposta sendo idêntica — daí a demora perceptível ao passar dia a dia.
+  const carregarConfigProfissional = useCallback(async () => {
+    // Reset imediato (antes do fetch) — tanto na troca de profissional quanto no carregamento
+    // inicial. Combinado com o guard de carregandoConfigProf em diasIndisponíveis, evita o flash
+    // de "Profissional não atende" na tela inteira: enquanto os dados não chegam, diasIndisponíveis
+    // fica vazio (nada bloqueado) em vez de computar sobre mapas zerados, que marcava todo dia
+    // como indisponível (ativo == null) até a resposta do servidor chegar e corrigir.
+    setCarregandoConfigProf(true)
+    setAgendaSemanaRaw(new Map())
+    setExcecoesRaw(new Map())
+    setExcecoesDesc(new Map())
+    setPausasRaw(new Map())
     if (!profFiltro) {
       // "Todos os profissionais": não há um único profissional para bloquear dias,
       // mas ainda carregamos a grade agregada (menor intervalo / maior faixa de horário
       // entre todos os profissionais ativos) para a grade da Visão Dia/Semana não ficar
       // mais grosseira do que o necessário.
-      setDiasIndisponíveis(new Set())
-      setAgendaSemanaRaw(new Map())
-      setExcecoesRaw(new Map())
-      setExcecoesDesc(new Map())
-      setBloqueiosRaw(new Map())
-      setPausasRaw(new Map())
       try {
         const resAgregado = await fetch('/api/clinica/agenda-profissional')
         const agregadoData = resAgregado.ok ? await resAgregado.json() : { dados: [] }
@@ -167,21 +177,22 @@ export default function AgendamentoPage() {
       } catch {
         setAgendaConfigRaw(new Map())
       }
+      // profFiltro=0 nunca bloqueia dia nenhum (diasIndisponíveis já retorna vazio nesse caso),
+      // então sempre seguro marcar como "pronto" aqui, sucesso ou falha.
+      setCarregandoConfigProf(false)
       return
     }
     try {
       // Busca configuração semanal, exceções e pausas em paralelo (3 chamadas ao invés de N)
-      const [resAgenda, resExcecoes, resPausas, resBloqueios] = await Promise.all([
+      const [resAgenda, resExcecoes, resPausas] = await Promise.all([
         fetch(`/api/clinica/agenda-profissional?profissional_id=${profFiltro}`),
         fetch(`/api/clinica/agenda-profissional-excecao?profissional_id=${profFiltro}`),
         fetch(`/api/clinica/agenda-profissional-pausa?profissional_id=${profFiltro}`),
-        fetch(`/api/clinica/agenda-profissional-bloqueio?profissional_id=${profFiltro}&inicio=${format(periodo.ini, 'yyyy-MM-dd')}&fim=${format(periodo.fim, 'yyyy-MM-dd')}`),
       ])
 
-      const agendaData    = resAgenda.ok    ? await resAgenda.json()    : { dados: [] }
-      const excecoesData  = resExcecoes.ok  ? await resExcecoes.json()  : { dados: [] }
-      const pausasData    = resPausas.ok    ? await resPausas.json()    : { dados: [] }
-      const bloqueiosData = resBloqueios.ok ? await resBloqueios.json() : { dados: [] }
+      const agendaData   = resAgenda.ok   ? await resAgenda.json()   : { dados: [] }
+      const excecoesData = resExcecoes.ok ? await resExcecoes.json() : { dados: [] }
+      const pausasData   = resPausas.ok   ? await resPausas.json()   : { dados: [] }
 
       // Mapa: dia_semana (0-6) → ativo
       const semana = new Map<number, boolean>()
@@ -209,14 +220,6 @@ export default function AgendamentoPage() {
         excecoesDescMap.set(dataStr, exc.descricao ?? null)
       }
 
-      // Mapa: 'YYYY-MM-DD' → faixas de horário bloqueadas só naquele dia
-      const bloqueios = new Map<string, { hora_inicio: string; hora_fim: string; motivo: string | null }[]>()
-      for (const b of (bloqueiosData.dados ?? [])) {
-        const lista = bloqueios.get(b.data) ?? []
-        lista.push({ hora_inicio: b.hora_inicio, hora_fim: b.hora_fim, motivo: b.motivo ?? null })
-        bloqueios.set(b.data, lista)
-      }
-
       // Mapa: dia_semana (0-6) → pausas cadastradas naquele dia
       const pausas = new Map<number, { hora_inicio: string; hora_fim: string; descricao: string | null }[]>()
       for (const p of (pausasData.dados ?? [])) {
@@ -230,14 +233,61 @@ export default function AgendamentoPage() {
       setAgendaConfigRaw(config)
       setExcecoesRaw(excecoes)
       setExcecoesDesc(excecoesDescMap)
-      setBloqueiosRaw(bloqueios)
       setPausasRaw(pausas)
-      setDiasIndisponíveis(computarIndisponíveis(periodo.ini, periodo.fim, semana, excecoes))
+      setCarregandoConfigProf(false)
     } catch {
-      // Silenciosamente falha — não bloqueia nenhum dia
-      setDiasIndisponíveis(new Set())
+      // Falha silenciosa: carregandoConfigProf NÃO volta pra false aqui de propósito — se
+      // virasse false com os mapas ainda vazios, diasIndisponíveis computaria sobre mapas
+      // zerados e marcaria todo dia como bloqueado (ativo == null em computarIndisponíveis),
+      // o oposto do que se quer numa falha de rede. Fica "carregando" até a próxima tentativa
+      // (troca de profissional ou botão Atualizar) ter sucesso.
+    }
+  }, [profFiltro])
+
+  // Bloqueios de faixa de horário (tab_agenda_profissional_bloqueio): o único dado aqui que
+  // realmente depende do período visível — por isso fica separado, e é o único refeito a cada
+  // navegação de dia/semana/mês.
+  const carregarBloqueiosPeriodo = useCallback(async () => {
+    if (!profFiltro) { setBloqueiosRaw(new Map()); return }
+    // Reset imediato (antes do fetch) — evita que um bloqueio de faixa do profissional/período
+    // anterior continue aparecendo na tela durante o tempo do fetch (mesmo raciocínio do reset
+    // em carregarConfigProfissional).
+    setBloqueiosRaw(new Map())
+    try {
+      const res = await fetch(
+        `/api/clinica/agenda-profissional-bloqueio?profissional_id=${profFiltro}&inicio=${format(periodo.ini, 'yyyy-MM-dd')}&fim=${format(periodo.fim, 'yyyy-MM-dd')}`
+      )
+      const data = res.ok ? await res.json() : { dados: [] }
+      // Mapa: 'YYYY-MM-DD' → faixas de horário bloqueadas só naquele dia
+      const bloqueios = new Map<string, { hora_inicio: string; hora_fim: string; motivo: string | null }[]>()
+      for (const b of (data.dados ?? [])) {
+        const lista = bloqueios.get(b.data) ?? []
+        lista.push({ hora_inicio: b.hora_inicio, hora_fim: b.hora_fim, motivo: b.motivo ?? null })
+        bloqueios.set(b.data, lista)
+      }
+      setBloqueiosRaw(bloqueios)
+    } catch {
+      setBloqueiosRaw(new Map())
     }
   }, [profFiltro, periodo])
+
+  // Recarga completa (grade semanal + exceções + pausas + bloqueios) — usada pelo botão
+  // "Atualizar" e ao fechar o BloqueioAgendaModal, onde qualquer uma das 4 pode ter mudado.
+  const carregarDiasIndisponíveis = useCallback(
+    () => Promise.all([carregarConfigProfissional(), carregarBloqueiosPeriodo()]),
+    [carregarConfigProfissional, carregarBloqueiosPeriodo],
+  )
+
+  // Dias indisponíveis (dia todo) para o período visível: exceção pontual cadastrada pra uma
+  // data OU, na ausência dela, dia da semana não ativo na grade fixa. Cálculo 100% local a partir
+  // dos dados já carregados — não dispara fetch, por isso atualiza instantaneamente ao navegar
+  // dia a dia (antes dependia de refazer as 3 chamadas de config pra cada dia visitado).
+  const diasIndisponíveis = useMemo(
+    () => (profFiltro > 0 && !carregandoConfigProf)
+      ? computarIndisponíveis(periodo.ini, periodo.fim, agendaSemanaRaw, excecoesRaw)
+      : new Set<string>(),
+    [profFiltro, periodo, agendaSemanaRaw, excecoesRaw, carregandoConfigProf],
+  )
 
   const carregar = useCallback(async () => {
     setLoading(true)
@@ -254,9 +304,12 @@ export default function AgendamentoPage() {
     } finally { setLoading(false) }
   }, [periodo, profFiltro])
 
-  // Grade de dias/horários do profissional: só muda com período ou profissional (não a cada save),
-  // e carrega em paralelo com a lista de agendamentos em vez de esperar por ela.
-  useEffect(() => { carregarDiasIndisponíveis().catch(() => {}) }, [carregarDiasIndisponíveis])
+  // Config do profissional (grade semanal/exceções/pausas): só refaz quando troca o profissional
+  // filtrado — navegar dia/semana/mês não dispara essas 3 chamadas de novo.
+  useEffect(() => { carregarConfigProfissional().catch(() => {}) }, [carregarConfigProfissional])
+  // Bloqueios de faixa de horário: esse sim depende do período, refaz a cada navegação — mas é
+  // só 1 chamada leve em vez das 4 de antes.
+  useEffect(() => { carregarBloqueiosPeriodo().catch(() => {}) }, [carregarBloqueiosPeriodo])
 
   const carregarMes = useCallback(async () => {
     const ini = startOfMonth(calMes)
@@ -341,11 +394,11 @@ export default function AgendamentoPage() {
 
   // Dias indisponíveis para o mini calendário lateral (cobre a grade completa do mês)
   const diasIndisponíveisCal = useMemo(() => {
-    if (!profFiltro) return new Set<string>()
+    if (!profFiltro || carregandoConfigProf) return new Set<string>()
     const ini = startOfWeek(startOfMonth(calMes), { weekStartsOn: 0 })
     const fim = endOfWeek(endOfMonth(calMes), { weekStartsOn: 0 })
     return computarIndisponíveis(ini, fim, agendaSemanaRaw, excecoesRaw)
-  }, [profFiltro, calMes, agendaSemanaRaw, excecoesRaw])
+  }, [profFiltro, calMes, agendaSemanaRaw, excecoesRaw, carregandoConfigProf])
 
   useEffect(() => {
     if (!isSameMonth(selectedDay, calMes)) setCalMes(selectedDay)
@@ -502,7 +555,10 @@ export default function AgendamentoPage() {
     for (const p of pausasParaDia(dia)) {
       const [ph, pm]   = p.hora_inicio.split(':').map(Number)
       const [pfh, pfm] = p.hora_fim.split(':').map(Number)
-      if (inicioMin < pfh * 60 + pfm && fimMin > ph * 60 + pm) return p
+      // Fim da pausa é inclusivo: o slot que começa exatamente no minuto de fim também fica
+      // bloqueado — o profissional só volta a ficar disponível no slot seguinte (decisão do
+      // cliente: pausa 10:30–13:00 não libera o horário das 13:00, só o próximo).
+      if (inicioMin <= pfh * 60 + pfm && fimMin > ph * 60 + pm) return p
     }
     return null
   }
@@ -889,9 +945,13 @@ export default function AgendamentoPage() {
     const agora = new Date()
     const minutoAtual = agora.getHours() * 60 + agora.getMinutes()
 
-    // Dia inteiro bloqueado por exceção (só vale com um profissional filtrado) e faixas do dia
+    // Dia inteiro bloqueado (só vale com um profissional filtrado): exceção pontual cadastrada
+    // pra essa data OU, na ausência dela, dia da semana não ativo na config fixa do profissional
+    // — mesma regra de computarIndisponíveis(), usada pelo mini calendário e pelas visões
+    // Semana/Mês/Lista (diasIndisponíveis já cobre as duas fontes pro dia selecionado).
     const diaStr = format(selectedDay, 'yyyy-MM-dd')
-    const diaBloqueadoInteiro = profFiltro > 0 && excecoesRaw.get(diaStr) === true
+    const temExcecaoEspecifica = excecoesRaw.get(diaStr) === true
+    const diaBloqueadoInteiro = profFiltro > 0 && diasIndisponíveis.has(diaStr)
     const faixasBloqueadasDia = profFiltro > 0 ? (bloqueiosRaw.get(diaStr) ?? []) : []
 
     return (
@@ -924,7 +984,9 @@ export default function AgendamentoPage() {
             <Ban size={13} style={{ color: '#E24B4A', flexShrink: 0 }} />
             <span style={{ flex: 1, minWidth: 0 }}>
               {diaBloqueadoInteiro
-                ? <><strong>Dia bloqueado</strong>{excecoesDesc.get(diaStr) ? ` — ${excecoesDesc.get(diaStr)}` : ''}</>
+                ? temExcecaoEspecifica
+                  ? <><strong>Dia bloqueado</strong>{excecoesDesc.get(diaStr) ? ` — ${excecoesDesc.get(diaStr)}` : ''}</>
+                  : <><strong>Profissional não atende neste dia da semana</strong></>
                 : <>
                     <strong>Horários bloqueados:</strong>{' '}
                     {faixasBloqueadasDia.map(f => `${f.hora_inicio}–${f.hora_fim}${f.motivo ? ` (${f.motivo})` : ''}`).join(' · ')}
@@ -997,7 +1059,9 @@ export default function AgendamentoPage() {
           const bloqueadoManual = (diaBloqueadoInteiro || !!bloqueioFaixa) && !isOccupied
           const bloqueadoPausa = (!!pausa && !isOccupied) || bloqueadoManual
           const rotuloBloqueio = diaBloqueadoInteiro
-            ? `Dia bloqueado${excecoesDesc.get(diaStr) ? ` — ${excecoesDesc.get(diaStr)}` : ''}`
+            ? temExcecaoEspecifica
+              ? `Dia bloqueado${excecoesDesc.get(diaStr) ? ` — ${excecoesDesc.get(diaStr)}` : ''}`
+              : 'Profissional não atende neste dia da semana'
             : bloqueioFaixa
             ? `Bloqueado${bloqueioFaixa.motivo ? ` — ${bloqueioFaixa.motivo}` : ''} (${bloqueioFaixa.hora_inicio}-${bloqueioFaixa.hora_fim})`
             : null
