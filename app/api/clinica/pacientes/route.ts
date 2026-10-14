@@ -28,9 +28,16 @@ export async function GET(req: NextRequest) {
       buscaCond = ` AND (p.cpf_cnpj = $2 OR p.cpf_cnpj = $3)`
       params.push(cpfParam, formatted)
     } else if (busca) {
-      // Busca parcial por nome ou CPF (texto livre)
-      buscaCond = ` AND (p.nome ILIKE $2 OR p.cpf_cnpj ILIKE $2)`
-      params.push(`%${busca}%`)
+      // Busca parcial por nome ou CPF (texto livre) — compara cpf_cnpj pelos dígitos
+      // pra cobrir digitar com pontuação (ex: 700.542.681-92), já que é salvo sem máscara
+      const buscaDigits = busca.replace(/\D/g, '')
+      if (buscaDigits) {
+        buscaCond = ` AND (p.nome ILIKE $2 OR p.cpf_cnpj ILIKE $3)`
+        params.push(`%${busca}%`, `%${buscaDigits}%`)
+      } else {
+        buscaCond = ` AND p.nome ILIKE $2`
+        params.push(`%${busca}%`)
+      }
     }
 
     const { rows } = await db.query(

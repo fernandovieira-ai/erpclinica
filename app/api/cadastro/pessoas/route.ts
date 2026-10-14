@@ -27,9 +27,18 @@ export async function GET(req: NextRequest) {
     params.push(ativo !== 'false')
   }
   if (busca) {
-    conds.push(`(p.nome ILIKE $${pi} OR p.cpf_cnpj ILIKE $${pi})`)
-    params.push(`%${busca}%`)
-    pi++
+    const buscaDigits = busca.replace(/\D/g, '')
+    if (buscaDigits) {
+      // cpf_cnpj é salvo só com dígitos (ver novos/52_normaliza_cpf_cnpj.sql) — buscar
+      // pelos dígitos cobre digitar com ou sem pontuação (ex: 700.542.681-92 ou 70054268192)
+      conds.push(`(p.nome ILIKE $${pi} OR p.cpf_cnpj ILIKE $${pi + 1})`)
+      params.push(`%${busca}%`, `%${buscaDigits}%`)
+      pi += 2
+    } else {
+      conds.push(`p.nome ILIKE $${pi}`)
+      params.push(`%${busca}%`)
+      pi++
+    }
   }
   if (papel === 'cliente')       conds.push('p.ind_cliente = true')
   if (papel === 'fornecedor')    conds.push('p.ind_fornecedor = true')

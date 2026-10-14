@@ -516,6 +516,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
   const [buscandoCep,  setBuscandoCep]  = useState(false)
   const [buscandoCnpj, setBuscandoCnpj] = useState(false)
   const [pessoaDuplicada, setPessoaDuplicada] = useState<{ id: number; nome: string } | null>(null)
+  const checarCpfAbortRef = useRef<AbortController | null>(null)
 
   // ── Tipos de cobrança ────────────────────────────────────
   const [tiposCobranca, setTiposCobranca] = useState<{ cod_tipo_cobranca: number; des_tipo_cobranca: string }[]>([])
@@ -833,6 +834,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
 
   const tipoPessoaWatched = watch('tipo_pessoa')
   const bancoTipoWatched = watch('banco_tipo')
+  const cpfCnpjField = register('cpf_cnpj')
 
   async function buscarCep() {
     const cep = watch('cep')?.replace(/\D/g, '')
@@ -883,6 +885,29 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
       toast.success(`Dados da Receita Federal preenchidos${d.situacao ? ` — ${d.situacao}` : ''}`)
     } catch { toast.error('Erro ao consultar CNPJ') }
     finally  { setBuscandoCnpj(false) }
+  }
+
+  async function verificarCpfDuplicado() {
+    const digitado = (watch('cpf_cnpj') ?? '').replace(/\D/g, '')
+    if (digitado.length !== 11 && digitado.length !== 14) return
+
+    // Editando e documento não mudou — já passou pela checagem quando foi salvo, não precisa repetir
+    if (pessoa?.id && digitado === (pessoa.cpf_cnpj ?? '').replace(/\D/g, '')) return
+
+    checarCpfAbortRef.current?.abort()
+    const controller = new AbortController()
+    checarCpfAbortRef.current = controller
+
+    try {
+      const params = new URLSearchParams({ cpf_cnpj: digitado })
+      if (pessoa?.id) params.set('excluir_id', String(pessoa.id))
+      const res = await fetch(`/api/cadastro/pessoas/checar-cpf?${params}`, { signal: controller.signal })
+      if (!res.ok) return
+      const json = await res.json()
+      if (json.duplicado) setPessoaDuplicada(json.pessoa)
+    } catch {
+      // requisição abortada (campo mudou de novo) ou falha de rede — a checagem no submit ainda cobre o caso
+    }
   }
 
   async function onSubmit(data: PessoaInput) {
@@ -1118,12 +1143,16 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
 
               <FormRow label={pj ? 'CNPJ:' : 'CPF:'}>
                 <Input
-                  {...register('cpf_cnpj')}
+                  {...cpfCnpjField}
                   placeholder={pj ? '00.000.000/0001-00' : '000.000.000-00'}
                   style={{ fontFamily: 'var(--fonte-mono)' }}
                   onChange={e => {
                     const masked = mascaraCpfCnpj(e.target.value, pj)
                     setValue('cpf_cnpj', masked, { shouldValidate: false })
+                  }}
+                  onBlur={e => {
+                    cpfCnpjField.onBlur(e)
+                    verificarCpfDuplicado()
                   }}
                 />
                 {pj && (
