@@ -58,6 +58,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const db = getDb(session.database_name)
   const up = (v: string | null | undefined) => v ? v.toUpperCase() : null
 
+  const cpfNormalizado = d.cpf_cnpj?.replace(/\D/g, '') || null
+  if (cpfNormalizado) {
+    const { rows: duplicados } = await db.query(
+      `SELECT id, nome FROM tab_pessoa WHERE cpf_cnpj = $1 AND ativo = true AND id <> $2 LIMIT 1`,
+      [cpfNormalizado, params.id],
+    )
+    if (duplicados.length) {
+      return NextResponse.json({
+        erro: 'CPF/CNPJ já cadastrado para outra pessoa',
+        pessoaDuplicada: { id: duplicados[0].id, nome: duplicados[0].nome },
+      }, { status: 409 })
+    }
+  }
+
   try {
     const result = await db.query(
       `UPDATE tab_pessoa SET
@@ -107,6 +121,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error('[PATCH /api/cadastro/pessoas/:id]', err)
+    const code = (err as { code?: string }).code
+    if (code === 'P0001') {
+      return NextResponse.json({ erro: (err as Error).message }, { status: 409 })
+    }
     return NextResponse.json({ erro: 'Não foi possível salvar as alterações. Verifique os dados informados e tente novamente.' }, { status: 500 })
   }
 }

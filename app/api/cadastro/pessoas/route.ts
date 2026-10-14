@@ -71,6 +71,20 @@ export async function POST(req: NextRequest) {
   const db = getDb(session.database_name)
   const up = (v: string | null | undefined) => v ? v.toUpperCase() : null
 
+  const cpfNormalizado = d.cpf_cnpj?.replace(/\D/g, '') || null
+  if (cpfNormalizado) {
+    const { rows: duplicados } = await db.query(
+      `SELECT id, nome FROM tab_pessoa WHERE cpf_cnpj = $1 AND ativo = true LIMIT 1`,
+      [cpfNormalizado],
+    )
+    if (duplicados.length) {
+      return NextResponse.json({
+        erro: 'CPF/CNPJ já cadastrado para outra pessoa',
+        pessoaDuplicada: { id: duplicados[0].id, nome: duplicados[0].nome },
+      }, { status: 409 })
+    }
+  }
+
   try {
     const { rows } = await db.query(
       `INSERT INTO tab_pessoa (
@@ -117,6 +131,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ id: rows[0].id }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/cadastro/pessoas]', err)
+    const code = (err as { code?: string }).code
+    if (code === 'P0001') {
+      return NextResponse.json({ erro: (err as Error).message }, { status: 409 })
+    }
     return NextResponse.json({ erro: 'Não foi possível salvar o cadastro. Verifique os dados informados e tente novamente.' }, { status: 500 })
   }
 }

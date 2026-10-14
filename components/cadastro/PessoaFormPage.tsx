@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Save, Trash2, ArrowLeft, Search, Plus, X, Camera, User, RefreshCw, Trash } from 'lucide-react'
+import { Save, Trash2, ArrowLeft, Search, Plus, X, Camera, User, RefreshCw, Trash, AlertTriangle, ExternalLink } from 'lucide-react'
 import { pessoaSchema, type PessoaInput } from '@/lib/validators/pessoa.schema'
 import type { Pessoa } from '@/types/cadastros.types'
 import MoneyInput from '@/components/ui/MoneyInput'
@@ -515,6 +515,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
   const [aba,          setAba]         = useState<AbaPessoa>('Principal')
   const [buscandoCep,  setBuscandoCep]  = useState(false)
   const [buscandoCnpj, setBuscandoCnpj] = useState(false)
+  const [pessoaDuplicada, setPessoaDuplicada] = useState<{ id: number; nome: string } | null>(null)
 
   // ── Tipos de cobrança ────────────────────────────────────
   const [tiposCobranca, setTiposCobranca] = useState<{ cod_tipo_cobranca: number; des_tipo_cobranca: string }[]>([])
@@ -892,10 +893,18 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
       const method = pessoa ? 'PATCH' : 'POST'
       const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
 
-      let json: { erro?: string | { fieldErrors?: Record<string, string[]>; formErrors?: string[] }; id?: number } | null = null
+      let json: {
+        erro?: string | { fieldErrors?: Record<string, string[]>; formErrors?: string[] }
+        pessoaDuplicada?: { id: number; nome: string }
+        id?: number
+      } | null = null
       try { json = await res.json() } catch { /* resposta sem corpo JSON (ex.: erro inesperado do servidor) */ }
 
       if (!res.ok) {
+        if (json?.pessoaDuplicada) {
+          setPessoaDuplicada(json.pessoaDuplicada)
+          return
+        }
         const erro = json?.erro
         const mensagem = typeof erro === 'string'
           ? erro
@@ -951,6 +960,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
   }, [aba, indProfissional, indPaciente])
 
   return (
+    <>
     <form onSubmit={handleSubmit(onSubmit, (erros) => {
         console.warn('[PessoaForm] Erros de validação:', erros)
         const mensagens = Object.entries(erros)
@@ -2050,5 +2060,79 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
 
       </div>
     </form>
+
+    {pessoaDuplicada && (
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 100,
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 16,
+      }}>
+        <div style={{
+          background: 'var(--bg-card)',
+          borderRadius: 8,
+          width: '100%', maxWidth: 420,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
+          overflow: 'hidden',
+          border: '1px solid var(--borda-media)',
+        }}>
+          {/* Header */}
+          <div style={{
+            padding: '12px 16px',
+            background: 'var(--cor-erro, #EF4444)',
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <AlertTriangle size={16} color="#fff" />
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>
+              Pessoa já cadastrada
+            </div>
+          </div>
+
+          {/* Corpo */}
+          <div style={{ padding: '18px 16px', fontSize: 13, color: 'var(--texto-principal)', lineHeight: 1.5 }}>
+            Já existe uma pessoa cadastrada com esse CPF/CNPJ:
+            <div style={{
+              marginTop: 10, padding: '8px 10px',
+              background: 'var(--bg-input)', border: '1px solid var(--borda-suave)', borderRadius: 4,
+              fontSize: 13, fontWeight: 600, color: 'var(--texto-principal)',
+            }}>
+              {pessoaDuplicada.nome}
+            </div>
+            <div style={{ marginTop: 10, fontSize: 12, color: 'var(--texto-secundario)' }}>
+              Deseja consultar o cadastro existente em vez de criar um novo?
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div style={{
+            padding: '10px 16px',
+            borderTop: '1px solid var(--borda-suave)',
+            display: 'flex', justifyContent: 'flex-end', gap: 8,
+            background: 'var(--bg-page)',
+          }}>
+            <button
+              type="button"
+              onClick={() => setPessoaDuplicada(null)}
+              style={{ padding: '5px 14px', fontSize: 12, background: 'none', border: '1px solid var(--borda-media)', borderRadius: 3, color: 'var(--texto-secundario)', cursor: 'pointer' }}
+            >
+              Fechar
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push(`/cadastro/pessoas/${pessoaDuplicada.id}`)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '5px 14px', fontSize: 12, fontWeight: 600,
+                background: 'var(--cor-primaria)', color: '#fff', border: 'none', borderRadius: 3,
+                cursor: 'pointer',
+              }}
+            >
+              <ExternalLink size={13} /> Consultar cadastro
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }
