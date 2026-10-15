@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { Plus, Search, ChevronLeft, ChevronRight, Pencil, PowerOff, FileBarChart } from 'lucide-react'
 import type { PessoaListItem, PessoaListResponse } from '@/types/cadastros.types'
-import { formatCpfCnpj } from '@/lib/utils'
+import { formatCpfCnpj, maskCelular } from '@/lib/utils'
 
 const PAPEIS = [
   { value: '',               label: 'Todos' },
@@ -211,7 +211,7 @@ function PessoasPageInner() {
                       {p.cidade ? `${p.cidade.toUpperCase()}${p.uf ? ` / ${p.uf.toUpperCase()}` : ''}` : '—'}
                     </td>
                     <td style={{ fontSize: 12, fontFamily: 'var(--fonte-mono)' }}>
-                      {p.telefone || p.celular || '—'}
+                      {p.telefone || (p.celular ? maskCelular(p.celular) : '') || '—'}
                     </td>
                     <td>
                       <span className={`badge-status ${p.ativo ? 'badge-pago' : 'badge-cancelado'}`}>

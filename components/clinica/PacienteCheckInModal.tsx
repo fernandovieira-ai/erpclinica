@@ -5,6 +5,7 @@ import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { X } from 'lucide-react'
 import type { AgendamentoListItem } from '@/types/clinica.types'
+import { maskCelular } from '@/lib/utils'
 
 interface Pessoa {
   id: number
@@ -224,7 +225,7 @@ export default function PacienteCheckInModal({ open, paciente, agendamento, onCl
                   <Input value={paciente.telefone || ''} type="text" />
                 </FormRow>
                 <FormRow label="Celular">
-                  <Input value={paciente.celular || ''} type="text" />
+                  <Input value={paciente.celular ? maskCelular(paciente.celular) : ''} type="text" />
                 </FormRow>
                 <FormRow label="WhatsApp">
                   <Input value={paciente.whatsapp || ''} type="text" />

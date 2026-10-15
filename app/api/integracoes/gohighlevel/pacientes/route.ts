@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { dbControl, getDb } from '@/lib/db'
 import { rateLimited, getClientIp } from '@/lib/rate-limit'
+import { formatCelularE164 } from '@/lib/utils'
 
 // GET /api/integracoes/gohighlevel/pacientes?page=&limit=
 // Rota externa — autenticada por token de API (Authorization: Bearer <token>),
@@ -56,5 +57,9 @@ export async function GET(req: NextRequest) {
   ])
 
   const total = Number(countRows[0].n)
-  return NextResponse.json({ dados: rows, total, page, limit, pages: Math.ceil(total / limit) })
+  // Celular padronizado (pedido-api-vita.pdf item 3): sai sempre em E.164 pro CRM casar
+  // o contato pelo número, sem precisar lidar com os formatos variados gravados ao longo
+  // do tempo. dados brutos continuam digits-only no banco (ver POST/PATCH de pessoas).
+  const dados = rows.map((r) => ({ ...r, celular: formatCelularE164(r.celular as string | null) }))
+  return NextResponse.json({ dados, total, page, limit, pages: Math.ceil(total / limit) })
 }

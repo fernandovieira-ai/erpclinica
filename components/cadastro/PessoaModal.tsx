@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { X, User, MapPin, Phone, Landmark, FileText } from 'lucide-react'
 import { pessoaSchema, type PessoaInput } from '@/lib/validators/pessoa.schema'
 import type { Pessoa } from '@/types/cadastros.types'
+import { maskCelular } from '@/lib/utils'
 
 interface Props {
   pessoa:    Pessoa | null   // null = novo
@@ -57,7 +58,7 @@ export default function PessoaModal({ pessoa, onClose, onSaved }: Props) {
         cidade:             pessoa.cidade ?? '',
         uf:                 pessoa.uf ?? '',
         telefone:           pessoa.telefone ?? '',
-        celular:            pessoa.celular ?? '',
+        celular:            maskCelular(pessoa.celular ?? ''),
         whatsapp:           pessoa.whatsapp ?? '',
         email:              pessoa.email ?? '',
         email_nfe:          pessoa.email_nfe ?? '',
@@ -374,7 +375,8 @@ export default function PessoaModal({ pessoa, onClose, onSaved }: Props) {
                   </div>
                   <div>
                     <label className="field-label">Celular</label>
-                    <input className="input-field font-mono" {...register('celular')} placeholder="(41) 99999-9999" />
+                    <input className="input-field font-mono" {...register('celular')} placeholder="(41) 99999-9999"
+                      onChange={e => setValue('celular', maskCelular(e.target.value))} />
                   </div>
                   <div>
                     <label className="field-label">WhatsApp</label>

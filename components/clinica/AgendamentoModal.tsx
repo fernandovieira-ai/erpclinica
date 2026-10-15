@@ -7,6 +7,7 @@ import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { AgendamentoListItem, AgendamentoTipo, CategoriaListItem, ProfissionalListItem } from '@/types/clinica.types'
 import NovoHorarioModal from '@/components/clinica/NovoHorarioModal'
+import { maskCelular } from '@/lib/utils'
 
 interface Paciente {
   id:        number
@@ -898,7 +899,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: '#92400E' }}>CPF já cadastrado</div>
                         <div style={{ fontSize: 12, color: '#78350F', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cpfJaCadastrado.nome}</div>
-                        {cpfJaCadastrado.celular && <div style={{ fontSize: 11, color: '#92400E' }}>{cpfJaCadastrado.celular}</div>}
+                        {cpfJaCadastrado.celular && <div style={{ fontSize: 11, color: '#92400E' }}>{maskCelular(cpfJaCadastrado.celular)}</div>}
                       </div>
                     </div>
                   )}
@@ -929,7 +930,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--texto-principal)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.nome}</div>
                               <div style={{ fontSize: 10, color: 'var(--texto-terciario)' }}>
                                 {d.motivos.join(' · ')}
-                                {d.celular ? ` · ${d.celular}` : ''}
+                                {d.celular ? ` · ${maskCelular(d.celular)}` : ''}
                               </div>
                             </div>
                             <button
@@ -970,7 +971,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                     </div>
                     <input
                       value={formCad.celular}
-                      onChange={e => setFormCad(f => ({ ...f, celular: e.target.value }))}
+                      onChange={e => setFormCad(f => ({ ...f, celular: maskCelular(e.target.value) }))}
                       placeholder="(00) 00000-0000"
                       autoComplete="off"
                       style={{
@@ -1025,7 +1026,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
               <div style={{ marginTop: 8, display: 'flex', gap: 16, flexWrap: 'wrap', padding: '6px 8px', background: 'var(--bg-hover)', borderRadius: 4 }}>
                 {pacienteSel.celular && (
                   <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--texto-secundario)' }}>
-                    <Smartphone size={11} /> {pacienteSel.celular}
+                    <Smartphone size={11} /> {maskCelular(pacienteSel.celular)}
                   </span>
                 )}
                 {pacienteSel.telefone && (

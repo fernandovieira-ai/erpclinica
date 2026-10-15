@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { Save, Trash2, ArrowLeft, Search, Plus, X, Camera, User, RefreshCw, Trash, AlertTriangle, ExternalLink } from 'lucide-react'
 import { pessoaSchema, type PessoaInput } from '@/lib/validators/pessoa.schema'
 import type { Pessoa } from '@/types/cadastros.types'
+import { maskCelular } from '@/lib/utils'
 import MoneyInput from '@/components/ui/MoneyInput'
 import HistoricoClinico from '@/components/clinica/HistoricoClinico'
 
@@ -815,7 +816,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
       cidade:            pessoa.cidade ?? '',
       uf:                pessoa.uf ?? '',
       telefone:          pessoa.telefone ?? '',
-      celular:           pessoa.celular ?? '',
+      celular:           maskCelular(pessoa.celular ?? ''),
       whatsapp:          pessoa.whatsapp ?? '',
       email:             pessoa.email ?? '',
       email_nfe:         pessoa.email_nfe ?? '',
@@ -1346,8 +1347,9 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
                   style={{ fontFamily: 'var(--fonte-mono)', width: 150 }} />
               </FormRow>
               <FormRow label="Celular:">
-                <Input {...register('celular')} placeholder="(  )      -    "
-                  style={{ fontFamily: 'var(--fonte-mono)', width: 150 }} />
+                <Input {...register('celular')} placeholder="(00) 00000-0000"
+                  style={{ fontFamily: 'var(--fonte-mono)', width: 150 }}
+                  onChange={e => setValue('celular', maskCelular(e.target.value), { shouldValidate: false })} />
               </FormRow>
               <FormRow label="WhatsApp:">
                 <Input {...register('whatsapp')} placeholder="(  )      -    "

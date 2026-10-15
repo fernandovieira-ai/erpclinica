@@ -59,6 +59,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const up = (v: string | null | undefined) => v ? v.toUpperCase() : null
 
   const cpfNormalizado = d.cpf_cnpj?.replace(/\D/g, '') || null
+  // Celular padronizado (pedido-api-vita.pdf item 3): grava só dígitos.
+  const celularNormalizado = d.celular?.replace(/\D/g, '') || null
   if (cpfNormalizado) {
     const { rows: duplicados } = await db.query(
       `SELECT id, nome FROM tab_pessoa WHERE cpf_cnpj = $1 AND ativo = true AND id <> $2 LIMIT 1`,
@@ -98,7 +100,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         d.ind_paciente ?? false, d.ind_profissional ?? false,
         d.cep ?? null, up(d.logradouro), up(d.numero),
         up(d.complemento), up(d.bairro), up(d.cidade), up(d.uf),
-        d.telefone ?? null, d.celular ?? null, d.whatsapp ?? null,
+        d.telefone ?? null, celularNormalizado, d.whatsapp ?? null,
         d.email || null, d.email_nfe || null,
         d.limite_credito, d.cod_tipo_cobranca ?? null, up(d.banco_nome), d.banco_agencia ?? null,
         d.banco_conta ?? null, up(d.banco_tipo), d.chave_pix ?? null,

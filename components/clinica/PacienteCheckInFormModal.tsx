@@ -9,6 +9,7 @@ import RecebimentoModal from '@/components/clinica/RecebimentoModal'
 import HistoricoClinico, { type HistoricoClinicoHandle } from '@/components/clinica/HistoricoClinico'
 import { toast } from 'sonner'
 import type { AgendamentoListItem } from '@/types/clinica.types'
+import { maskCelular } from '@/lib/utils'
 
 interface Pessoa {
   id: number
@@ -698,7 +699,7 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
         cidade:             paciente.cidade ?? '',
         uf:                 paciente.uf ?? '',
         telefone:           paciente.telefone ?? '',
-        celular:            paciente.celular ?? '',
+        celular:            maskCelular(paciente.celular ?? ''),
         whatsapp:           paciente.whatsapp ?? '',
         email:              paciente.email ?? '',
         email_nfe:          paciente.email_nfe ?? '',
@@ -1204,8 +1205,9 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
                     style={{ fontFamily: 'var(--fonte-mono)', width: 150 }} />
                 </FormRow>
                 <FormRow label="Celular:">
-                  <Input {...register('celular')} placeholder="(  )      -    "
-                    style={{ fontFamily: 'var(--fonte-mono)', width: 150 }} />
+                  <Input {...register('celular')} placeholder="(00) 00000-0000"
+                    style={{ fontFamily: 'var(--fonte-mono)', width: 150 }}
+                    onChange={e => setValue('celular', maskCelular(e.target.value))} />
                 </FormRow>
                 <FormRow label="WhatsApp:">
                   <Input {...register('whatsapp')} placeholder="(  )      -    "

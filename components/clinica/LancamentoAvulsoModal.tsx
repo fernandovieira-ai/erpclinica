@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { X, Search, User, UserPlus, AlertTriangle, Stethoscope } from 'lucide-react'
 import { format } from 'date-fns'
 import type { AgendamentoListItem, AgendamentoTipo, CategoriaListItem, ProfissionalListItem } from '@/types/clinica.types'
+import { maskCelular } from '@/lib/utils'
 
 interface Paciente {
   id:       number
@@ -478,7 +479,7 @@ export default function LancamentoAvulsoModal({ open, onClose, onCriado, dataPad
                           <div key={d.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '5px 8px', background: 'var(--bg-card)', borderRadius: 4 }}>
                             <div style={{ minWidth: 0 }}>
                               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--texto-principal)' }}>{d.nome}</div>
-                              <div style={{ fontSize: 10, color: 'var(--texto-terciario)' }}>{d.motivos.join(' · ')}{d.celular ? ` · ${d.celular}` : ''}</div>
+                              <div style={{ fontSize: 10, color: 'var(--texto-terciario)' }}>{d.motivos.join(' · ')}{d.celular ? ` · ${maskCelular(d.celular)}` : ''}</div>
                             </div>
                             <button
                               onClick={() => selecionarPaciente({ id: d.id, nome: d.nome, cpf_cnpj: d.cpf_cnpj, celular: d.celular })}
@@ -506,7 +507,7 @@ export default function LancamentoAvulsoModal({ open, onClose, onCriado, dataPad
                       </div>
                       <input
                         value={formCad.celular}
-                        onChange={e => setFormCad(f => ({ ...f, celular: e.target.value }))}
+                        onChange={e => setFormCad(f => ({ ...f, celular: maskCelular(e.target.value) }))}
                         placeholder="(00) 00000-0000"
                         autoComplete="off"
                         style={{ width: '100%', padding: '6px 10px', fontSize: 12, background: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 5, boxSizing: 'border-box' }}

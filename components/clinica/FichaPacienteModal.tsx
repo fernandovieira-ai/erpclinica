@@ -10,6 +10,7 @@ import {
 import { format, parseISO, isToday, differenceInYears } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { AgendamentoListItem, Prontuario } from '@/types/clinica.types'
+import { maskCelular } from '@/lib/utils'
 
 interface Paciente {
   id:              number
@@ -336,7 +337,7 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento }
                 )}
                 {(pacienteSel.celular || pacienteSel.telefone) && (
                   <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--texto-secundario)' }}>
-                    <Phone size={12} style={{ color: 'var(--texto-terciario)' }} /> {pacienteSel.celular ?? pacienteSel.telefone}
+                    <Phone size={12} style={{ color: 'var(--texto-terciario)' }} /> {pacienteSel.celular ? maskCelular(pacienteSel.celular) : pacienteSel.telefone}
                   </span>
                 )}
                 {pacienteSel.data_nascimento && (

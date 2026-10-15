@@ -114,7 +114,7 @@ export async function POST(req: NextRequest) {
         nome,
         cpfCnpj,
         body.data_nascimento || null,
-        body.celular ? String(body.celular).trim() : null,
+        body.celular ? (String(body.celular).replace(/\D/g, '') || null) : null,
       ],
     )
 
