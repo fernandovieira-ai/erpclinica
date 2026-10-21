@@ -5,12 +5,18 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Save, Trash2, ArrowLeft, Search, X, ClipboardList, Receipt, PieChart } from 'lucide-react'
+import { Save, Trash2, ArrowLeft, Search, X, ClipboardList, Receipt, PieChart, Copy } from 'lucide-react'
 import { despesaSchema, type DespesaInput } from '@/lib/validators/despesa.schema'
 import type { Despesa } from '@/types/cadastros.types'
 import MoneyInput from '@/components/ui/MoneyInput'
+import ReplicarDespesaModal from '@/components/financeiro/ReplicarDespesaModal'
 
 interface Props { despesa?: Despesa }
+
+// Largura fixa do label nos campos de cima da Observação (Data, Favorecido, Tipo de
+// Despesa) — "Tipo de Despesa:*" é o mais longo, define o tamanho da coluna (ajustada
+// pra ficar justa no texto, sem sobrar vão grande antes do input nos labels curtos).
+const LABEL_W = 100
 
 // ── Primitivos ────────────────────────────────────────────────────────────────
 
@@ -32,14 +38,29 @@ const Select = forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HTMLSele
   },
 )
 
-function Row({ label, children, error }: { label: string; children: React.ReactNode; error?: string }) {
+// Label colado à esquerda do campo. Com `labelWidth`, o label vira uma coluna de largura
+// fixa (texto alinhado à esquerda dentro dela) — usado nos campos de cima da Observação
+// (Data, Favorecido, Tipo de Despesa) pra os inputs começarem todos na mesma posição.
+function Row({ label, children, error, style, labelWidth }: { label: string; children: React.ReactNode; error?: string; style?: React.CSSProperties; labelWidth?: number }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'start', gap: '2px 6px', minHeight: 24 }}>
-      <label style={{ textAlign: 'right', fontSize: 12, color: 'var(--texto-secundario)', whiteSpace: 'nowrap', paddingRight: 2, paddingTop: 4 }}>{label}</label>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>{children}</div>
-        {error && <span style={{ fontSize: 11, color: 'var(--cor-erro)' }}>{error}</span>}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, ...style }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <label style={{ fontSize: 12, color: 'var(--texto-secundario)', whiteSpace: 'nowrap', ...(labelWidth ? { width: labelWidth, flexShrink: 0 } : null) }}>{label}</label>
+        {children}
       </div>
+      {error && <span style={{ fontSize: 11, color: 'var(--cor-erro)' }}>{error}</span>}
+    </div>
+  )
+}
+
+// Campo com label em cima e valor embaixo — usado quando o campo precisa ocupar a largura
+// toda da coluna (ex.: Observação), em vez do label colado ao lado como no Row.
+function Col({ label, children, error, style }: { label: string; children: React.ReactNode; error?: string; style?: React.CSSProperties }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, ...style }}>
+      <label style={{ fontSize: 12, color: 'var(--texto-secundario)', whiteSpace: 'nowrap' }}>{label}</label>
+      {children}
+      {error && <span style={{ fontSize: 11, color: 'var(--cor-erro)' }}>{error}</span>}
     </div>
   )
 }
@@ -49,20 +70,26 @@ function Sep() {
 }
 
 // ── Modal picker genérico ─────────────────────────────────────────────────────
+// Barra de título colorida (cor do sistema) + busca + tabela com cabeçalho de
+// colunas + linha zebrada/hover + rodapé com Cancelar — visual de busca "de
+// verdade" em vez de uma lista solta.
 
-function PickerModal<T extends { id: number }>({ title, url, params: extraParams, renderItem, onSelect, onClose, isDisabled, disabledHint }: {
-  title:        string
-  url:          string
-  params?:      Record<string, string>
-  renderItem:   (item: T) => React.ReactNode
-  onSelect:     (item: T) => void
-  onClose:      () => void
-  isDisabled?:  (item: T) => boolean
+function PickerModal<T extends { id: number }>({ title, url, params: extraParams, columns, colWidths, renderCells, onSelect, onClose, isDisabled, disabledHint }: {
+  title:         string
+  url:           string
+  params?:       Record<string, string>
+  columns:       string[]
+  colWidths?:    Array<number | undefined>
+  renderCells:   (item: T) => React.ReactNode[]
+  onSelect:      (item: T) => void
+  onClose:       () => void
+  isDisabled?:   (item: T) => boolean
   disabledHint?: string
 }) {
   const [busca,   setBusca]   = useState('')
   const [lista,   setLista]   = useState<T[]>([])
   const [loading, setLoading] = useState(false)
+  const [hoverId, setHoverId] = useState<number | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const pesquisar = useCallback(async (termo: string) => {
@@ -87,37 +114,82 @@ function PickerModal<T extends { id: number }>({ title, url, params: extraParams
 
   return (
     <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--borda-media)', borderRadius: 6, width: 520, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--borda-suave)' }}>
-          <Search size={14} style={{ color: 'var(--texto-terciario)' }} />
-          <input ref={inputRef} value={busca} onChange={e => onBusca(e.target.value)}
-            placeholder={`Buscar ${title.toLowerCase()}...`}
-            style={{ flex: 1, border: 'none', background: 'transparent', fontSize: 13, color: 'var(--texto-principal)', outline: 'none' }}
-          />
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--texto-terciario)', display: 'flex', padding: 2 }}><X size={16} /></button>
+      <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--borda-media)', borderRadius: 8, width: 560, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 12px 40px rgba(0,0,0,0.35)', overflow: 'hidden' }}>
+
+        {/* Barra de título */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', backgroundColor: 'var(--cor-primaria)' }}>
+          <Search size={15} style={{ color: '#fff' }} />
+          <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: '#fff' }}>Buscar {title}</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#fff', opacity: 0.85, display: 'flex', padding: 2 }}><X size={16} /></button>
         </div>
+
+        {/* Busca */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', borderBottom: '1px solid var(--borda-media)', backgroundColor: 'var(--bg-hover)' }}>
+          <Search size={13} style={{ color: 'var(--texto-terciario)' }} />
+          <input ref={inputRef} value={busca} onChange={e => onBusca(e.target.value)}
+            placeholder="Digite para buscar..."
+            style={{ flex: 1, border: 'none', background: 'transparent', fontSize: 12, color: 'var(--texto-principal)', outline: 'none' }}
+          />
+        </div>
+
+        {/* Tabela de resultados */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {loading && <div style={{ padding: 20, textAlign: 'center', fontSize: 12, color: 'var(--texto-terciario)' }}>Carregando...</div>}
-          {!loading && lista.length === 0 && <div style={{ padding: 20, textAlign: 'center', fontSize: 12, color: 'var(--texto-terciario)' }}>Nenhum resultado</div>}
-          {lista.map(item => {
-            const desabilitado = isDisabled?.(item) ?? false
-            return (
-              <div key={item.id} onClick={() => !desabilitado && onSelect(item)}
-                style={{
-                  padding: '7px 14px', cursor: desabilitado ? 'not-allowed' : 'pointer', fontSize: 12,
-                  borderBottom: '1px solid var(--borda-suave)', transition: 'background 0.1s',
-                  opacity: desabilitado ? 0.45 : 1,
-                }}
-                onMouseEnter={e => { if (!desabilitado) e.currentTarget.style.backgroundColor = 'var(--bg-hover)' }}
-                onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
-              >
-                {renderItem(item)}
-                {desabilitado && disabledHint && (
-                  <span style={{ marginLeft: 8, fontSize: 11, fontStyle: 'italic', color: 'var(--texto-terciario)' }}>{disabledHint}</span>
-                )}
-              </div>
-            )
-          })}
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr>
+                {columns.map((c, i) => (
+                  <th key={i} style={{
+                    width: colWidths?.[i], textAlign: 'left', padding: '7px 14px', fontSize: 11, fontWeight: 700,
+                    color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: 0.3,
+                    backgroundColor: 'var(--bg-hover)', borderBottom: '1px solid var(--borda-media)',
+                    position: 'sticky', top: 0,
+                  }}>{c}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading && (
+                <tr><td colSpan={columns.length} style={{ padding: 24, textAlign: 'center', fontSize: 12, color: 'var(--texto-terciario)' }}>Carregando...</td></tr>
+              )}
+              {!loading && lista.length === 0 && (
+                <tr><td colSpan={columns.length} style={{ padding: 24, textAlign: 'center', fontSize: 12, color: 'var(--texto-terciario)' }}>Nenhum resultado</td></tr>
+              )}
+              {lista.map((item, idx) => {
+                const desabilitado = isDisabled?.(item) ?? false
+                const cells = renderCells(item)
+                return (
+                  <tr key={item.id} onClick={() => !desabilitado && onSelect(item)}
+                    onMouseEnter={() => setHoverId(item.id)}
+                    onMouseLeave={() => setHoverId(null)}
+                    style={{
+                      cursor: desabilitado ? 'not-allowed' : 'pointer', opacity: desabilitado ? 0.45 : 1,
+                      backgroundColor: hoverId === item.id && !desabilitado
+                        ? 'var(--cor-primaria)18'
+                        : (idx % 2 === 1 ? 'var(--bg-hover)' : 'transparent'),
+                      borderBottom: '1px solid var(--borda-suave)', transition: 'background-color 0.1s',
+                    }}
+                  >
+                    {cells.map((cell, i) => (
+                      <td key={i} style={{ padding: '7px 14px', verticalAlign: 'middle' }}>
+                        {cell}
+                        {i === cells.length - 1 && desabilitado && disabledHint && (
+                          <span style={{ marginLeft: 8, fontSize: 11, fontStyle: 'italic', color: 'var(--texto-terciario)' }}>{disabledHint}</span>
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Rodapé */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '10px 14px', borderTop: '1px solid var(--borda-suave)' }}>
+          <button type="button" onClick={onClose}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 14px', background: 'none', border: '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, cursor: 'pointer', color: 'var(--texto-secundario)' }}>
+            <X size={13} /> Cancelar
+          </button>
         </div>
       </div>
     </div>
@@ -144,10 +216,11 @@ type Aba = typeof ABAS[number]
 
 export default function DespesaFormPage({ despesa }: Props) {
   const router  = useRouter()
-  const [saving,   setSaving]   = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [picker,   setPicker]   = useState<PickerKey | null>(null)
-  const [aba,      setAba]      = useState<Aba>('Dados')
+  const [saving,     setSaving]     = useState(false)
+  const [deleting,   setDeleting]   = useState(false)
+  const [picker,     setPicker]     = useState<PickerKey | null>(null)
+  const [aba,        setAba]        = useState<Aba>('Dados')
+  const [replicando, setReplicando] = useState(false)
 
   // nomes exibidos nos campos de lookup
   const [nomePessoa,       setNomePessoa]       = useState('')
@@ -353,7 +426,6 @@ export default function DespesaFormPage({ despesa }: Props) {
         ...data,
         rateios: rateios.map(r => ({ centro_custo_id: r.centro_custo_id, percentual: r.percentual, valor: r.valor })),
       }
-      console.log('[onSubmit] rateios no payload:', JSON.stringify(payload.rateios))
       const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       const json   = await res.json()
       if (!res.ok) { toast.error(json.erro?.formErrors?.[0] ?? json.erro ?? 'Erro ao salvar'); return }
@@ -378,15 +450,16 @@ export default function DespesaFormPage({ despesa }: Props) {
     } finally { setDeleting(false) }
   }
 
-  function LookupField({ label, nome, onOpen, onClear, error }: {
-    label:   string
-    nome:    string
-    onOpen:  () => void
-    onClear: () => void
-    error?:  string
+  function LookupField({ label, nome, onOpen, onClear, error, labelWidth }: {
+    label:       string
+    nome:        string
+    onOpen:      () => void
+    onClear:     () => void
+    error?:      string
+    labelWidth?: number
   }) {
     return (
-      <Row label={label} error={error}>
+      <Row label={label} error={error} labelWidth={labelWidth}>
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
           <input readOnly value={nome} onClick={onOpen}
             placeholder="Clique para selecionar..."
@@ -404,10 +477,12 @@ export default function DespesaFormPage({ despesa }: Props) {
       {/* ── Picker modals ── */}
       {picker === 'pessoa' && (
         <PickerModal<PessoaItem>
-          title="Fornecedor"
+          title="Favorecido"
           url="/api/cadastro/pessoas"
           params={{ papel: 'fornecedor' }}
-          renderItem={p => <><strong>{p.nome}</strong>{p.cpf_cnpj ? <span style={{ marginLeft: 8, color: 'var(--texto-terciario)' }}>{p.cpf_cnpj}</span> : null}</>}
+          columns={['Nome', 'CPF/CNPJ']}
+          colWidths={[undefined, 160]}
+          renderCells={p => [<strong key="n">{p.nome}</strong>, p.cpf_cnpj ?? '—']}
           onSelect={p => { setValue('pessoa_id', p.id); setNomePessoa(p.nome); setPicker(null) }}
           onClose={() => setPicker(null)}
         />
@@ -416,7 +491,9 @@ export default function DespesaFormPage({ despesa }: Props) {
         <PickerModal<TipoDespesaItem>
           title="Tipo de Despesa"
           url="/api/cadastro/tipos-despesa"
-          renderItem={t => <><span style={{ fontFamily: 'var(--fonte-mono)', marginRight: 8, color: 'var(--texto-terciario)' }}>{t.codigo}</span><strong>{t.descricao}</strong></>}
+          columns={['Código', 'Descrição']}
+          colWidths={[90, undefined]}
+          renderCells={t => [<span key="c" style={{ fontFamily: 'var(--fonte-mono)', color: 'var(--texto-terciario)' }}>{t.codigo}</span>, <strong key="d">{t.descricao}</strong>]}
           isDisabled={t => t.tem_filhos}
           disabledHint="(grupo — não lança)"
           onSelect={t => {
@@ -433,18 +510,28 @@ export default function DespesaFormPage({ despesa }: Props) {
         <PickerModal<TipoCobrancaItem>
           title="Tipo de Cobrança"
           url="/api/cadastro/formas-pagamento"
-          renderItem={t => <strong>{t.des_tipo_cobranca}</strong>}
+          columns={['Descrição']}
+          renderCells={t => [<strong key="d">{t.des_tipo_cobranca}</strong>]}
           onSelect={t => { setValue('cod_tipo_cobranca', t.id); setNomeTipoCobranca(t.des_tipo_cobranca); setPicker(null) }}
           onClose={() => setPicker(null)}
         />
       )}
-{picker === 'conta_banco' && (
+      {picker === 'conta_banco' && (
         <PickerModal<ContaBancoItem>
           title="Conta Bancária"
           url="/api/cadastro/contas-banco"
-          renderItem={c => <><strong>{c.mnemonico}</strong>{c.banco_nome ? <span style={{ marginLeft: 8, color: 'var(--texto-terciario)' }}>{c.banco_nome}</span> : null}</>}
+          columns={['Mnemônico', 'Banco']}
+          renderCells={c => [<strong key="m">{c.mnemonico}</strong>, c.banco_nome ?? '—']}
           onSelect={c => { setValue('conta_banco_id', c.id); setNomeContaBanco(c.mnemonico); setPicker(null) }}
           onClose={() => setPicker(null)}
+        />
+      )}
+
+      {replicando && despesa && (
+        <ReplicarDespesaModal
+          despesa={despesa}
+          onClose={() => setReplicando(false)}
+          onReplicado={novaId => { setReplicando(false); router.push(`/financeiro/despesas/${novaId}`) }}
         />
       )}
 
@@ -453,6 +540,12 @@ export default function DespesaFormPage({ despesa }: Props) {
         const first = Object.values(errs)[0]
         if (first && 'message' in first) toast.error(first.message as string)
       })} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        {/* Campos sem UI própria (removida do formulário), mas ainda registrados no
+            react-hook-form — garante que o valor carregado via setValue (despesa a prazo
+            com competência/pagamento diferentes da data) não se perca na submissão. */}
+        <input type="hidden" {...register('data_competencia')} />
+        <input type="hidden" {...register('data_pagamento')} />
+
         {/* Toolbar */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderBottom: '1px solid var(--borda-suave)', flexShrink: 0 }}>
           <button type="button" onClick={() => router.push('/financeiro/despesas')}
@@ -462,7 +555,25 @@ export default function DespesaFormPage({ despesa }: Props) {
           <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--texto-principal)', marginLeft: 4 }}>
             {despesa ? `Despesa #${despesa.id}` : 'Nova Despesa'}
           </span>
+          {despesa?.despesa_origem_id && (
+            <button type="button" onClick={() => router.push(`/financeiro/despesas/${despesa.despesa_origem_id}`)}
+              title="Abrir despesa de origem"
+              style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--texto-terciario)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
+              <Copy size={11} /> Replicada da despesa #{despesa.despesa_origem_id}
+            </button>
+          )}
+          {despesa?.tem_replicas && (
+            <span title="Esta despesa já foi replicada ao menos uma vez" style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>
+              (possui réplicas)
+            </span>
+          )}
           <div style={{ flex: 1 }} />
+          {despesa && (despesa.destino === 'B' || despesa.destino === 'C') && despesa.status !== 'C' && (
+            <button type="button" onClick={() => setReplicando(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', background: 'none', border: '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, cursor: 'pointer', color: 'var(--texto-secundario)' }}>
+              <Copy size={13} /> Replicar
+            </button>
+          )}
           {despesa && (
             <button type="button" onClick={excluir} disabled={deleting}
               style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', background: 'none', border: '1px solid var(--cor-erro)', borderRadius: 3, fontSize: 12, cursor: 'pointer', color: 'var(--cor-erro)', opacity: deleting ? 0.5 : 1 }}>
@@ -494,9 +605,26 @@ export default function DespesaFormPage({ despesa }: Props) {
           </legend>
           <div className="form-fieldset-body">
 
-          {/* Lookups */}
+          {/* Data Despesa / Documento / Valor — label de Data alinhado com Favorecido/Tipo de Despesa abaixo */}
+          <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
+            <Row label="Data:*" error={errors.data_despesa?.message} labelWidth={LABEL_W}>
+              <input type="date" {...register('data_despesa')}
+                style={{ width: 150, padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: errors.data_despesa ? '1px solid var(--cor-erro)' : '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, outline: 'none' }} />
+            </Row>
+            <Row label="Documento:" style={{ flex: 1 }}>
+              <Input {...register('documento')} style={{ flex: 1, textTransform: 'uppercase' }} />
+            </Row>
+            <Row label="Valor:*" error={errors.valor?.message} style={{ marginLeft: 'auto' }}>
+              <MoneyInput value={watch('valor')} onValue={n => setValue('valor', n, { shouldValidate: true })} error={!!errors.valor} style={{ width: 150 }} />
+            </Row>
+          </div>
+
+          <Sep />
+
+          {/* Lookups — mesmo labelWidth da Data acima, pra os inputs começarem alinhados */}
           <LookupField
-            label="Pessoa:*"
+            label="Favorecido:*"
+            labelWidth={LABEL_W}
             nome={nomePessoa}
             onOpen={() => setPicker('pessoa')}
             onClear={() => { setValue('pessoa_id', 0); setNomePessoa('') }}
@@ -504,6 +632,7 @@ export default function DespesaFormPage({ despesa }: Props) {
           />
           <LookupField
             label="Tipo de Despesa:*"
+            labelWidth={LABEL_W}
             nome={nomeTipoDespesa}
             onOpen={() => setPicker('tipo_despesa')}
             onClear={() => { setValue('tipo_despesa_id', 0); setNomeTipoDespesa(''); setTipoDespesaNatureza(''); setTipoDespesaSintetico(false) }}
@@ -514,31 +643,15 @@ export default function DespesaFormPage({ despesa }: Props) {
               ⚠ Este tipo de despesa é um <strong>grupo sintético</strong> (agrupador) — selecione um tipo analítico antes de salvar.
             </div>
           )}
-          <Sep />
 
-          {/* Datas */}
-          <Row label="Data Despesa:*" error={errors.data_despesa?.message}>
-            <input type="date" {...register('data_despesa')}
-              style={{ padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: errors.data_despesa ? '1px solid var(--cor-erro)' : '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, outline: 'none' }} />
-          </Row>
-          <Row label="Competência:">
-            <input type="date" {...register('data_competencia')}
-              style={{ padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, outline: 'none' }} />
-          </Row>
-          <Row label="Data Pagamento:">
-            <input type="date" {...register('data_pagamento')}
-              style={{ padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, outline: 'none' }} />
-          </Row>
-
-          <Sep />
-
-          {/* Documento / Valor */}
-          <Row label="Documento:">
-            <Input {...register('documento')} style={{ width: 200, textTransform: 'uppercase' }} />
-          </Row>
-          <Row label="Valor:*" error={errors.valor?.message}>
-            <MoneyInput value={watch('valor')} onValue={n => setValue('valor', n, { shouldValidate: true })} error={!!errors.valor} style={{ width: 140 }} />
-          </Row>
+          {/* Observação */}
+          <Col label="Observação:">
+            <textarea {...register('observacao')} rows={5}
+              style={{ width: '100%', padding: '5px 8px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, resize: 'vertical', outline: 'none', fontFamily: 'inherit' }}
+              onFocus={e => (e.target.style.borderColor = 'var(--cor-primaria)')}
+              onBlur={e  => (e.target.style.borderColor = 'var(--borda-media)')}
+            />
+          </Col>
 
           <Sep />
 
@@ -596,18 +709,6 @@ export default function DespesaFormPage({ despesa }: Props) {
               <option value="P">P — Pendente</option>
             </Select>
           </Row>
-
-          <Sep />
-
-          {/* Observação */}
-          <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'start', gap: '2px 6px' }}>
-            <label style={{ textAlign: 'right', fontSize: 12, color: 'var(--texto-secundario)', paddingRight: 2, paddingTop: 4 }}>Observação:</label>
-            <textarea {...register('observacao')} rows={3}
-              style={{ width: '100%', padding: '3px 6px', backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3, fontSize: 12, resize: 'vertical', outline: 'none', fontFamily: 'inherit' }}
-              onFocus={e => (e.target.style.borderColor = 'var(--cor-primaria)')}
-              onBlur={e  => (e.target.style.borderColor = 'var(--borda-media)')}
-            />
-          </div>
 
           </div>
         </fieldset>
@@ -868,7 +969,9 @@ export default function DespesaFormPage({ despesa }: Props) {
                 <PickerModal<CentroCustoItem>
                   title="Centro de Custo"
                   url="/api/cadastro/centros-custo"
-                  renderItem={c => <><span style={{ fontFamily: 'var(--fonte-mono)', marginRight: 8, color: 'var(--texto-terciario)' }}>{c.codigo}</span><strong>{c.descricao}</strong></>}
+                  columns={['Código', 'Descrição']}
+                  colWidths={[90, undefined]}
+                  renderCells={c => [<span key="c" style={{ fontFamily: 'var(--fonte-mono)', color: 'var(--texto-terciario)' }}>{c.codigo}</span>, <strong key="d">{c.descricao}</strong>]}
                   onSelect={c => { setRateioCentroId(c.id); setRateioCentroNome(`${c.codigo} - ${c.descricao}`); setPicker(null) }}
                   onClose={() => setPicker(null)}
                 />

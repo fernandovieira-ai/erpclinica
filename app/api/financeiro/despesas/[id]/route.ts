@@ -24,13 +24,18 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
               TO_CHAR(d.data_competencia, 'YYYY-MM-DD') AS data_competencia,
               TO_CHAR(d.data_pagamento,   'YYYY-MM-DD') AS data_pagamento,
               d.documento, d.valor, d.num_parcelas, d.intervalo_dias,
-              d.status, d.observacao, d.created_by, d.created_at, d.updated_at
+              d.status, d.observacao, d.created_by, d.created_at, d.updated_at,
+              d.despesa_origem_id,
+              TO_CHAR(dorig.data_despesa, 'YYYY-MM-DD') AS despesa_origem_data,
+              dorig.documento AS despesa_origem_documento,
+              EXISTS(SELECT 1 FROM tab_despesa r WHERE r.despesa_origem_id = d.id AND r.empresa_id = d.empresa_id) AS tem_replicas
        FROM tab_despesa d
        LEFT JOIN tab_pessoa           p  ON p.id  = d.pessoa_id
        LEFT JOIN tab_tipo_despesa     td ON td.id = d.tipo_despesa_id
        LEFT JOIN tab_tipo_cobranca    tc ON tc.cod_tipo_cobranca = d.cod_tipo_cobranca
        LEFT JOIN tab_centro_custo     cc ON cc.id = d.centro_custo_id
        LEFT JOIN tab_conta_banco      cb ON cb.id = d.conta_banco_id
+       LEFT JOIN tab_despesa          dorig ON dorig.id = d.despesa_origem_id AND dorig.empresa_id = d.empresa_id
        WHERE d.id = $1 AND d.empresa_id = $2`,
       [params.id, session.empresa_id_ativa],
     ),
@@ -83,9 +88,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const d       = body.data
   const rateios: Array<{centro_custo_id: number; percentual: number; valor: number}> = Array.isArray(raw.rateios) ? raw.rateios : []
-  console.log('[PATCH /despesas/:id] rateios recebidos:', JSON.stringify(rateios))
   const up      = (v?: string | null) => (v ? v.toUpperCase() : null)
   const dt      = (v?: string | null) => (v && v.trim() ? v : null)
+
+  // Pagamento imediato (Caixa/Banco): competência e pagamento sempre = data da despesa
+  // (fonte de verdade no backend — não depende do front enviar os campos certos).
+  if (d.destino === 'B' || d.destino === 'C') {
+    d.data_competencia = d.data_despesa
+    d.data_pagamento   = d.data_despesa
+  }
 
   // Valida: banco selecionado exige conta bancária
   if (d.destino === 'B' && !d.conta_banco_id) {
@@ -200,8 +211,12 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   try {
     await client.query('BEGIN')
 
+    // FOR UPDATE: trava a linha pra evitar corrida com um POST /replicar concorrente
+    // (que também usa FOR UPDATE) — sem isso, uma réplica podia ser criada entre a
+    // checagem de "tem réplicas" abaixo e o DELETE, virando um erro de FK (500) em
+    // vez do 409 com mensagem amigável.
     const { rows } = await client.query(
-      `SELECT * FROM tab_despesa WHERE id=$1 AND empresa_id=$2`,
+      `SELECT * FROM tab_despesa WHERE id=$1 AND empresa_id=$2 FOR UPDATE`,
       [params.id, session.empresa_id_ativa],
     )
     if (!rows.length) {
@@ -226,6 +241,22 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
       const titulos = titulosBaixados.map((r: { numero_titulo: string }) => r.numero_titulo).join(', ')
       return NextResponse.json(
         { erro: `Não é possível excluir esta despesa pois o(s) título(s) ${titulos} já possui(em) baixa registrada. Estorne o pagamento antes de excluir.` },
+        { status: 409 },
+      )
+    }
+
+    // Verifica se esta despesa é origem de alguma réplica — despesa_origem_id tem FK
+    // sem ON DELETE, então excluir sem checar antes derrubaria a transação com um erro
+    // de violação de FK (500 feio em vez de mensagem clara).
+    const { rows: replicas } = await client.query(
+      `SELECT id FROM tab_despesa WHERE despesa_origem_id = $1 AND empresa_id = $2`,
+      [params.id, session.empresa_id_ativa],
+    )
+    if (replicas.length > 0) {
+      await client.query('ROLLBACK')
+      const ids = replicas.map((r: { id: number }) => `#${r.id}`).join(', ')
+      return NextResponse.json(
+        { erro: `Não é possível excluir esta despesa pois ela é origem da(s) réplica(s) ${ids}. Exclua as réplicas antes.` },
         { status: 409 },
       )
     }

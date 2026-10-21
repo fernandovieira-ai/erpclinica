@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
               p.nome  AS pessoa_nome,
               td.descricao AS tipo_despesa_desc,
               tc.des_tipo_cobranca AS tipo_cobranca_desc,
-              d.valor, d.num_parcelas, d.status
+              d.valor, d.num_parcelas, d.status, d.destino
        FROM tab_despesa d
        LEFT JOIN tab_pessoa         p  ON p.id  = d.pessoa_id
        LEFT JOIN tab_tipo_despesa   td ON td.id = d.tipo_despesa_id
@@ -83,10 +83,16 @@ export async function POST(req: NextRequest) {
 
   const d       = body.data
   const rateios: Array<{centro_custo_id: number; percentual: number; valor: number}> = Array.isArray(raw.rateios) ? raw.rateios : []
-  console.log('[POST /despesas] rateios recebidos:', JSON.stringify(rateios))
   const up      = (v?: string | null) => (v ? v.toUpperCase() : null)
   const dt      = (v?: string | null) => (v && v.trim() ? v : null)
   const db      = getDb(session.database_name)
+
+  // Pagamento imediato (Caixa/Banco): competência e pagamento sempre = data da despesa
+  // (fonte de verdade no backend — não depende do front enviar os campos certos).
+  if (d.destino === 'B' || d.destino === 'C') {
+    d.data_competencia = d.data_despesa
+    d.data_pagamento   = d.data_despesa
+  }
 
   // Valida: banco selecionado exige conta bancária
   if (d.destino === 'B' && !d.conta_banco_id) {

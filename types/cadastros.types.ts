@@ -372,6 +372,10 @@ export interface Despesa {
   intervalo_dias:      number
   status:              'P' | 'A' | 'C'
   observacao:          string | null
+  despesa_origem_id:        number | null
+  despesa_origem_data:      string | null
+  despesa_origem_documento: string | null
+  tem_replicas:             boolean
   created_by:          string | null
   created_at:          string
   updated_at:          string
@@ -382,7 +386,7 @@ export interface Despesa {
 export type DespesaListItem = Pick<
   Despesa,
   | 'id' | 'data_despesa' | 'documento' | 'pessoa_nome' | 'tipo_despesa_desc'
-  | 'tipo_cobranca_desc' | 'valor' | 'num_parcelas' | 'status'
+  | 'tipo_cobranca_desc' | 'valor' | 'num_parcelas' | 'status' | 'destino'
 >
 
 export interface DespesaListResponse {

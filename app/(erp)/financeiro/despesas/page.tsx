@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Plus, Search, ChevronLeft, ChevronRight, BarChart3 } from 'lucide-react'
-import type { DespesaListItem, DespesaListResponse } from '@/types/cadastros.types'
+import { Plus, Search, ChevronLeft, ChevronRight, BarChart3, ExternalLink, Copy } from 'lucide-react'
+import type { DespesaListItem, DespesaListResponse, Despesa } from '@/types/cadastros.types'
+import ReplicarDespesaModal from '@/components/financeiro/ReplicarDespesaModal'
 
 const STATUS_LABEL: Record<string, { label: string; cor: string }> = {
   A: { label: 'Aprovada', cor: 'var(--cor-sucesso)'      },
@@ -32,6 +33,10 @@ export default function DespesasPage() {
   const [dataInicio,  setDataInicio]  = useState('')
   const [dataFim,     setDataFim]     = useState('')
   const [page,        setPage]        = useState(1)
+  const [menu,         setMenu]         = useState<{ x: number; y: number; despesa: DespesaListItem } | null>(null)
+  const [replicando,   setReplicando]   = useState<Despesa | null>(null)
+  const [replicandoId, setReplicandoId] = useState<number | null>(null)
+  const [carregandoReplica, setCarregandoReplica] = useState(false)
 
   const carregar = useCallback(async () => {
     setLoading(true)
@@ -48,6 +53,36 @@ export default function DespesasPage() {
 
   useEffect(() => { carregar() }, [carregar])
   useEffect(() => { setPage(1) }, [busca, status, dataInicio, dataFim])
+
+  // Fecha o menu de contexto ao clicar fora, rolar ou apertar Esc
+  useEffect(() => {
+    if (!menu) return
+    const fechar = () => setMenu(null)
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') fechar() }
+    window.addEventListener('click', fechar)
+    window.addEventListener('scroll', fechar, true)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('click', fechar)
+      window.removeEventListener('scroll', fechar, true)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [menu])
+
+  async function abrirReplicar(d: DespesaListItem) {
+    setMenu(null)
+    setReplicandoId(d.id)
+    setCarregandoReplica(true)
+    try {
+      const res = await fetch(`/api/financeiro/despesas/${d.id}`)
+      if (!res.ok) { toast.error('Erro ao carregar despesa'); setReplicandoId(null); return }
+      const data: Despesa = await res.json()
+      setReplicando(data)
+    } catch {
+      toast.error('Erro ao carregar despesa — verifique sua conexão e tente novamente.')
+      setReplicandoId(null)
+    } finally { setCarregandoReplica(false) }
+  }
 
   const inicio = (page - 1) * 50 + 1
   const fim    = Math.min(page * 50, total)
@@ -100,13 +135,13 @@ export default function DespesasPage() {
                   <th style={{ width: 60  }}>ID</th>
                   <th style={{ width: 100 }}>Data</th>
                   <th style={{ width: 120 }}>Documento</th>
-                  <th>Pessoa</th>
+                  <th>Favorecido</th>
                   <th>Tipo de Despesa</th>
                   <th style={{ width: 130 }}>Tipo Cobr.</th>
                   <th style={{ width: 120, textAlign: 'right' }}>Valor</th>
                   <th style={{ width: 70,  textAlign: 'center' }}>Parc.</th>
                   <th style={{ width: 90,  textAlign: 'center' }}>Status</th>
-                  <th style={{ width: 40  }} />
+                  <th style={{ width: 90  }} />
                 </tr>
               </thead>
               <tbody>
@@ -118,8 +153,17 @@ export default function DespesasPage() {
                 )}
                 {dados.map(d => {
                   const st = STATUS_LABEL[d.status] ?? { label: d.status, cor: 'inherit' }
+                  const emReplicacao = d.id === replicandoId
                   return (
-                    <tr key={d.id} style={{ cursor: 'pointer' }} onClick={() => router.push(`/financeiro/despesas/${d.id}`)}>
+                    <tr key={d.id} style={{ cursor: 'pointer', backgroundColor: emReplicacao ? 'var(--cor-primaria)18' : undefined, outline: emReplicacao ? '1px solid var(--cor-primaria)' : undefined, outlineOffset: -1 }}
+                      onClick={() => router.push(`/financeiro/despesas/${d.id}`)}
+                      onContextMenu={e => {
+                        e.preventDefault()
+                        const MENU_W = 190, MENU_H = 84
+                        const x = Math.min(e.clientX, window.innerWidth  - MENU_W - 8)
+                        const y = Math.min(e.clientY, window.innerHeight - MENU_H - 8)
+                        setMenu({ x: Math.max(8, x), y: Math.max(8, y), despesa: d })
+                      }}>
                       <td style={{ fontFamily: 'var(--fonte-mono)', color: 'var(--texto-terciario)' }}>{d.id}</td>
                       <td style={{ fontFamily: 'var(--fonte-mono)' }}>{fmtData(d.data_despesa)}</td>
                       <td style={{ fontFamily: 'var(--fonte-mono)' }}>{d.documento || '—'}</td>
@@ -131,7 +175,7 @@ export default function DespesasPage() {
                       <td style={{ textAlign: 'center' }}>
                         <span style={{ fontSize: 11, fontWeight: 600, color: st.cor, padding: '2px 6px', borderRadius: 10, border: `1px solid ${st.cor}` }}>{st.label}</span>
                       </td>
-                      <td />
+                      <td style={{ fontSize: 11, color: 'var(--cor-primaria)', fontWeight: 600, whiteSpace: 'nowrap' }}>{emReplicacao ? 'Replicando...' : ''}</td>
                     </tr>
                   )
                 })}
@@ -154,6 +198,43 @@ export default function DespesasPage() {
           )}
         </div>
       </div>
+
+      {menu && (() => {
+        const podeReplicar = (menu.despesa.destino === 'B' || menu.despesa.destino === 'C') && menu.despesa.status !== 'C'
+        return (
+          <div
+            onClick={e => e.stopPropagation()}
+            onContextMenu={e => e.preventDefault()}
+            style={{
+              position: 'fixed', top: menu.y, left: menu.x, zIndex: 200,
+              backgroundColor: 'var(--bg-card)', border: '1px solid var(--borda-media)', borderRadius: 6,
+              boxShadow: '0 8px 24px rgba(0,0,0,0.3)', minWidth: 190, overflow: 'hidden', fontSize: 12,
+            }}>
+            <button type="button" onClick={() => { setMenu(null); router.push(`/financeiro/despesas/${menu.despesa.id}`) }}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 12px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--texto-principal)', textAlign: 'left' }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--bg-hover)')}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
+              <ExternalLink size={13} /> Abrir
+            </button>
+            <button type="button" disabled={!podeReplicar || carregandoReplica}
+              title={podeReplicar ? undefined : (menu.despesa.status === 'C' ? 'Despesa cancelada não pode ser replicada' : 'Só disponível para despesas com pagamento em Caixa ou Banco')}
+              onClick={() => podeReplicar && abrirReplicar(menu.despesa)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 12px', background: 'none', border: 'none', borderTop: '1px solid var(--borda-suave)', cursor: podeReplicar ? 'pointer' : 'not-allowed', color: podeReplicar ? 'var(--texto-principal)' : 'var(--texto-terciario)', textAlign: 'left', opacity: podeReplicar ? 1 : 0.6 }}
+              onMouseEnter={e => { if (podeReplicar) e.currentTarget.style.backgroundColor = 'var(--bg-hover)' }}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
+              <Copy size={13} /> {carregandoReplica ? 'Carregando...' : 'Replicar'}
+            </button>
+          </div>
+        )
+      })()}
+
+      {replicando && (
+        <ReplicarDespesaModal
+          despesa={replicando}
+          onClose={() => { setReplicando(null); setReplicandoId(null) }}
+          onReplicado={() => { setReplicando(null); setReplicandoId(null); carregar() }}
+        />
+      )}
     </>
   )
 }
