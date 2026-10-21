@@ -1,0 +1,84 @@
+name: Railway Deploy Watchdog
+
+# Rede de seguranca pro caso do Railway cair bem na hora de um push/merge em
+# main: o deploy automatico nativo (webhook Railway -> build) depende do
+# Railway estar no ar pra disparar, e o retry do GitHub nao e garantido.
+# Este workflow roda em paralelo, de forma independente: a cada 10 minutos,
+# checa se o Railway esta no ar e se o commit mais recente de main ainda nao
+# foi disparado por aqui — se não foi, dispara via API GraphQL do Railway.
+# workflow_dispatch permite rodar manualmente (ex: logo depois de confirmar
+# que o Railway voltou, sem esperar o próximo tick do cron).
+#
+# Mutation serviceInstanceDeployV2(serviceId, environmentId, commitSha) —
+# confirmada em uso real (comunidade Railway + pipeline de outro projeto),
+# mas sem documentação oficial estável. Recomenda-se um dry run manual
+# (workflow_dispatch) antes de confiar 100% nisso.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checa se a API do Railway esta no ar
+        id: ping
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+            https://backboard.railway.com/graphql/v2 \
+            -X POST -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+            -d '{"query":"query { me { id } }"}')
+          echo "Railway respondeu HTTP $code"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+      - name: Restaura o ultimo commit ja disparado por este watchdog
+        if: steps.ping.outputs.code == '200'
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .railway-watchdog-last-sha
+          key: railway-watchdog-last-sha-${{ github.sha }}
+          restore-keys: |
+            railway-watchdog-last-sha-
+
+      - name: Dispara deploy se o commit atual ainda nao foi tratado
+        if: steps.ping.outputs.code == '200'
+        run: |
+          LAST=""
+          [ -f .railway-watchdog-last-sha ] && LAST=$(cat .railway-watchdog-last-sha)
+          CURRENT="${{ github.sha }}"
+
+          if [ "$LAST" = "$CURRENT" ]; then
+            echo "Commit $CURRENT ja foi disparado por este watchdog antes — nada a fazer."
+            exit 0
+          fi
+
+          echo "Disparando deploy do commit $CURRENT no Railway..."
+          BODY=$(jq -n \
+            --arg s "${{ secrets.RAILWAY_SERVICE_ID }}" \
+            --arg e "${{ secrets.RAILWAY_ENVIRONMENT_ID }}" \
+            --arg c "$CURRENT" \
+            '{query:"mutation($s:String!,$e:String!,$c:String!){ serviceInstanceDeployV2(serviceId:$s, environmentId:$e, commitSha:$c) }", variables:{s:$s,e:$e,c:$c}}')
+
+          RESP=$(curl -s https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+            -d "$BODY")
+          echo "$RESP"
+
+          if echo "$RESP" | jq -e '.errors' > /dev/null 2>&1; then
+            echo "Railway retornou erro ao disparar o deploy — não marca como tratado, tenta de novo no próximo tick."
+            exit 1
+          fi
+
+          echo "$CURRENT" > .railway-watchdog-last-sha
+
+      - name: Salva o commit tratado no cache
+        if: steps.ping.outputs.code == '200'
+        uses: actions/cache/save@v4
+        with:
+          path: .railway-watchdog-last-sha
+          key: railway-watchdog-last-sha-${{ github.sha }}
