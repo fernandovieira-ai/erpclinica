@@ -9,15 +9,28 @@ name: Railway Deploy Watchdog
 # workflow_dispatch permite rodar manualmente (ex: logo depois de confirmar
 # que o Railway voltou, sem esperar o próximo tick do cron).
 #
+# Token de PROJETO do Railway (Project Settings -> Tokens) — usa o header
+# "Project-Access-Token", nao "Authorization: Bearer" (esse e so pra token
+# de conta/workspace). Confirmado com a query `projectToken { projectId
+# environmentId }` (docs.railway.com/reference/public-api).
+#
+# serviceId/environmentId deste projeto nao sao segredo (aparecem na URL do
+# dashboard) — fixos aqui direto, so o token precisa ser secret.
+#
 # Mutation serviceInstanceDeployV2(serviceId, environmentId, commitSha) —
 # confirmada em uso real (comunidade Railway + pipeline de outro projeto),
-# mas sem documentação oficial estável. Recomenda-se um dry run manual
-# (workflow_dispatch) antes de confiar 100% nisso.
+# mas sem documentação oficial estável pra essa mutation especifica.
+# Recomenda-se um dry run manual (workflow_dispatch) antes de confiar
+# 100% nisso.
 
 on:
   schedule:
     - cron: '*/10 * * * *'
   workflow_dispatch: {}
+
+env:
+  RAILWAY_SERVICE_ID: 6495bcd1-b7c9-4a08-b280-ce50fc2ed4cd
+  RAILWAY_ENVIRONMENT_ID: b69e38dc-7927-46a9-b93c-ce7cf40a7872
 
 jobs:
   watchdog:
@@ -26,16 +39,20 @@ jobs:
       - name: Checa se a API do Railway esta no ar
         id: ping
         run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+          RESP=$(curl -s --max-time 10 \
             https://backboard.railway.com/graphql/v2 \
             -X POST -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
-            -d '{"query":"query { me { id } }"}')
-          echo "Railway respondeu HTTP $code"
-          echo "code=$code" >> "$GITHUB_OUTPUT"
+            -H "Project-Access-Token: ${{ secrets.RAILWAY_TOKEN }}" \
+            -d '{"query":"query { projectToken { projectId environmentId } }"}')
+          echo "Resposta do Railway: $RESP"
+          if echo "$RESP" | jq -e '.data.projectToken.environmentId' > /dev/null 2>&1; then
+            echo "up=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "up=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Restaura o ultimo commit ja disparado por este watchdog
-        if: steps.ping.outputs.code == '200'
+        if: steps.ping.outputs.up == 'true'
         id: cache
         uses: actions/cache/restore@v4
         with:
@@ -45,7 +62,7 @@ jobs:
             railway-watchdog-last-sha-
 
       - name: Dispara deploy se o commit atual ainda nao foi tratado
-        if: steps.ping.outputs.code == '200'
+        if: steps.ping.outputs.up == 'true'
         run: |
           LAST=""
           [ -f .railway-watchdog-last-sha ] && LAST=$(cat .railway-watchdog-last-sha)
@@ -58,14 +75,14 @@ jobs:
 
           echo "Disparando deploy do commit $CURRENT no Railway..."
           BODY=$(jq -n \
-            --arg s "${{ secrets.RAILWAY_SERVICE_ID }}" \
-            --arg e "${{ secrets.RAILWAY_ENVIRONMENT_ID }}" \
+            --arg s "$RAILWAY_SERVICE_ID" \
+            --arg e "$RAILWAY_ENVIRONMENT_ID" \
             --arg c "$CURRENT" \
             '{query:"mutation($s:String!,$e:String!,$c:String!){ serviceInstanceDeployV2(serviceId:$s, environmentId:$e, commitSha:$c) }", variables:{s:$s,e:$e,c:$c}}')
 
           RESP=$(curl -s https://backboard.railway.com/graphql/v2 \
             -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+            -H "Project-Access-Token: ${{ secrets.RAILWAY_TOKEN }}" \
             -d "$BODY")
           echo "$RESP"
 
@@ -77,7 +94,7 @@ jobs:
           echo "$CURRENT" > .railway-watchdog-last-sha
 
       - name: Salva o commit tratado no cache
-        if: steps.ping.outputs.code == '200'
+        if: steps.ping.outputs.up == 'true'
         uses: actions/cache/save@v4
         with:
           path: .railway-watchdog-last-sha
