@@ -3,7 +3,7 @@ import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 import { gerarFaturasSelecaoSchema } from '@/lib/validators/cartao.schema'
 
-// GET /api/financeiro/cartao/faturas/gerar?data_emissao_inicio=&data_emissao_fim=&data_vencimento_inicio=&data_vencimento_fim=&conta_banco_id=&adquirente=&bandeira=&modalidade=&busca=
+// GET /api/financeiro/cartao/faturas/gerar?data_emissao_inicio=&data_emissao_fim=&data_vencimento_inicio=&data_vencimento_fim=&conta_banco_id=&adquirente=&bandeira=&modalidade=&busca=&condicao_pagamento_id=
 // Lista as vendas no cartão pendentes que batem com o filtro, para o
 // usuário conferir e escolher quais entram na fatura (não grava nada).
 export async function GET(req: NextRequest) {
@@ -16,6 +16,7 @@ export async function GET(req: NextRequest) {
   const { rows } = await db.query(
     `SELECT p.id AS parcela_id, v.id AS venda_cartao_id,
             v.conta_banco_id, cb.mnemonico AS conta_banco_desc,
+            v.condicao_pagamento_id,
             v.adquirente, v.bandeira, v.modalidade, v.nsu, v.codigo_autorizacao,
             TO_CHAR(v.data_venda, 'YYYY-MM-DD') AS data_venda,
             TO_CHAR(p.data_prevista, 'YYYY-MM-DD') AS data_prevista,
@@ -35,6 +36,7 @@ export async function GET(req: NextRequest) {
        AND ($8::varchar IS NULL OR v.bandeira          = $8)
        AND ($9::varchar IS NULL OR v.modalidade        = $9)
        AND ($10::varchar IS NULL OR v.nsu ILIKE '%' || $10 || '%' OR v.codigo_autorizacao ILIKE '%' || $10 || '%')
+       AND ($11::int    IS NULL OR v.condicao_pagamento_id = $11)
      ORDER BY p.data_prevista, v.adquirente, v.id, p.numero_parcela
      LIMIT 500`,
     [
@@ -48,6 +50,7 @@ export async function GET(req: NextRequest) {
       sp.get('bandeira')               || null,
       sp.get('modalidade')             || null,
       sp.get('busca')                  || null,
+      sp.get('condicao_pagamento_id')  || null,
     ],
   )
 

@@ -168,11 +168,12 @@ export interface AntecipacaoParcelaResultado {
 }
 
 export interface VendaCartaoPendenteFatura {
-  parcela_id:         number
-  venda_cartao_id:    number
-  conta_banco_id:     number
-  conta_banco_desc:   string
-  adquirente:         string
+  parcela_id:            number
+  venda_cartao_id:       number
+  conta_banco_id:        number
+  conta_banco_desc:      string
+  condicao_pagamento_id: number
+  adquirente:            string
   bandeira:           string | null
   modalidade:         VendaCartaoModalidade | null
   nsu:                string | null

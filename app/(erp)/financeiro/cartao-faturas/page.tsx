@@ -29,9 +29,14 @@ const STATUS_COR: Record<string, string> = {
   CANCELADA:  'var(--texto-terciario)',
 }
 
-const ADQUIRENTES = ['STONE', 'CIELO', 'REDE', 'GETNET', 'SAFRAPAY', 'MERCADO PAGO', 'PAGSEGURO', 'SICREDI']
 const BANDEIRAS   = ['VISA', 'MASTERCARD', 'ELO', 'AMEX', 'HIPERCARD']
 const MODALIDADES: Record<string, string> = { DEBITO: 'Débito', CREDITO_VISTA: 'Crédito à Vista', CREDITO_PARCELADO: 'Crédito Parcelado' }
+
+interface CondicaoPagamentoCartao {
+  id:         number
+  descricao:  string
+  adquirente: string | null
+}
 
 interface FiltroGeracao {
   data_emissao_inicio:    string
@@ -39,6 +44,7 @@ interface FiltroGeracao {
   data_vencimento_inicio: string
   data_vencimento_fim:    string
   conta_banco_id:         string
+  condicao_pagamento_id:  string
   adquirente:              string
   bandeira:                string
   modalidade:              string
@@ -48,7 +54,7 @@ interface FiltroGeracao {
 const FILTRO_VAZIO: FiltroGeracao = {
   data_emissao_inicio: '', data_emissao_fim: '',
   data_vencimento_inicio: '', data_vencimento_fim: hoje(),
-  conta_banco_id: '', adquirente: '', bandeira: '', modalidade: '', busca: '',
+  conta_banco_id: '', condicao_pagamento_id: '', adquirente: '', bandeira: '', modalidade: '', busca: '',
 }
 
 export default function CartaoFaturasPage() {
@@ -62,8 +68,14 @@ export default function CartaoFaturasPage() {
   const [gerando,  setGerando]  = useState(false)
 
   const [contas, setContas] = useState<Array<{ id: number; mnemonico: string }>>([])
+  const [condicoesCartao, setCondicoesCartao] = useState<CondicaoPagamentoCartao[]>([])
   const [showFiltro, setShowFiltro] = useState(false)
   const [filtro, setFiltro] = useState<FiltroGeracao>(FILTRO_VAZIO)
+
+  const adquirentesDisponiveis = useMemo(() => {
+    const unicos = new Set(condicoesCartao.map(c => c.adquirente).filter((a): a is string => !!a))
+    return Array.from(unicos).sort()
+  }, [condicoesCartao])
 
   const [pendentes, setPendentes] = useState<VendaCartaoPendenteFatura[]>([])
   const [pendentesLoading, setPendentesLoading] = useState(false)
@@ -89,6 +101,10 @@ export default function CartaoFaturasPage() {
       .then(r => r.json())
       .then(d => setContas(d.dados ?? []))
       .catch(() => {})
+    fetch('/api/cadastro/condicoes-pagamento?ativo=true&limit=200')
+      .then(r => r.json())
+      .then(d => setCondicoesCartao((d.dados ?? []).filter((c: { tipo_pagamento: string }) => ['debito', 'credito'].includes(c.tipo_pagamento))))
+      .catch(() => {})
   }, [])
 
   function campo<K extends keyof FiltroGeracao>(k: K, v: FiltroGeracao[K]) {
@@ -101,6 +117,7 @@ export default function CartaoFaturasPage() {
     data_vencimento_inicio: filtro.data_vencimento_inicio || '',
     data_vencimento_fim:    filtro.data_vencimento_fim || '',
     conta_banco_id:         filtro.conta_banco_id || '',
+    condicao_pagamento_id:  filtro.condicao_pagamento_id || '',
     adquirente:             filtro.adquirente || '',
     bandeira:               filtro.bandeira || '',
     modalidade:             filtro.modalidade || '',
@@ -209,11 +226,18 @@ export default function CartaoFaturasPage() {
                 </select>
               </div>
               <div>
+                <label style={{ fontSize: 11, color: 'var(--texto-secundario)' }}>Forma de Pagamento</label>
+                <select className="input-field" value={filtro.condicao_pagamento_id} onChange={e => campo('condicao_pagamento_id', e.target.value)} style={{ width: '100%' }}>
+                  <option value="">Todas</option>
+                  {condicoesCartao.map(c => <option key={c.id} value={String(c.id)}>{c.descricao}</option>)}
+                </select>
+              </div>
+              <div>
                 <label style={{ fontSize: 11, color: 'var(--texto-secundario)' }}>Adquirente</label>
-                <input list="lista-adquirentes-filtro" className="input-field" value={filtro.adquirente} onChange={e => campo('adquirente', e.target.value.toUpperCase())} style={{ width: '100%' }} placeholder="Todos" />
-                <datalist id="lista-adquirentes-filtro">
-                  {ADQUIRENTES.map(a => <option key={a} value={a} />)}
-                </datalist>
+                <select className="input-field" value={filtro.adquirente} onChange={e => campo('adquirente', e.target.value)} style={{ width: '100%' }}>
+                  <option value="">Todos</option>
+                  {adquirentesDisponiveis.map(a => <option key={a} value={a}>{a}</option>)}
+                </select>
               </div>
               <div>
                 <label style={{ fontSize: 11, color: 'var(--texto-secundario)' }}>Bandeira</label>
