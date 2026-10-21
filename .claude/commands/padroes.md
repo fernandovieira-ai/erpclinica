@@ -1364,3 +1364,18 @@ Documento pra solicitar exames ao paciente (caráter Rotina/Urgência + indicaç
 **Arquivos:** `novos/74_recebimento_solicitante_obrigatorio.sql` · `scripts/aplicar_migracao_74.js` · `components/clinica/RecebimentoModal.tsx` · `app/api/clinica/recebimentos/route.ts` · `app/api/clinica/recebimentos/parametros/route.ts` · `lib/validators/empresa.schema.ts` · `types/cadastros.types.ts` · `app/api/cadastro/empresas/route.ts` · `app/api/cadastro/empresas/[id]/route.ts` · `components/cadastro/EmpresaFormPage.tsx`.
 
 **Bug relatado pelo usuário (corrigido na mesma sessão) — checkbox "salva" mas volta desmarcado:** `app/(erp)/configuracoes/empresas/[id]/page.tsx` (página SSR que busca a empresa pra popular o formulário) tem seu **próprio** SELECT, separado de `GET /api/cadastro/empresas/[id]` — e esse SELECT não tinha sido atualizado com `recebimento_solicitante_obrigatorio`. O PATCH gravava certo no banco, mas `router.refresh()` após salvar relia nesse SELECT incompleto, então o `reset()` do formulário sempre recebia `undefined` → cai no fallback `?? false`. **Lição:** toda vez que se adiciona uma coluna nova em `tab_empresa` exposta no form de empresa, checar os **dois** SELECTs — o da API (`app/api/cadastro/empresas/[id]/route.ts`, usado por outras telas) e o da página SSR de edição (`app/(erp)/configuracoes/empresas/[id]/page.tsx`, que é quem efetivamente alimenta `EmpresaFormPage` nesta rota) — não são a mesma query e divergem silenciosamente.
+
+---
+
+## 57. Procedimento: commitar e subir código quando o Railway está fora do ar
+
+**Contexto:** pedido do usuário em 2026-10-21 — Railway (hospedagem do ERP, deploy automático via push/merge em `origin/main`, ver nota de memória "Deploy via GitHub → Railway") estava fora do ar e ele queria garantir que o trabalho da sessão ficasse salvo localmente pra subir depois, sem arriscar nada. Deveria ter sido salvo como skill no `agent-core` (`skill_save`), mas o MCP estava com `CONNECTION_CLOSED` nesta sessão — registrado aqui como fallback; **copiar pro agent-core via `skill_save` na próxima vez que o MCP conectar**.
+
+**Procedimento:**
+1. `git push` é independente do Railway — o GitHub aceita o push normalmente mesmo com o Railway fora do ar. O que não acontece é o **deploy automático** (webhook Railway → build → release), que depende do Railway estar no ar pra disparar.
+2. Por isso, **commitar sempre, normalmente** — não há motivo pra atrasar o commit por causa do Railway (commit é só local/GitHub, não toca o Railway).
+3. **Decisão sobre o push:** se o objetivo é só não perder o trabalho (comitar localmente), não precisa nem dar push ainda — pode ficar só no commit local até decidir. Se decidir dar push mesmo com o Railway fora do ar, isso não quebra nada (GitHub aceita), mas **não confiar que o deploy vai acontecer sozinho quando o Railway voltar** — o webhook pode não ter ficado "em fila" dependendo de como o Railway trata a própria queda.
+4. **Depois que o Railway voltar:** checar no painel do Railway se o deploy do último push/commit foi disparado e concluído. Se não foi (deploy ausente ou parado no commit anterior), redisparar manualmente pelo painel (botão de redeploy / "Deploy" no commit certo) — não basta esperar.
+5. Seguir a convenção de sempre: commits separados por assunto (não misturar features não relacionadas num commit só), revisar `git status`/`git diff` antes de comitar pra não incluir segredo nem dado sensível de paciente (ex.: CSV com CPF, planilha financeira, logs de import) — ver memória "Push com commits separados".
+
+**Arquivos:** nenhum (procedimento operacional, não código).
