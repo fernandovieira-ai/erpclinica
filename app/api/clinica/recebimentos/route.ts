@@ -219,12 +219,16 @@ export async function POST(req: NextRequest) {
     // quando ativo, valor_original não precisa bater com o preço de tabela do tipo/categoria —
     // ver trava de preço mais abaixo.
     const { rows: empresaRows } = await client.query(
-      `SELECT recebimento_permite_valor_digitado, recebimento_permite_editar_valor_atendimento, cod_tipo_cobranca
+      `SELECT recebimento_permite_valor_digitado, recebimento_permite_editar_valor_atendimento,
+              recebimento_solicitante_obrigatorio, cod_tipo_cobranca
        FROM tab_empresa WHERE id = $1`,
       [session.empresa_id_ativa],
     )
     const permiteValorDigitado = empresaRows[0]?.recebimento_permite_valor_digitado ?? false
     const permiteEditarValorAtendimento = empresaRows[0]?.recebimento_permite_editar_valor_atendimento ?? false
+    // novos/74_recebimento_solicitante_obrigatorio.sql: quando ativo, exige solicitante em
+    // todo item (não só no exame com placeholder da clínica, que já exigia antes deste parâmetro).
+    const solicitanteObrigatorio = empresaRows[0]?.recebimento_solicitante_obrigatorio ?? false
 
     // Trava anti-erro de digitação: nenhum valor de recebimento é aceito sem bater com
     // a soma valor_original - desconto + acréscimo, e valor_original precisa bater com o
@@ -379,6 +383,9 @@ export async function POST(req: NextRequest) {
     // agendamento_id -> { medico_solicitante_id, medico_executor_id } dos itens que
     // precisam definir solicitante/executor antes de confirmar (profissional_id atual = placeholder da clínica)
     const definicoesExecutor = new Map<number, { medico_solicitante_id: number; medico_executor_id: number }>()
+    // agendamento_id -> medico_solicitante_id dos itens "normais" (profissional já definido):
+    // aqui o solicitante é opcional e não troca o profissional_id/executor do agendamento.
+    const solicitantesSimples = new Map<number, number>()
     // agendamento_id -> { tipo_id, profissional_id } — usado pra calcular o repasse
     const infoAgendamento = new Map<number, { tipo_id: number | null; profissional_id: number }>()
 
@@ -429,6 +436,14 @@ export async function POST(req: NextRequest) {
           medico_solicitante_id: item.medico_solicitante_id,
           medico_executor_id: item.medico_executor_id,
         })
+      } else if (item.medico_solicitante_id) {
+        solicitantesSimples.set(item.agendamento_id, item.medico_solicitante_id)
+      } else if (solicitanteObrigatorio) {
+        await client.query('ROLLBACK')
+        return NextResponse.json(
+          { erro: `Agendamento ${item.agendamento_id}: informe o médico solicitante antes de confirmar o recebimento` },
+          { status: 400 },
+        )
       }
     }
 
@@ -578,6 +593,17 @@ export async function POST(req: NextRequest) {
          SET medico_solicitante_id = $1, profissional_id = $2, updated_at = NOW()
          WHERE id = $3 AND empresa_id = $4`,
         [def.medico_solicitante_id, def.medico_executor_id, agendamentoId, session.empresa_id_ativa],
+      )
+    }
+
+    // Atendimentos "normais" (profissional já definido) com solicitante informado no
+    // recebimento: só grava o solicitante, sem tocar no profissional_id/executor.
+    for (const [agendamentoId, medicoSolicitanteId] of solicitantesSimples) {
+      await client.query(
+        `UPDATE tab_agendamento
+         SET medico_solicitante_id = $1, updated_at = NOW()
+         WHERE id = $2 AND empresa_id = $3`,
+        [medicoSolicitanteId, agendamentoId, session.empresa_id_ativa],
       )
     }
 

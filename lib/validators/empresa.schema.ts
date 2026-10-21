@@ -58,6 +58,7 @@ export const empresaSchema = z.object({
   // Parametro de recebimento de consulta
   recebimento_permite_valor_digitado: z.boolean().default(false),
   recebimento_permite_editar_valor_atendimento: z.boolean().default(false),
+  recebimento_solicitante_obrigatorio: z.boolean().default(false),
 })
 
 export type EmpresaInput = z.infer<typeof empresaSchema>

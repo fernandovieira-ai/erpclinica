@@ -24,6 +24,7 @@ export default async function EditarEmpresaPage({ params }: { params: { id: stri
             ativo, permite_agendamento_retroativo,
             paciente_exige_data_nascimento, paciente_exige_cpf_cnpj, paciente_exige_celular,
             recebimento_permite_valor_digitado, recebimento_permite_editar_valor_atendimento,
+            recebimento_solicitante_obrigatorio,
             created_at, updated_at
      FROM tab_empresa
      WHERE id = $1`,

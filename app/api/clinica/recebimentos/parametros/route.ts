@@ -11,7 +11,8 @@ export async function GET(req: NextRequest) {
 
   const db = getDb(session.database_name)
   const { rows } = await db.query(
-    `SELECT recebimento_permite_valor_digitado, recebimento_permite_editar_valor_atendimento
+    `SELECT recebimento_permite_valor_digitado, recebimento_permite_editar_valor_atendimento,
+            recebimento_solicitante_obrigatorio
      FROM tab_empresa WHERE id = $1`,
     [session.empresa_id_ativa],
   )
@@ -19,5 +20,6 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     recebimento_permite_valor_digitado: rows[0]?.recebimento_permite_valor_digitado ?? false,
     recebimento_permite_editar_valor_atendimento: rows[0]?.recebimento_permite_editar_valor_atendimento ?? false,
+    recebimento_solicitante_obrigatorio: rows[0]?.recebimento_solicitante_obrigatorio ?? false,
   })
 }

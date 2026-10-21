@@ -85,6 +85,10 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
   // ativo, o valor de cada atendimento (topo do modal) deixa de ser travado no preço de
   // tabela — vira um input editável, com o preço de tabela só como valor inicial sugerido.
   const [permiteEditarValorAtendimento, setPermiteEditarValorAtendimento] = useState(false)
+  // Parâmetro por empresa (novos/74_recebimento_solicitante_obrigatorio.sql): quando ativo,
+  // o médico solicitante passa a ser obrigatório em todo recebimento (não só no exame com
+  // placeholder da clínica, que já exigia solicitante + executor independente deste parâmetro).
+  const [solicitanteObrigatorio, setSolicitanteObrigatorio] = useState(false)
   // agendamento_id -> valor editado manualmente (só usado quando permiteEditarValorAtendimento
   // está ativo). Ausência de entrada = usa o preço de tabela (getValorBase).
   const [valoresEditados, setValoresEditados] = useState<Record<number, number>>({})
@@ -168,6 +172,7 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
       const data = await res.json()
       setModoValorDigitado(!!data.recebimento_permite_valor_digitado)
       setPermiteEditarValorAtendimento(!!data.recebimento_permite_editar_valor_atendimento)
+      setSolicitanteObrigatorio(!!data.recebimento_solicitante_obrigatorio)
     } catch (error) {
       console.error('Erro ao carregar parâmetros de recebimento:', error)
     }
@@ -358,10 +363,14 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
     }
 
     for (const ag of listaAgs) {
-      if (!ag.profissional_eh_clinica) continue
       const def = executores[ag.id]
-      if (!def?.medico_solicitante_id || !def?.medico_executor_id) {
-        toast.error(`Informe o médico solicitante e o médico executor do exame de ${ag.paciente_nome}`)
+      if (ag.profissional_eh_clinica) {
+        if (!def?.medico_solicitante_id || !def?.medico_executor_id) {
+          toast.error(`Informe o médico solicitante e o médico executor do exame de ${ag.paciente_nome}`)
+          return
+        }
+      } else if (solicitanteObrigatorio && !def?.medico_solicitante_id) {
+        toast.error(`Informe o médico solicitante de ${ag.paciente_nome}`)
         return
       }
     }
@@ -388,7 +397,7 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
         descontoAcumulado += desconto_ag
         acrescimoAcumulado += acrescimo_ag
         const total_ag = round2(tipoValor - desconto_ag + acrescimo_ag)
-        const def = ag.profissional_eh_clinica ? executores[ag.id] : undefined
+        const def = executores[ag.id]
         return {
           agendamento_id: ag.id,
           paciente_id: ag.paciente_id,
@@ -399,7 +408,7 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
           total_recebimento: total_ag,
           data_recebimento: format(parseISO(ag.data_hora_inicio), 'yyyy-MM-dd'),
           medico_solicitante_id: def?.medico_solicitante_id ?? null,
-          medico_executor_id: def?.medico_executor_id ?? null,
+          medico_executor_id: ag.profissional_eh_clinica ? (def?.medico_executor_id ?? null) : null,
         }
       })
 
@@ -1025,6 +1034,42 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
               </div>
             )}
           </Field>
+
+          {/* Atendimentos "normais" (profissional já definido, não é o placeholder da
+              clínica): o bloco de Exame acima (solicitante + executor obrigatórios) não se
+              aplica aqui — o executor já é o próprio profissional do agendamento. Mesmo
+              assim, o solicitante (quem pediu o exame/atendimento) pode ser informado,
+              opcionalmente, pra todo recebimento. */}
+          {listaAgs.filter(ag => !ag.profissional_eh_clinica).length > 0 && (
+            <Field style={{ marginBottom: 20 }}>
+              <Label>Médico Solicitante{solicitanteObrigatorio ? '' : ' (opcional)'}</Label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                {listaAgs.filter(ag => !ag.profissional_eh_clinica).map(ag => (
+                  <div key={ag.id}>
+                    {listaAgs.length > 1 && (
+                      <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginBottom: 2 }}>
+                        {ag.paciente_nome} — {format(parseISO(ag.data_hora_inicio), 'HH:mm')} {ag.tipo_descricao || ''}
+                      </div>
+                    )}
+                    <select
+                      value={executores[ag.id]?.medico_solicitante_id ?? 0}
+                      onChange={e => setExecutores(prev => ({
+                        ...prev,
+                        [ag.id]: { ...prev[ag.id], medico_solicitante_id: Number(e.target.value) || undefined },
+                      }))}
+                      className="input-field"
+                      style={{ fontSize: 13, padding: '8px 10px' }}
+                    >
+                      <option value={0}>{solicitanteObrigatorio ? 'Selecione...' : 'Nenhum / não se aplica'}</option>
+                      {profissionaisSolicitante.map(p => (
+                        <option key={p.id} value={p.id}>{p.nome}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </Field>
+          )}
 
           {/* Observação */}
           <Field style={{ marginBottom: 20 }}>

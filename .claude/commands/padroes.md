@@ -1332,3 +1332,35 @@ Documento pra solicitar exames ao paciente (caráter Rotina/Urgência + indicaç
 **Como foi testado:** `npx tsc --noEmit` sem erros a cada rodada. Lógica dos 4 bugs analisada por leitura de código (front `page.tsx` vs. back `disponibilidade.ts`, comparando os dois caminhos de cálculo de disponibilidade) — não testado num navegador real (sem ferramenta de browser disponível nesta sessão) nem contra o banco de produção (leitura direta via `psql`/script Node foi bloqueada pelo classificador de permissões do modo automático do Claude Code, "Production Reads"). Recomendado ao usuário validar manualmente: navegar dia a dia num profissional com dia da semana bloqueado (Bug 1), trocar de profissional repetidamente observando se o flash de "não atende" sumiu (Bug 3/4), e confirmar que o horário exatamente no fim de uma pausa cadastrada aparece bloqueado (decisão da pausa).
 
 **Arquivos:** `app/(erp)/clinica/agendamento/page.tsx` · `lib/clinica/disponibilidade.ts`.
+
+---
+
+## 56. Médico Solicitante em todo recebimento + parâmetro de obrigatoriedade (implementado 2026-10-21)
+
+**Pedido do usuário:** o fluxo de exame com placeholder da clínica (`tab_pessoa.eh_clinica`, migração `53_medico_solicitante_exame.sql`) já exigia solicitante + executor no recebimento. O usuário quis manter esse fluxo intacto e, além dele, permitir informar o médico solicitante em **qualquer** recebimento (atendimento "normal", profissional já definido) — e, numa segunda etapa, um parâmetro por empresa pra tornar esse campo obrigatório também nesses atendimentos normais.
+
+**Distinção entre os dois casos (não confundir):**
+- **Exame com placeholder da clínica** (`ag.profissional_eh_clinica === true`): solicitante **e** executor sempre obrigatórios, executor substitui `profissional_id` do agendamento no momento do recebimento — comportamento de sempre, migração 53, **não mudou**.
+- **Atendimento normal** (`profissional_eh_clinica === false`): o profissional já é o executor, não existe seleção de executor. Só o solicitante é adicionado, e sua obrigatoriedade depende do parâmetro novo `recebimento_solicitante_obrigatorio`.
+
+**`novos/74_recebimento_solicitante_obrigatorio.sql`:** `tab_empresa.recebimento_solicitante_obrigatorio BOOLEAN NOT NULL DEFAULT false`. Aditiva/idempotente, aplicada no `hiitcor` via `scripts/aplicar_migracao_74.js` (mesmo padrão Node+pg lendo `.env.local` das migrações 68-73 — nunca usar `run-migrations.js`).
+
+**`components/clinica/RecebimentoModal.tsx`:**
+- Reaproveitado o estado `executores: Record<number, Partial<ExecutorDef>>` (já existia pro bloco de exame) também pros atendimentos normais — mesma estrutura, só o campo `medico_solicitante_id` é usado nesse caso (sem `medico_executor_id`).
+- Bloco novo "Médico Solicitante" (um `<select>` por agendamento não-clínica da lista), posicionado depois de "Condição de Pagamento" e antes de "Observação", igual pedido pelo usuário ("acima da observação"). Label e placeholder do `<option>` zero mudam conforme `solicitanteObrigatorio`: "(opcional)" / "Nenhum / não se aplica" quando `false`, sem sufixo / "Selecione..." quando `true`.
+- Parâmetro carregado em `carregarParametrosRecebimento()` (mesmo endpoint dos outros 2 parâmetros de recebimento, só mais um campo no SELECT).
+- Validação em `handleSalvar`: bloco de exame mantém a trava de sempre (solicitante + executor); atendimento normal só bloqueia com toast se `solicitanteObrigatorio && !medico_solicitante_id`.
+- Payload: `def = executores[ag.id]` passou a valer pra qualquer item (antes só pros de clínica); `medico_executor_id` continua restrito a `profissional_eh_clinica`, mas `medico_solicitante_id` vai pra qualquer item que tiver sido preenchido.
+
+**`app/api/clinica/recebimentos/route.ts` (trava espelhada no backend, nunca confiar só no front):**
+- `empresaRows` SELECT ganhou `recebimento_solicitante_obrigatorio`.
+- Novo `Map<number, number> solicitantesSimples` (agendamento_id → medico_solicitante_id) separado do `definicoesExecutor` existente (que é só pro caso de clínica, e tem `medico_executor_id` obrigatório no tipo). No loop de validação por item: `profissional_eh_clinica` → trava de sempre; senão, se `medico_solicitante_id` veio no payload, cai no `solicitantesSimples`; senão, se `solicitanteObrigatorio`, erro 400.
+- Depois do commit das formas de pagamento, novo loop faz `UPDATE tab_agendamento SET medico_solicitante_id = $1` pros itens de `solicitantesSimples` — **sem tocar `profissional_id`** (diferente do loop de `definicoesExecutor`, que troca `profissional_id` pelo executor).
+
+**Parâmetro exposto em `app/api/clinica/recebimentos/parametros/route.ts`, `lib/validators/empresa.schema.ts`, `types/cadastros.types.ts`, `app/api/cadastro/empresas/route.ts` (POST) e `app/api/cadastro/empresas/[id]/route.ts` (GET+PATCH)** — mesmo padrão exato dos parâmetros `recebimento_permite_valor_digitado`/`recebimento_permite_editar_valor_atendimento` (migrações 67/70), inclusive posição dos `$N` nas queries. Checkbox novo em `components/cadastro/EmpresaFormPage.tsx`, mesmo bloco "Recebimento de consulta" do form de empresa.
+
+**Como foi testado:** `npx tsc --noEmit` sem erros a cada rodada. Migração 74 aplicada e confirmada via `information_schema.columns` no `hiitcor`. Sem teste de UI em navegador — built-in browser não alcança `localhost`, extensão Claude in Chrome não conectou nesta sessão; dev server (porta 3001) deixado rodando pro usuário validar manualmente: abrir um agendamento normal (não-exame) e checar o select "Médico Solicitante" acima da Observação, depois marcar o parâmetro novo no cadastro da empresa e confirmar que o recebimento passa a bloquear sem o solicitante.
+
+**Arquivos:** `novos/74_recebimento_solicitante_obrigatorio.sql` · `scripts/aplicar_migracao_74.js` · `components/clinica/RecebimentoModal.tsx` · `app/api/clinica/recebimentos/route.ts` · `app/api/clinica/recebimentos/parametros/route.ts` · `lib/validators/empresa.schema.ts` · `types/cadastros.types.ts` · `app/api/cadastro/empresas/route.ts` · `app/api/cadastro/empresas/[id]/route.ts` · `components/cadastro/EmpresaFormPage.tsx`.
+
+**Bug relatado pelo usuário (corrigido na mesma sessão) — checkbox "salva" mas volta desmarcado:** `app/(erp)/configuracoes/empresas/[id]/page.tsx` (página SSR que busca a empresa pra popular o formulário) tem seu **próprio** SELECT, separado de `GET /api/cadastro/empresas/[id]` — e esse SELECT não tinha sido atualizado com `recebimento_solicitante_obrigatorio`. O PATCH gravava certo no banco, mas `router.refresh()` após salvar relia nesse SELECT incompleto, então o `reset()` do formulário sempre recebia `undefined` → cai no fallback `?? false`. **Lição:** toda vez que se adiciona uma coluna nova em `tab_empresa` exposta no form de empresa, checar os **dois** SELECTs — o da API (`app/api/cadastro/empresas/[id]/route.ts`, usado por outras telas) e o da página SSR de edição (`app/(erp)/configuracoes/empresas/[id]/page.tsx`, que é quem efetivamente alimenta `EmpresaFormPage` nesta rota) — não são a mesma query e divergem silenciosamente.

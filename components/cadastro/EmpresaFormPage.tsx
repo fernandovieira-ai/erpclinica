@@ -273,6 +273,7 @@ export default function EmpresaFormPage({ empresa }: Props) {
       paciente_exige_celular:         empresa.paciente_exige_celular ?? true,
       recebimento_permite_valor_digitado: empresa.recebimento_permite_valor_digitado ?? false,
       recebimento_permite_editar_valor_atendimento: empresa.recebimento_permite_editar_valor_atendimento ?? false,
+      recebimento_solicitante_obrigatorio: empresa.recebimento_solicitante_obrigatorio ?? false,
     })
     setLogoPreview(empresa.logo_base64 ?? null)
   }, [empresa, reset])
@@ -668,6 +669,10 @@ export default function EmpresaFormPage({ empresa }: Props) {
               <Check label="Permite editar o valor de cada atendimento" {...register('recebimento_permite_editar_valor_atendimento')} />
               <span style={{ fontSize: 11, color: 'var(--texto-secundario)' }}>
                 Quando marcado, o valor de cada atendimento (topo da tela de recebimento) deixa de ser travado no preço de tabela e pode ser digitado manualmente antes de fechar o recebimento.
+              </span>
+              <Check label="Exige médico solicitante em todo recebimento" {...register('recebimento_solicitante_obrigatorio')} />
+              <span style={{ fontSize: 11, color: 'var(--texto-secundario)' }}>
+                Quando marcado, o campo Médico Solicitante passa a ser obrigatório em qualquer recebimento, não só nos exames com placeholder da clínica.
               </span>
             </div>
             </div>
