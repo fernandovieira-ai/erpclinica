@@ -22,6 +22,17 @@ name: Railway Deploy Watchdog
 # mas sem documentação oficial estável pra essa mutation especifica.
 # Recomenda-se um dry run manual (workflow_dispatch) antes de confiar
 # 100% nisso.
+#
+# Notificacao via WhatsApp (WPPConnect, mesmo servidor usado pelo
+# digitalrf-help) so dispara quando um redeploy foi de fato tentado nesse
+# run (sucesso ou falha) — nunca nos ticks de 10min sem nada a fazer.
+# Precisa de secrets/vars no GitHub (Settings -> Secrets and variables ->
+# Actions):
+#   - secrets.RAILWAY_TOKEN          (token de projeto do Railway)
+#   - secrets.WPPCONNECT_SECRET_KEY  (chave do WPPConnect, aba "Variables")
+#   - vars.WPPCONNECT_URL            (ex: https://wppconnect-server-...up.railway.app)
+#   - vars.WPPCONNECT_INSTANCE       (nome da sessao, ex: DRF)
+#   - vars.WPPCONNECT_NOTIFY_PHONE   (numero com DDI, so digitos, ex: 55DDDNUMERO)
 
 on:
   schedule:
@@ -63,6 +74,7 @@ jobs:
 
       - name: Dispara deploy se o commit atual ainda nao foi tratado
         if: steps.ping.outputs.up == 'true'
+        id: deploy
         run: |
           LAST=""
           [ -f .railway-watchdog-last-sha ] && LAST=$(cat .railway-watchdog-last-sha)
@@ -70,6 +82,7 @@ jobs:
 
           if [ "$LAST" = "$CURRENT" ]; then
             echo "Commit $CURRENT ja foi disparado por este watchdog antes — nada a fazer."
+            echo "triggered=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -88,14 +101,42 @@ jobs:
 
           if echo "$RESP" | jq -e '.errors' > /dev/null 2>&1; then
             echo "Railway retornou erro ao disparar o deploy — não marca como tratado, tenta de novo no próximo tick."
+            echo "triggered=false" >> "$GITHUB_OUTPUT"
             exit 1
           fi
 
           echo "$CURRENT" > .railway-watchdog-last-sha
+          echo "triggered=true" >> "$GITHUB_OUTPUT"
 
       - name: Salva o commit tratado no cache
-        if: steps.ping.outputs.up == 'true'
+        if: steps.ping.outputs.up == 'true' && steps.deploy.outputs.triggered == 'true'
         uses: actions/cache/save@v4
         with:
           path: .railway-watchdog-last-sha
           key: railway-watchdog-last-sha-${{ github.sha }}
+
+      # Avisa via WhatsApp (WPPConnect) só quando um deploy foi de fato
+      # disparado agora, ou quando a tentativa falhou — nunca nos ticks de
+      # 10min em que não havia nada novo pra fazer (senão vira spam).
+      - name: Notifica resultado via WhatsApp
+        if: always() && steps.ping.outputs.up == 'true' && (steps.deploy.outputs.triggered == 'true' || steps.deploy.outcome == 'failure')
+        run: |
+          if [ "${{ steps.deploy.outcome }}" = "failure" ]; then
+            MSG="Railway Deploy Watchdog: FALHOU ao tentar redeploy do commit ${{ github.sha }} em ${{ github.repository }}. Veja os logs no GitHub Actions."
+          else
+            MSG="Railway Deploy Watchdog: deploy do commit ${{ github.sha }} disparado com sucesso em ${{ github.repository }}."
+          fi
+
+          TOKEN=$(curl -s -X POST \
+            "${{ vars.WPPCONNECT_URL }}/api/${{ vars.WPPCONNECT_INSTANCE }}/${{ secrets.WPPCONNECT_SECRET_KEY }}/generate-token" \
+            -H "Content-Type: application/json" | jq -r '.token')
+
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+            echo "Nao foi possivel gerar token do WPPConnect, aviso nao enviado."
+            exit 0
+          fi
+
+          curl -s -X POST "${{ vars.WPPCONNECT_URL }}/api/${{ vars.WPPCONNECT_INSTANCE }}/send-message" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $TOKEN" \
+            -d "$(jq -n --arg m "$MSG" --arg p "${{ vars.WPPCONNECT_NOTIFY_PHONE }}" '{phone:$p, message:$m, isGroup:false}')"
