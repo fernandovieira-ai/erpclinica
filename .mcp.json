@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "agent-core": {
+      "command": "node",
+      "args": ["C:/Linx/cliente/digitalrf/projeto/agentIA/dist/index.js"],
+      "env": {
+        "DATABASE_URL": "${AGENT_DATABASE_URL}",
+        "AGENT_TENANT": "digitalrf",
+        "AGENT_PROJECT": "erp",
+        "AGENT_SLUG": "claude-code"
+      }
+    }
+  }
+}
