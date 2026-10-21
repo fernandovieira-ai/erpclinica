@@ -69,6 +69,7 @@ export default function LoginPage() {
 
       if (!res.ok) {
         setErro(data.erro ?? 'Erro ao fazer login')
+        setLoading(false)
         return
       }
 
@@ -79,6 +80,10 @@ export default function LoginPage() {
       }
 
       if (data.status === 'ok') {
+        // Mantém o botão em "Entrando..." até a navegação concluir — a página
+        // é desmontada ao trocar de rota, então não há necessidade (e não se
+        // deve) voltar o loading a false aqui, senão o botão "destrava" antes
+        // do dashboard terminar de carregar e parece que o clique não funcionou.
         router.push(data.redir)
         return
       }
@@ -87,10 +92,12 @@ export default function LoginPage() {
         // Salva lista temporária e redireciona para o seletor
         sessionStorage.setItem('empresas_login', JSON.stringify(data.empresas))
         router.push('/selecionar-empresa')
+        return
       }
+
+      setLoading(false)
     } catch {
       setErro('Erro de conexão. Tente novamente.')
-    } finally {
       setLoading(false)
     }
   }

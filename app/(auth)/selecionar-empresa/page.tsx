@@ -31,12 +31,16 @@ export default function SelecionarEmpresaPage() {
         body: JSON.stringify({ empresa_id }),
       })
       const data = await res.json()
-      if (!res.ok) { setErro(data.erro ?? 'Erro'); return }
+      if (!res.ok) {
+        setErro(data.erro ?? 'Erro')
+        setLoading(false)
+        return
+      }
       sessionStorage.removeItem('empresas_login')
+      // Mantém o loading até a navegação concluir (ver nota em login/page.tsx).
       router.push(data.redir)
     } catch {
       setErro('Erro de conexão')
-    } finally {
       setLoading(false)
     }
   }

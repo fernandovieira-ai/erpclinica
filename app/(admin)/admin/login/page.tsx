@@ -22,11 +22,15 @@ export default function AdminLoginPage() {
         body: JSON.stringify({ email, senha }),
       })
       const data = await res.json()
-      if (!res.ok) { setErro(data.erro ?? 'Erro'); return }
+      if (!res.ok) {
+        setErro(data.erro ?? 'Erro')
+        setLoading(false)
+        return
+      }
+      // Mantém o loading até a navegação concluir (ver nota em login/page.tsx do ERP).
       router.push(data.redir)
     } catch {
       setErro('Erro de conexão')
-    } finally {
       setLoading(false)
     }
   }
