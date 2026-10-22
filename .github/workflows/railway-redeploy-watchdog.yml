@@ -35,8 +35,8 @@ name: Railway Deploy Watchdog
 #   - vars.WPPCONNECT_NOTIFY_PHONE   (numero com DDI, so digitos, ex: 55DDDNUMERO)
 
 on:
-  schedule:
-    - cron: '*/10 * * * *'
+  # schedule:
+  #   - cron: '*/10 * * * *'
   workflow_dispatch: {}
 
 env:
