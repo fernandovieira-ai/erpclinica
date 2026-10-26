@@ -7,6 +7,7 @@ import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { AgendamentoListItem, AgendamentoTipo, CategoriaListItem, ProfissionalListItem } from '@/types/clinica.types'
 import NovoHorarioModal from '@/components/clinica/NovoHorarioModal'
+import FichaPacienteModal from '@/components/clinica/FichaPacienteModal'
 import { maskCelular } from '@/lib/utils'
 
 interface Paciente {
@@ -126,6 +127,14 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
   const [exigeCelular,        setExigeCelular]        = useState(true)
 
   const [horarioPickerOpen, setHorarioPickerOpen] = useState(false)
+  const [fichaPacienteOpen, setFichaPacienteOpen] = useState(false)
+  // Referência estável: sem o useMemo, um objeto novo a cada render faria o efeito de
+  // carregamento da ficha (open + pacienteInicial) refazer as buscas de agendamentos/prontuário
+  // a cada re-render do modal enquanto a ficha estivesse aberta, não só na abertura.
+  const pacienteInicialFicha = useMemo(
+    () => (pacienteSel ? { ...pacienteSel, data_nascimento: null } : null),
+    [pacienteSel]
+  )
 
   const [showCadRapido,   setShowCadRapido]   = useState(false)
   const [salvandoCad,     setSalvandoCad]     = useState(false)
@@ -1283,7 +1292,15 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           background: 'var(--bg-page)',
         }}>
-          <div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {isEdit && pacienteSel && (
+              <button
+                onClick={() => setFichaPacienteOpen(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 12px', fontSize: 12, background: 'none', border: '1px solid var(--borda-media)', borderRadius: 3, color: 'var(--texto-secundario)', cursor: 'pointer' }}
+              >
+                <Search size={12} /> Consultar paciente
+              </button>
+            )}
             {isEdit && !jaFoiPago && (
               <button
                 onClick={handleExcluir}
@@ -1345,6 +1362,13 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
       profissionalNome={profissionais.find(p => p.id === form.profissional_id)?.nome}
       tipoDescricao={tipos.find(t => t.id === form.tipo_id)?.descricao}
       onSelecionar={handleSelecionarHorario}
+    />
+
+    <FichaPacienteModal
+      open={fichaPacienteOpen}
+      onClose={() => setFichaPacienteOpen(false)}
+      onAbrirAgendamento={() => setFichaPacienteOpen(false)}
+      pacienteInicial={pacienteInicialFicha}
     />
     </>
   )

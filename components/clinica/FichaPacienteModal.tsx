@@ -28,6 +28,9 @@ interface Props {
   open:               boolean
   onClose:            () => void
   onAbrirAgendamento: (ag: AgendamentoListItem) => void
+  // Pula a tela de busca e abre direto na ficha deste paciente (ex.: botão
+  // "Consultar paciente" dentro do modal de agendamento, que já tem os dados dele)
+  pacienteInicial?:   Paciente | null
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -107,7 +110,7 @@ function StatCard({ label, valor, sub, cor }: { label: string; valor: string; su
   )
 }
 
-export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento }: Props) {
+export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, pacienteInicial }: Props) {
   const [busca,        setBusca]        = useState('')
   const [pacientes,    setPacientes]    = useState<Paciente[]>([])
   const [loadingBusca, setLoadingBusca] = useState(false)
@@ -127,6 +130,11 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento }
       setAbertoId(null)
     }
   }, [open])
+
+  useEffect(() => {
+    if (open && pacienteInicial) selecionarPaciente(pacienteInicial)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, pacienteInicial])
 
   useEffect(() => {
     if (pacienteSel) return
