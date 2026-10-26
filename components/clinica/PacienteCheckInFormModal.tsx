@@ -666,6 +666,14 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
   const [pagosIds,     setPagosIds]     = useState<Set<number>>(new Set())
   const [finalizando,  setFinalizando]  = useState(false)
 
+  // Critério único de "já foi pago": `pagosIds` só cobre o que foi pago NESTA sessão do
+  // modal (reseta a cada abertura, ver efeito abaixo) — sozinho, não cobre um agendamento
+  // pago numa sessão/dia anterior. Tem que combinar com o dado persistido
+  // (recebimento_id + status_recebimento) pra não reabrir recebimento de algo já pago.
+  function jaFoiPago(ag: AgendamentoListItem) {
+    return pagosIds.has(ag.id) || (!!ag.recebimento_id && ag.status_recebimento === 'PAGO')
+  }
+
   const [aba, setAba] = useState<'Cadastro' | 'Histórico Clínico'>('Cadastro')
   const historicoRef = useRef<HistoricoClinicoHandle>(null)
   const [confirmFinalizarAberto, setConfirmFinalizarAberto] = useState(false)
@@ -757,7 +765,7 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
     const listaAgsAll = (agendamentos && agendamentos.length > 0) ? agendamentos : agendamento ? [agendamento] : []
     // A rota de recebimento ja faz o check-in (CONFIRMADO -> AGUARDANDO). Este PATCH e
     // rede de seguranca; nao pode reabrir uma consulta ja ATENDIDA (pagamento na saida).
-    const pending = listaAgsAll.filter(ag => !pagosIds.has(ag.id) && !['CANCELADO', 'FALTOU', 'ATENDIDO'].includes(ag.status))
+    const pending = listaAgsAll.filter(ag => !jaFoiPago(ag) && !['CANCELADO', 'FALTOU', 'ATENDIDO'].includes(ag.status))
     await Promise.all(
       pending.map(ag =>
         fetch(`/api/clinica/agendamentos/${ag.id}`, {
@@ -1354,11 +1362,11 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
                 {(() => {
                   if (ocultarRecebimento) return null
                   const algumPodeReceber = listaAgs.some(
-                    ag => !pagosIds.has(ag.id) && !['CANCELADO', 'FALTOU'].includes(ag.status)
+                    ag => !jaFoiPago(ag) && !['CANCELADO', 'FALTOU'].includes(ag.status)
                   )
                   if (!algumPodeReceber) return null
                   const somaTotal = listaAgs
-                    .filter(ag => !pagosIds.has(ag.id) && !['CANCELADO', 'FALTOU'].includes(ag.status))
+                    .filter(ag => !jaFoiPago(ag) && !['CANCELADO', 'FALTOU'].includes(ag.status))
                     .reduce((acc, ag) => acc + (Number(ag.tipo_valor) || 0), 0)
                   return (
                     <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 6 }}>
@@ -1389,10 +1397,10 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
                   )
                 })()}
                 {listaAgs.map(ag => {
-                  const jaFoiPago = pagosIds.has(ag.id) || (!!ag.recebimento_id && ag.status_recebimento === 'PAGO')
+                  const pago = jaFoiPago(ag)
                   const statusAtual = pagosIds.has(ag.id) ? 'AGUARDANDO' : ag.status
                   const statusColor = STATUS_COLOR[statusAtual] ?? '#378ADD'
-                  const podeReceber = !jaFoiPago && !['CANCELADO', 'FALTOU'].includes(statusAtual)
+                  const podeReceber = !pago && !['CANCELADO', 'FALTOU'].includes(statusAtual)
                   const durMin = Math.round(
                     (new Date(ag.data_hora_fim).getTime() - new Date(ag.data_hora_inicio).getTime()) / 60000
                   )
@@ -1422,7 +1430,7 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
                             {Number(ag.tipo_valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                           </div>
                         ) : null}
-                        {jaFoiPago && (
+                        {pago && (
                           <div style={{
                             display: 'flex', alignItems: 'center', gap: 4,
                             fontSize: 11, fontWeight: 700, color: '#1D9E75',
@@ -1548,7 +1556,7 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
         {(() => {
           if (ocultarRecebimento) return null
           const listaAgsAll = (agendamentos && agendamentos.length > 0) ? agendamentos : agendamento ? [agendamento] : []
-          const pendingAgs = listaAgsAll.filter(ag => !pagosIds.has(ag.id) && !['CANCELADO', 'FALTOU'].includes(ag.status))
+          const pendingAgs = listaAgsAll.filter(ag => !jaFoiPago(ag) && !['CANCELADO', 'FALTOU'].includes(ag.status))
           if (pendingAgs.length === 0) return null
           return (
             <RecebimentoModal

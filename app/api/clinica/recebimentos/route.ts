@@ -209,6 +209,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ erro: 'Dados inválidos' }, { status: 400 })
     }
 
+    // Mesmo agendamento_id duplicado dentro do mesmo payload passaria incólume pela
+    // checagem "já foi pago" abaixo (o loop de validação só lê o banco, nenhum INSERT
+    // acontece até o 2º loop — os dois itens iguais seriam validados com o mesmo estado
+    // "ainda não pago" e os dois inseridos). Rejeita antes de tocar o banco.
+    const idsRepetidos = payload.itens.map(i => i.agendamento_id).filter((id, i, arr) => arr.indexOf(id) !== i)
+    if (idsRepetidos.length > 0) {
+      return NextResponse.json({ erro: `Agendamento ${idsRepetidos[0]} duplicado na mesma requisição` }, { status: 400 })
+    }
+
     // Dados da empresa usados neste handler, buscados uma única vez aqui em vez de duas
     // (cod_tipo_cobranca tinha sua própria query redundante mais abaixo, só pra empresa).
     // recebimento_permite_valor_digitado (novos/67_recebimento_valor_digitado.sql): quando
@@ -392,17 +401,37 @@ export async function POST(req: NextRequest) {
     for (const item of payload.itens) {
       const { rows } = await client.query(
         `SELECT ag.id, ag.tipo_id, ag.profissional_id, pro.eh_clinica AS profissional_eh_clinica,
-                COALESCE(atc.valor, tp.valor) AS tipo_valor, atc.valor_prazo AS tipo_valor_prazo
+                COALESCE(atc.valor, tp.valor) AS tipo_valor, atc.valor_prazo AS tipo_valor_prazo,
+                EXISTS (
+                  SELECT 1 FROM tab_recebimento_consulta rc
+                  WHERE rc.agendamento_id = ag.id AND rc.status_recebimento = 'PAGO'
+                ) AS ja_pago
          FROM tab_agendamento ag
            JOIN tab_pessoa pro ON pro.id = ag.profissional_id
            LEFT JOIN tab_agendamento_tipo tp ON tp.id = ag.tipo_id
            LEFT JOIN tab_agendamento_tipo_categoria atc ON atc.tipo_id = ag.tipo_id AND atc.categoria_id = ag.categoria_id
-         WHERE ag.id = $1 AND ag.empresa_id = $2`,
+         WHERE ag.id = $1 AND ag.empresa_id = $2
+         FOR UPDATE OF ag`,
         [item.agendamento_id, session.empresa_id_ativa],
       )
       if (rows.length === 0) {
         await client.query('ROLLBACK')
         return NextResponse.json({ erro: `Agendamento ${item.agendamento_id} não encontrado` }, { status: 404 })
+      }
+      // Trava espelhada no backend (nunca confiar só na tela — mesmo padrão do resto do
+      // projeto): sem isso, um agendamento já pago podia ser recebido de novo, gerando um
+      // 2º lançamento financeiro real. Não há mais constraint UNIQUE no banco impedindo isso
+      // (removida de propósito em novos/17_remove_unique_recebimento.sql pra permitir o
+      // pagamento misto); estorno de verdade DELETA a linha de tab_recebimento_consulta, então
+      // essa checagem não bloqueia um recebimento novo depois de um estorno legítimo.
+      // `FOR UPDATE OF ag` trava a linha do agendamento até o fim da transação — sem isso,
+      // 2 requisições concorrentes pro mesmo agendamento_id podiam ler `ja_pago=false` as
+      // duas antes de qualquer uma comitar o INSERT (TOCTOU), duplicando o recebimento
+      // mesmo com a checagem acima. Com o lock, a 2ª requisição espera a 1ª terminar e
+      // reavalia `ja_pago` já vendo o INSERT recém-comitado.
+      if (rows[0].ja_pago) {
+        await client.query('ROLLBACK')
+        return NextResponse.json({ erro: `Agendamento ${item.agendamento_id} já foi pago — recarregue a tela antes de tentar de novo` }, { status: 409 })
       }
 
       const valorTabela = isParcelado && rows[0].tipo_valor_prazo != null
