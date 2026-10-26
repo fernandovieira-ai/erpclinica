@@ -47,7 +47,7 @@ function ConfirmarExcluir({
     <div
       onClick={onCancelar}
       style={{
-        position: 'fixed', inset: 0, zIndex: 1200,
+        position: 'fixed', inset: 0, zIndex: 10200,
         backgroundColor: 'rgba(0,0,0,0.5)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}
@@ -230,7 +230,11 @@ export default function MensagensPanel({ open, onClose, conversas, tick, meuUsua
   return (
     <div
       style={{
-        position: 'fixed', left: 256, bottom: 16, zIndex: 500,
+        // zIndex alto de propósito: o painel precisa continuar clicável mesmo com
+        // modais abertos por cima (ex.: prontuário do paciente, zIndex 1000) —
+        // sem isso, o overlay do modal fica por cima e "desativa" a tela de mensagens.
+        // Maior que o maior zIndex de modal conhecido no projeto (10050, GerenciarExamesPadrao).
+        position: 'fixed', left: 256, bottom: 16, zIndex: 10100,
         width: 340, height: 480,
         backgroundColor: 'var(--bg-card)', border: '1px solid var(--borda-media)',
         borderRadius: 'var(--radius-md)', boxShadow: '0 16px 48px rgba(0,0,0,0.3)',

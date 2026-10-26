@@ -4,12 +4,13 @@ import { forwardRef, useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { X, Save, Camera, Search, RefreshCw, User, DollarSign, CheckCircle2 } from 'lucide-react'
+import { X, Save, Camera, Search, RefreshCw, User, DollarSign, CheckCircle2, MessageCircle } from 'lucide-react'
 import RecebimentoModal from '@/components/clinica/RecebimentoModal'
 import HistoricoClinico, { type HistoricoClinicoHandle } from '@/components/clinica/HistoricoClinico'
 import { toast } from 'sonner'
 import type { AgendamentoListItem } from '@/types/clinica.types'
 import { maskCelular } from '@/lib/utils'
+import { useMensagensContext } from '@/components/mensagens/MensagensContext'
 
 interface Pessoa {
   id: number
@@ -665,6 +666,10 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
   const [recModalOpen, setRecModalOpen] = useState(false)
   const [pagosIds,     setPagosIds]     = useState<Set<number>>(new Set())
   const [finalizando,  setFinalizando]  = useState(false)
+  // Atalho de mensagens no cabeçalho: este modal fica aberto por bastante tempo
+  // durante o atendimento e não deve ser fechado só pra responder uma mensagem da
+  // secretaria — abre o mesmo MensagensPanel da Sidebar por cima do prontuário.
+  const { totalNaoLidas: msgNaoLidas, pulsando: msgPulsando, abrirPainel: abrirPainelMsg } = useMensagensContext()
 
   // Critério único de "já foi pago": `pagosIds` só cobre o que foi pago NESTA sessão do
   // modal (reseta a cada abertura, ver efeito abaixo) — sozinho, não cobre um agendamento
@@ -941,6 +946,34 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
               <div style={{ fontSize: 11, opacity: 0.75, marginTop: 2 }}>Cadastro de Paciente</div>
             )}
           </div>
+
+          {/* Mensagens — abre o painel de chat por cima do prontuário, sem fechá-lo */}
+          <button
+            type="button"
+            onClick={() => abrirPainelMsg()}
+            title="Mensagens"
+            style={{
+              position: 'relative',
+              background: 'rgba(255,255,255,0.18)', border: 'none', cursor: 'pointer',
+              padding: '6px 8px', borderRadius: 4, color: 'white',
+              display: 'flex', alignItems: 'center', flexShrink: 0,
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.3)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.18)' }}
+          >
+            <MessageCircle size={16} />
+            {msgNaoLidas > 0 && (
+              <span
+                className={msgPulsando ? 'badge-pulse' : ''}
+                style={{
+                  position: 'absolute', top: 2, right: 2,
+                  width: 8, height: 8, borderRadius: '50%',
+                  backgroundColor: 'var(--cor-erro)', border: '1px solid var(--cor-primaria)',
+                }}
+              />
+            )}
+          </button>
 
           {/* Close */}
           <button

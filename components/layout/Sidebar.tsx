@@ -16,8 +16,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { Session } from '@/types/session'
-import { useMensagens } from '@/components/mensagens/useMensagens'
-import MensagensPanel from '@/components/mensagens/MensagensPanel'
+import { useMensagensContext } from '@/components/mensagens/MensagensContext'
 import AvatarUsuario from '@/components/mensagens/AvatarUsuario'
 
 interface Props { session: Session }
@@ -110,15 +109,7 @@ export default function Sidebar({ session }: Props) {
   )
   const [logoEmpresa, setLogoEmpresa] = useState<'loading' | 'ok' | 'error'>('loading')
   const logoRef = useRef<HTMLImageElement>(null)
-  const [chatOpen, setChatOpen] = useState(false)
-  const [pedidoAbrir, setPedidoAbrir] = useState<{ id: number; nome: string; ts: number } | null>(null)
-  const { conversas, totalNaoLidas, tick, pulsando, refetchConversas } = useMensagens()
-  const conversasNaoLidas = conversas.filter(c => c.nao_lidas > 0)
-
-  function abrirConversaDireto(id: number, nome: string) {
-    setChatOpen(true)
-    setPedidoAbrir({ id, nome, ts: Date.now() })
-  }
+  const { totalNaoLidas, pulsando, conversasNaoLidas, chatOpen, abrirPainel, fecharPainel } = useMensagensContext()
 
   // A logo pode terminar de carregar antes da hidratacao (vem no HTML do SSR),
   // caso em que o onLoad nunca dispara — checa o estado ja concluido no mount.
@@ -178,16 +169,6 @@ export default function Sidebar({ session }: Props) {
         )}
       </div>
 
-      <MensagensPanel
-        open={chatOpen}
-        onClose={() => setChatOpen(false)}
-        conversas={conversas}
-        tick={tick}
-        meuUsuarioId={session.usuario_id}
-        onRefetchConversas={refetchConversas}
-        pedidoAbrir={pedidoAbrir}
-      />
-
       {/* Nav */}
       <nav className="sidebar-section" style={{ flex: 1, paddingTop: 8 }}>
         {NAV.map(item => {
@@ -244,7 +225,7 @@ export default function Sidebar({ session }: Props) {
             {conversasNaoLidas.map(c => (
               <button
                 key={c.usuario_id}
-                onClick={() => abrirConversaDireto(c.usuario_id, c.nome)}
+                onClick={() => abrirPainel(c.usuario_id, c.nome)}
                 className="mensagem-destaque"
               >
                 <AvatarUsuario nome={c.nome} tamanho={26} />
@@ -267,7 +248,7 @@ export default function Sidebar({ session }: Props) {
           </div>
         )}
 
-        <button className="sidebar-item" onClick={() => setChatOpen(v => !v)}>
+        <button className="sidebar-item" onClick={() => (chatOpen ? fecharPainel() : abrirPainel())}>
           <MessageCircle size={16} />
           <span style={{ flex: 1 }}>Mensagens</span>
           {totalNaoLidas > 0 && (
