@@ -49,6 +49,7 @@ export const pessoaSchema = z.object({
   ind_paciente:       z.boolean().default(false),
   ind_profissional:   z.boolean().default(false),
   eh_clinica:         z.boolean().default(false),
+  ind_solicitante:    z.boolean().default(false),
 
   // Endereço
   cep:                z.string().max(9).optional().nullable(),
@@ -79,6 +80,14 @@ export const pessoaSchema = z.object({
   contribuinte_icms:  z.boolean().default(false),
   optante_simples:    z.boolean().default(false),
   obs:                z.string().optional().nullable(),
+}).superRefine((d, ctx) => {
+  // Mutuamente exclusivos: eh_clinica=true é o placeholder da clínica (novos/53) e nunca
+  // pode aparecer no dropdown de médico solicitante — ver app/api/clinica/solicitantes
+  // (filtra eh_clinica=false). A UI já impede marcar os 2 (PessoaFormPage.tsx), mas valida
+  // de novo aqui porque é a camada que qualquer chamada direta à API passa.
+  if (d.eh_clinica && d.ind_solicitante) {
+    ctx.addIssue({ code: 'custom', path: ['ind_solicitante'], message: 'Não é possível marcar "Solicitante" no cadastro placeholder da clínica' })
+  }
 })
 
 export type PessoaInput = z.infer<typeof pessoaSchema>

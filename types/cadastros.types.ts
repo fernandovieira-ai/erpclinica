@@ -38,6 +38,7 @@ export interface Pessoa {
   ind_paciente:      boolean
   ind_profissional:  boolean
   eh_clinica:        boolean
+  ind_solicitante:   boolean
   logradouro:        string | null
   numero:            string | null
   complemento:       string | null
@@ -71,7 +72,7 @@ export type PessoaListItem = Pick<
   | 'id' | 'tipo_pessoa' | 'nome' | 'nome_fantasia' | 'cpf_cnpj'
   | 'cidade' | 'uf' | 'telefone' | 'celular' | 'email'
   | 'ind_cliente' | 'ind_fornecedor' | 'ind_banco' | 'ind_transportador'
-  | 'ind_paciente' | 'ind_profissional' | 'eh_clinica'
+  | 'ind_paciente' | 'ind_profissional' | 'eh_clinica' | 'ind_solicitante'
   | 'ativo'
 >
 

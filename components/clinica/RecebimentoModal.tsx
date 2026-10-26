@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { X, DollarSign, CreditCard, Percent, Check, Plus } from 'lucide-react'
+import { X, DollarSign, CreditCard, Percent, Check, Plus, Search, UserPlus, AlertTriangle } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { AgendamentoListItem } from '@/types/clinica.types'
+import { UFS } from '@/lib/constants/ufs'
 
 interface Props {
   open: boolean
@@ -50,6 +51,23 @@ interface ProfissionalOpcao {
   eh_clinica?: boolean
 }
 
+interface SolicitanteOpcao {
+  id: number
+  nome: string
+  crm?: string | null
+  crm_uf?: string | null
+  externo?: boolean
+}
+
+interface DuplicadoCrm {
+  id: number
+  nome: string
+  crm: string | null
+  crm_uf: string | null
+  ind_profissional: boolean
+  ind_solicitante: boolean
+}
+
 interface ExecutorDef {
   medico_solicitante_id: number
   medico_executor_id: number
@@ -71,11 +89,365 @@ function Field({ children, style }: { children: React.ReactNode; style?: React.C
   return <div style={{ display: 'flex', flexDirection: 'column', ...style }}>{children}</div>
 }
 
+function fmtCrm(s: { crm?: string | null; crm_uf?: string | null }): string {
+  if (!s.crm) return ''
+  return s.crm_uf ? `CRM ${s.crm}/${s.crm_uf}` : `CRM ${s.crm}`
+}
+
+// Campo de busca pro "Médico Solicitante" — mesmo padrão (visual e de fluxo) da busca de
+// paciente em AgendamentoModal.tsx (busca inline + cadastro rápido inline, sem dropdown
+// flutuante/overlay): filtra a lista já carregada (`solicitantes`) à medida que digita —
+// sem round-trip, a lista é pequena — e, se não achar ninguém, oferece cadastrar o médico na
+// hora (nome + CRM opcional) sem sair do recebimento. O cadastro novo nasce com
+// ind_solicitante=true (ver novos/76_medico_solicitante_externo.sql) via
+// POST /api/cadastro/pessoas — mesma rota do cadastro completo, só com o mínimo de campos.
+// Importante: tudo renderiza em fluxo normal (sem position:absolute/fixed) — a versão
+// anterior usava um dropdown flutuante com overlay pra fechar ao clicar fora, e isso brigava
+// com a rolagem do modal (clicar pra rolar fechava tudo). O padrão de paciente não tem esse
+// problema porque nunca precisou de overlay: a lista só some quando algo é selecionado/limpo.
+function BuscarSolicitante({ value, solicitantes, onSelect, onLimpar, onNovoSolicitante, placeholder }: {
+  value?: number
+  solicitantes: SolicitanteOpcao[]
+  onSelect: (id: number) => void
+  onLimpar: () => void
+  onNovoSolicitante: (novo: SolicitanteOpcao) => void
+  placeholder: string
+}) {
+  const [busca, setBusca] = useState('')
+  const [criando, setCriando] = useState(false)
+  const [crm, setCrm] = useState('')
+  const [crmUf, setCrmUf] = useState('')
+  const [salvando, setSalvando] = useState(false)
+  const [duplicados, setDuplicados] = useState<DuplicadoCrm[]>([])
+  const [verificandoCrm, setVerificandoCrm] = useState(false)
+  const [confirmarNaoDuplicado, setConfirmarNaoDuplicado] = useState(false)
+  const crmTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const crmReqId = useRef(0)
+
+  const selecionado = solicitantes.find(s => s.id === value)
+
+  // Verifica se o CRM digitado no cadastro rápido já existe em algum cadastro (qualquer
+  // papel, não só quem já é solicitante/profissional) — pedido do usuário, pra não duplicar
+  // médico que já tem CRM cadastrado só por não ter sido achado pelo nome.
+  useEffect(() => {
+    if (!criando) { setDuplicados([]); return }
+    setConfirmarNaoDuplicado(false)
+    const digits = crm.replace(/\D/g, '')
+    if (digits.length < 3) { setDuplicados([]); return }
+    if (crmTimer.current) clearTimeout(crmTimer.current)
+    crmTimer.current = setTimeout(async () => {
+      const meuId = ++crmReqId.current
+      setVerificandoCrm(true)
+      try {
+        const res = await fetch(`/api/clinica/solicitantes/verificar-crm?crm=${encodeURIComponent(crm)}`)
+        const data = res.ok ? await res.json() : { dados: [] }
+        // Ignora resposta de uma digitação mais antiga que já foi ultrapassada por outra —
+        // sem isso, uma busca anterior que demora mais pra responder podia sobrescrever o
+        // resultado certo da busca mais recente.
+        if (meuId === crmReqId.current) setDuplicados(data.dados ?? [])
+      } catch {
+        if (meuId === crmReqId.current) setDuplicados([])
+      } finally {
+        if (meuId === crmReqId.current) setVerificandoCrm(false)
+      }
+    }, 400)
+    return () => { if (crmTimer.current) clearTimeout(crmTimer.current) }
+  }, [crm, criando])
+
+  const termo = busca.trim().toLowerCase()
+  const termoDigits = termo.replace(/\D/g, '')
+  // Busca por nome OU CRM — digitar o CRM de um médico já cadastrado (mesmo que o nome não
+  // bata) tem que trazer o cadastro existente, pra não duplicar por engano (pedido do
+  // usuário). Comparação de CRM também por dígitos, pra casar "12345" com "12345-SP"/"12345/SP".
+  const filtrados = termo ? solicitantes.filter(s =>
+    s.nome.toLowerCase().includes(termo) ||
+    (!!s.crm && s.crm.toLowerCase().includes(termo)) ||
+    (!!termoDigits && !!s.crm && s.crm.replace(/\D/g, '').includes(termoDigits))
+  ) : []
+
+  function limpar() {
+    onLimpar()
+    setBusca('')
+    fecharCadastro()
+  }
+
+  function abrirCadastro() {
+    setCriando(true)
+    setCrm('')
+    setCrmUf('')
+    setDuplicados([])
+    setConfirmarNaoDuplicado(false)
+  }
+
+  // "Cancelar" do cadastro rápido só volta pra lista de busca (mantém o termo digitado em
+  // `busca`, reaproveitado como filtro) — mas precisa limpar CRM/duplicados, senão reabrir
+  // "Cadastrar" de novo (outro nome) mostra o CRM e o aviso de duplicado da tentativa anterior.
+  function fecharCadastro() {
+    setCriando(false)
+    setCrm('')
+    setCrmUf('')
+    setDuplicados([])
+    setConfirmarNaoDuplicado(false)
+  }
+
+  // Usuário reconheceu o médico sugerido pelo CRM em vez de cadastrar de novo. Quem ainda
+  // não é ind_profissional nem ind_solicitante precisa do flag marcado via PATCH (full-replace
+  // — busca o registro completo antes, ver padrão do projeto) pra aparecer nas próximas buscas.
+  async function usarExistente(d: DuplicadoCrm) {
+    if (!d.ind_profissional && !d.ind_solicitante) {
+      try {
+        const resGet = await fetch(`/api/cadastro/pessoas/${d.id}`)
+        if (resGet.ok) {
+          const pessoaCompleta = await resGet.json()
+          await fetch(`/api/cadastro/pessoas/${d.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            // limite_credito vem do GET como string (coluna NUMERIC via driver pg) — o
+            // schema espera number; sem essa conversão o PATCH falha a validação e
+            // ind_solicitante nunca é gravado (mesma pegadinha de PessoaModal.tsx).
+            body: JSON.stringify({ ...pessoaCompleta, limite_credito: Number(pessoaCompleta.limite_credito) || 0, ind_solicitante: true }),
+          })
+        }
+      } catch { /* seleção segue mesmo se o PATCH falhar — best-effort */ }
+    }
+    if (!solicitantes.some(s => s.id === d.id)) {
+      onNovoSolicitante({ id: d.id, nome: d.nome, crm: d.crm, crm_uf: d.crm_uf, externo: !d.ind_profissional })
+    }
+    onSelect(d.id)
+    setBusca(d.nome)
+    toast.success('Médico já cadastrado selecionado')
+    fecharCadastro()
+  }
+
+  async function cadastrarNovo() {
+    const nome = busca.trim()
+    if (!nome) return
+    setSalvando(true)
+    try {
+      const res = await fetch('/api/cadastro/pessoas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipo_pessoa: 'F', nome, crm: crm || null, crm_uf: crmUf || null, ind_solicitante: true }),
+      })
+      let data: { erro?: string | { fieldErrors?: Record<string, string[]>; formErrors?: string[] }; id?: number } | null = null
+      try { data = await res.json() } catch { /* resposta sem corpo JSON */ }
+      if (!res.ok) {
+        // body.error.flatten() do Zod tem a forma { formErrors, fieldErrors } — erro de
+        // campo (nome/crm muito longo, ou o superRefine de eh_clinica+ind_solicitante) cai
+        // em fieldErrors, não formErrors; sem checar os 2, a mensagem real nunca aparecia.
+        const erro = data?.erro
+        const mensagem = typeof erro === 'string'
+          ? erro
+          : erro?.formErrors?.[0] ?? Object.values(erro?.fieldErrors ?? {})[0]?.[0]
+        toast.error(mensagem ?? 'Não foi possível cadastrar o médico.')
+        return
+      }
+      if (!data?.id) {
+        toast.error('Médico cadastrado, mas não foi possível selecioná-lo automaticamente — busque pelo nome.')
+        fecharCadastro()
+        return
+      }
+      onNovoSolicitante({ id: data.id, nome: nome.toUpperCase(), crm: crm || null, crm_uf: crmUf || null, externo: true })
+      onSelect(data.id)
+      setBusca(nome.toUpperCase())
+      toast.success('Médico cadastrado como solicitante')
+      fecharCadastro()
+    } catch {
+      toast.error('Erro de comunicação com o servidor.')
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  const temDuplicado = duplicados.length > 0
+
+  return (
+    <div>
+      <div style={{ position: 'relative' }}>
+        <Search size={13} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-terciario)' }} />
+        <input
+          type="text"
+          value={selecionado ? selecionado.nome : busca}
+          onChange={e => {
+            const v = e.target.value
+            setBusca(v)
+            if (selecionado) limpar()
+            setCriando(false)
+          }}
+          placeholder={placeholder}
+          className="input-field"
+          autoComplete="off"
+          name="busca-solicitante-no-autofill"
+          style={{ fontSize: 13, padding: '8px 28px 8px 28px', width: '100%', boxSizing: 'border-box' }}
+        />
+        {selecionado && (
+          <button type="button" onClick={limpar} title="Remover"
+            style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--texto-terciario)', padding: 2 }}>
+            <X size={13} />
+          </button>
+        )}
+      </div>
+
+      {selecionado && (fmtCrm(selecionado) || selecionado.externo) && (
+        <div style={{ marginTop: 4, display: 'flex', gap: 8, fontSize: 11, color: 'var(--texto-secundario)' }}>
+          {fmtCrm(selecionado) && <span>{fmtCrm(selecionado)}</span>}
+          {selecionado.externo && <span>(Externo)</span>}
+        </div>
+      )}
+
+      {!selecionado && termo && !criando && (
+        <div style={{ border: '1px solid var(--borda-media)', borderRadius: 4, marginTop: 4, background: 'var(--bg-card)', maxHeight: 150, overflowY: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+          {filtrados.map(s => (
+            <button key={s.id} type="button" onClick={() => { onSelect(s.id); setBusca(s.nome) }}
+              style={{ width: '100%', textAlign: 'left', padding: '7px 10px', fontSize: 12, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '0.5px solid var(--borda-suave)', background: 'transparent', color: 'var(--texto-principal)' }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--bg-hover)')}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <span style={{ fontWeight: 500 }}>{s.nome}{s.externo ? ' (Externo)' : ''}</span>
+              <span style={{ fontSize: 11, color: 'var(--texto-terciario)', fontFamily: 'var(--fonte-mono)' }}>{fmtCrm(s)}</span>
+            </button>
+          ))}
+          {filtrados.length === 0 && (
+            <div style={{ padding: '8px 10px', fontSize: 12, color: 'var(--texto-secundario)' }}>
+              Nenhum médico encontrado para &ldquo;{busca.trim()}&rdquo;.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Botão cadastro rápido — aparece quando buscou e não achou (ou não achou quem queria) */}
+      {!selecionado && !criando && termo.length >= 2 && (
+        <button type="button" onClick={abrirCadastro}
+          style={{
+            marginTop: 6, width: '100%', padding: '8px 12px',
+            display: 'flex', alignItems: 'center', gap: 8,
+            background: 'var(--cor-primaria-light, #E1F5EE)',
+            border: '1px dashed var(--cor-primaria)',
+            borderRadius: 6, cursor: 'pointer',
+            color: 'var(--cor-primaria-text, #085041)',
+            fontSize: 12, fontWeight: 500,
+          }}>
+          <UserPlus size={14} />
+          <span>Cadastrar <strong>&ldquo;{busca.trim()}&rdquo;</strong> como novo médico solicitante</span>
+        </button>
+      )}
+
+      {/* Cadastro rápido de médico solicitante — inline, igual ao cadastro rápido de
+          paciente em AgendamentoModal.tsx (cartão com header colorido, não modal flutuante) */}
+      {criando && !selecionado && (
+        <div style={{ marginTop: 8, border: '1px solid var(--cor-primaria)', borderRadius: 8, overflow: 'hidden', boxShadow: '0 2px 12px rgba(15,110,86,0.10)' }}>
+          <div style={{ background: 'var(--cor-primaria)', padding: '7px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#fff' }}>
+              <UserPlus size={13} /> Cadastro rápido de médico solicitante
+            </div>
+            <button type="button" onClick={fecharCadastro}
+              style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 3, width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff' }}>
+              <X size={11} />
+            </button>
+          </div>
+
+          <div style={{ padding: '12px 12px 10px', background: 'var(--bg-card)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--texto-terciario)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>
+                Nome <span style={{ color: 'var(--cor-erro)' }}>*</span>
+              </div>
+              <input
+                autoFocus
+                value={busca}
+                onChange={e => setBusca(e.target.value.toUpperCase())}
+                placeholder="Nome completo do médico"
+                autoComplete="off"
+                name="novo-solicitante-nome-no-autofill"
+                style={{ width: '100%', padding: '6px 10px', fontSize: 13, background: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 5, boxSizing: 'border-box', fontFamily: 'var(--fonte-sans)' }}
+              />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: 8 }}>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--texto-terciario)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>
+                  CRM <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(opcional)</span>
+                </div>
+                <input
+                  value={crm}
+                  onChange={e => setCrm(e.target.value)}
+                  placeholder="Número do CRM"
+                  autoComplete="off"
+                  name="novo-solicitante-crm-no-autofill"
+                  style={{ width: '100%', padding: '6px 10px', fontSize: 12, background: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 5, boxSizing: 'border-box', fontFamily: 'var(--fonte-mono)' }}
+                />
+                {verificandoCrm && <div style={{ fontSize: 10, color: 'var(--texto-terciario)', marginTop: 2 }}>Verificando CRM...</div>}
+              </div>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--texto-terciario)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>UF</div>
+                <select value={crmUf} onChange={e => setCrmUf(e.target.value)}
+                  style={{ width: '100%', padding: '6px 10px', fontSize: 12, background: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 5, boxSizing: 'border-box' }}>
+                  <option value="">—</option>
+                  {UFS.map(u => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* Banner: CRM já cadastrado — mesmo padrão do banner de paciente duplicado,
+                incluindo a confirmação explícita pra destravar "Salvar" mesmo assim (edge
+                case real: CRM pode colidir entre UFs diferentes — não é garantia absoluta
+                de ser a mesma pessoa). */}
+            {!verificandoCrm && temDuplicado && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '8px 10px', background: 'var(--cor-erro-light, #FEE2E2)', border: '1px solid var(--cor-erro, #EF4444)', borderRadius: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                  <AlertTriangle size={14} style={{ color: 'var(--cor-erro, #EF4444)', flexShrink: 0, marginTop: 1 }} />
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#7F1D1D' }}>Já existe cadastro com esse CRM</div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {duplicados.map(d => (
+                    <div key={d.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '5px 8px', background: 'var(--bg-card)', borderRadius: 4 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--texto-principal)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.nome}</div>
+                        <div style={{ fontSize: 10, color: 'var(--texto-terciario)' }}>{fmtCrm(d)}</div>
+                      </div>
+                      <button type="button" onClick={() => usarExistente(d)}
+                        style={{ flexShrink: 0, padding: '4px 8px', fontSize: 11, fontWeight: 600, background: 'var(--cor-primaria)', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>
+                        Usar este
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#7F1D1D', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={confirmarNaoDuplicado} onChange={e => setConfirmarNaoDuplicado(e.target.checked)} />
+                  Confirmo que é uma pessoa diferente, não é cadastro duplicado
+                </label>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, paddingTop: 2 }}>
+              <button type="button" onClick={fecharCadastro}
+                style={{ padding: '6px 14px', fontSize: 12, background: 'none', border: '1px solid var(--borda-media)', borderRadius: 5, color: 'var(--texto-secundario)', cursor: 'pointer' }}>
+                Cancelar
+              </button>
+              <button type="button" onClick={cadastrarNovo}
+                disabled={salvando || verificandoCrm || !busca.trim() || (temDuplicado && !confirmarNaoDuplicado)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '6px 18px', fontSize: 12, fontWeight: 600,
+                  background: 'var(--cor-primaria)', color: '#fff', border: 'none', borderRadius: 5,
+                  cursor: (salvando || verificandoCrm || (temDuplicado && !confirmarNaoDuplicado)) ? 'not-allowed' : 'pointer',
+                  opacity: (salvando || verificandoCrm || (temDuplicado && !confirmarNaoDuplicado)) ? 0.6 : 1,
+                }}>
+                <UserPlus size={13} /> {salvando ? 'Cadastrando...' : 'Cadastrar e usar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function RecebimentoModal({ open, onClose, agendamento, agendamentos, onRecebimentoSalvo }: Props) {
   const [saving, setSaving] = useState(false)
   const [condicoes, setCondicoes] = useState<CondicaoPagamento[]>([])
   const [loadingCondicoes, setLoadingCondicoes] = useState(false)
   const [profissionais, setProfissionais] = useState<ProfissionalOpcao[]>([])
+  const [solicitantes, setSolicitantes] = useState<SolicitanteOpcao[]>([])
   const [executores, setExecutores] = useState<Record<number, Partial<ExecutorDef>>>({})
   // Parâmetro por empresa (novos/67_recebimento_valor_digitado.sql): quando ativo, some o
   // desconto/acréscimo manual — o operador digita o valor que cada forma recebeu de fato e
@@ -104,10 +476,11 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
   const [novaForma, setNovaForma] = useState<FormaPagamentoLinha>({ condicao_pagamento_id: 0, valor: 0, nsu: '', parcelas_cartao: 1 })
 
   const listaAgs = (agendamentos && agendamentos.length > 0) ? agendamentos : (agendamento ? [agendamento] : [])
-  // Médico Solicitante é sempre uma pessoa física — a clínica (placeholder eh_clinica) fica
-  // de fora. Médico Executor aceita a clínica também: alguns exames (ex.: feitos por
-  // aparelho/equipe, sem um médico específico atribuído) são executados "pela clínica".
-  const profissionaisSolicitante = profissionais.filter(p => !p.eh_clinica)
+  // Médico Solicitante vem de /api/clinica/solicitantes: profissionais da clínica (sem o
+  // placeholder eh_clinica) + médicos externos (ind_solicitante, novos/76). Médico Executor
+  // aceita a clínica também: alguns exames (ex.: feitos por aparelho/equipe, sem um médico
+  // específico atribuído) são executados "pela clínica" — por isso usa `profissionais`, não
+  // `solicitantes` (externo não pode ser executor).
   // A primeira forma JÁ ADICIONADA decide o preço de tabela (à vista x a prazo) — mesma
   // condição que o backend usa como referência (ver app/api/clinica/recebimentos/route.ts).
   // Antes de adicionar a primeira forma, usa a condição em edição (novaForma) como prévia —
@@ -138,8 +511,10 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
     if (open) {
       carregarCondicoesPagamento()
       carregarProfissionais()
+      carregarSolicitantes()
     } else {
       setExecutores({})
+      setSolicitantes([])
     }
   }, [open])
 
@@ -162,6 +537,17 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
       setProfissionais(data.dados ?? [])
     } catch (error) {
       console.error('Erro ao carregar profissionais:', error)
+    }
+  }
+
+  async function carregarSolicitantes() {
+    try {
+      const res = await fetch('/api/clinica/solicitantes')
+      if (!res.ok) return
+      const data = await res.json()
+      setSolicitantes(data.dados ?? [])
+    } catch (error) {
+      console.error('Erro ao carregar solicitantes:', error)
     }
   }
 
@@ -676,20 +1062,14 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
                 <Field>
                   <Label>Médico Solicitante</Label>
-                  <select
-                    value={executores[ag.id]?.medico_solicitante_id ?? 0}
-                    onChange={e => setExecutores(prev => ({
-                      ...prev,
-                      [ag.id]: { ...prev[ag.id], medico_solicitante_id: Number(e.target.value) || undefined },
-                    }))}
-                    className="input-field"
-                    style={{ fontSize: 13, padding: '8px 10px' }}
-                  >
-                    <option value={0}>Selecione...</option>
-                    {profissionaisSolicitante.map(p => (
-                      <option key={p.id} value={p.id}>{p.nome}</option>
-                    ))}
-                  </select>
+                  <BuscarSolicitante
+                    value={executores[ag.id]?.medico_solicitante_id}
+                    solicitantes={solicitantes}
+                    onSelect={id => setExecutores(prev => ({ ...prev, [ag.id]: { ...prev[ag.id], medico_solicitante_id: id } }))}
+                    onLimpar={() => setExecutores(prev => ({ ...prev, [ag.id]: { ...prev[ag.id], medico_solicitante_id: undefined } }))}
+                    onNovoSolicitante={novo => setSolicitantes(prev => [...prev, novo].sort((a, b) => a.nome.localeCompare(b.nome)))}
+                    placeholder="Buscar médico pelo nome..."
+                  />
                 </Field>
                 <Field>
                   <Label>Médico Executor</Label>
@@ -1051,20 +1431,14 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
                         {ag.paciente_nome} — {format(parseISO(ag.data_hora_inicio), 'HH:mm')} {ag.tipo_descricao || ''}
                       </div>
                     )}
-                    <select
-                      value={executores[ag.id]?.medico_solicitante_id ?? 0}
-                      onChange={e => setExecutores(prev => ({
-                        ...prev,
-                        [ag.id]: { ...prev[ag.id], medico_solicitante_id: Number(e.target.value) || undefined },
-                      }))}
-                      className="input-field"
-                      style={{ fontSize: 13, padding: '8px 10px' }}
-                    >
-                      <option value={0}>{solicitanteObrigatorio ? 'Selecione...' : 'Nenhum / não se aplica'}</option>
-                      {profissionaisSolicitante.map(p => (
-                        <option key={p.id} value={p.id}>{p.nome}</option>
-                      ))}
-                    </select>
+                    <BuscarSolicitante
+                      value={executores[ag.id]?.medico_solicitante_id}
+                      solicitantes={solicitantes}
+                      onSelect={id => setExecutores(prev => ({ ...prev, [ag.id]: { ...prev[ag.id], medico_solicitante_id: id } }))}
+                      onLimpar={() => setExecutores(prev => ({ ...prev, [ag.id]: { ...prev[ag.id], medico_solicitante_id: undefined } }))}
+                      onNovoSolicitante={novo => setSolicitantes(prev => [...prev, novo].sort((a, b) => a.nome.localeCompare(b.nome)))}
+                      placeholder={solicitanteObrigatorio ? 'Buscar médico pelo nome...' : 'Buscar médico (opcional)...'}
+                    />
                   </div>
                 ))}
               </div>

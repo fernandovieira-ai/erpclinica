@@ -760,7 +760,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
       ind_cliente: false, ind_fornecedor: false,
       ind_banco: false, ind_transportador: false,
       ind_paciente: papelInicial === 'paciente', ind_profissional: papelInicial === 'profissional',
-      eh_clinica: false,
+      eh_clinica: false, ind_solicitante: false,
       limite_credito: 0, cod_tipo_cobranca: null, contribuinte_icms: false, optante_simples: false,
     },
   })
@@ -808,6 +808,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
       ind_paciente:      pessoa.ind_paciente,
       ind_profissional:  pessoa.ind_profissional,
       eh_clinica:        pessoa.eh_clinica ?? false,
+      ind_solicitante:   pessoa.ind_solicitante ?? false,
       cep:               pessoa.cep ?? '',
       logradouro:        pessoa.logradouro ?? '',
       numero:            pessoa.numero ?? '',
@@ -977,6 +978,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
   const listaHref = papelInicial ? `/cadastro/pessoas?papel=${papelInicial}` : '/cadastro/pessoas'
   const novoHref  = papelInicial ? `/cadastro/pessoas/novo?papel=${papelInicial}` : '/cadastro/pessoas/novo'
   const indProfissional = !!watch('ind_profissional')
+  const indSolicitante  = !!watch('ind_solicitante')
   const indPaciente     = !!watch('ind_paciente')
 
   useEffect(() => {
@@ -1181,7 +1183,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
                   <Input {...register('im')} />
                 </FormRow>
               )}
-              {indProfissional && (
+              {(indProfissional || indSolicitante) && (
                 <FormRow label="CRM:">
                   <Input {...register('crm')} style={{ width: 100, fontFamily: 'var(--fonte-mono)' }} />
                   <Select {...register('crm_uf')} style={{ width: 90 }}>
@@ -1489,11 +1491,25 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
             <Check label="Transportador" checked={!!watch('ind_transportador')} onChange={e => setValue('ind_transportador', e.target.checked)} />
             <Check label="Paciente"      checked={!!watch('ind_paciente')}      onChange={e => setValue('ind_paciente',      e.target.checked)} />
             <Check label="Profissional"  checked={!!watch('ind_profissional')}  onChange={e => setValue('ind_profissional',  e.target.checked)} />
-            <Check label="Representa a Clínica" checked={!!watch('eh_clinica')} onChange={e => setValue('eh_clinica', e.target.checked)} />
+            <Check label="Representa a Clínica" checked={!!watch('eh_clinica')} onChange={e => {
+              setValue('eh_clinica', e.target.checked)
+              // Mutuamente exclusivo com "Solicitante": o placeholder da clínica nunca pode
+              // aparecer no dropdown de médico solicitante (ver app/api/clinica/solicitantes).
+              if (e.target.checked) setValue('ind_solicitante', false)
+            }} />
+            <Check label="Solicitante (médico externo)" checked={indSolicitante} onChange={e => {
+              setValue('ind_solicitante', e.target.checked)
+              if (e.target.checked) setValue('eh_clinica', false)
+            }} />
           </div>
           {watch('eh_clinica') && (
             <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginTop: 6 }}>
               Cadastro placeholder usado no agendamento de exames quando ainda não se sabe qual médico vai executar. Não deve ser selecionado como solicitante/executor no recebimento.
+            </div>
+          )}
+          {indSolicitante && (
+            <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginTop: 6 }}>
+              Médico que não atende na clínica (sem Agenda/Atendimentos/Especialidades), mas pode ser selecionado como "Médico Solicitante" no recebimento de consulta.
             </div>
           )}
         </Secao>
