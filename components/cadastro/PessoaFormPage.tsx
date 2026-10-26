@@ -1441,9 +1441,39 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
                 <Input {...register('indicacao_fone')} type="search" placeholder="(  )      -    "
                   style={{ width: 150, fontFamily: 'var(--fonte-mono)' }} />
               </FormRow>
-              <FormRow label="Tipo ligação:">
-                <Input {...register('indicacao_ligacao')} placeholder="Ex: amigo, vizinho..." />
-              </FormRow>
+              {(() => {
+                const OPCOES_INDICACAO = ['AMIGO', 'INSTAGRAM', 'GOOGLE', 'MEDICO', 'EMPRESAS', 'OUTROS']
+                const valorAtual = (watch('indicacao_ligacao') as string) || ''
+                const ehOutros = valorAtual !== '' && !OPCOES_INDICACAO.includes(valorAtual)
+                const selecao = valorAtual === '' ? '' : (ehOutros ? 'OUTROS' : valorAtual)
+                return (
+                  <>
+                    <FormRow label="Tipos de Indicação:">
+                      <Select
+                        value={selecao}
+                        onChange={e => setValue('indicacao_ligacao', e.target.value === 'OUTROS' ? 'OUTROS' : e.target.value)}
+                      >
+                        <option value="">—</option>
+                        <option value="AMIGO">Amigo</option>
+                        <option value="INSTAGRAM">Instagram</option>
+                        <option value="GOOGLE">Google</option>
+                        <option value="MEDICO">Médico</option>
+                        <option value="EMPRESAS">Empresas</option>
+                        <option value="OUTROS">Outros</option>
+                      </Select>
+                    </FormRow>
+                    {selecao === 'OUTROS' && (
+                      <FormRow label="Qual:">
+                        <Input
+                          value={ehOutros ? valorAtual : ''}
+                          onChange={e => setValue('indicacao_ligacao', e.target.value || 'OUTROS')}
+                          placeholder="Especifique..."
+                        />
+                      </FormRow>
+                    )}
+                  </>
+                )
+              })()}
             </div>
 
           </div>
