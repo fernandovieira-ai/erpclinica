@@ -1147,40 +1147,42 @@ export default function AgendamentoPage() {
 
                       {/* Paciente + info */}
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{
-                          fontWeight: 600, fontSize: 13,
-                          color: 'var(--texto-principal)',
-                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                        }}>
-                          {ag.paciente_nome}
-                        </div>
-                        <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                          <span style={{
+                            fontWeight: 600, fontSize: 13,
+                            color: 'var(--texto-principal)',
+                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                          }}>
+                            {ag.paciente_nome}
+                          </span>
                           {ag.tipo_descricao && (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                              <span style={{ width: 7, height: 7, borderRadius: 2, background: tipoColor, flexShrink: 0, display: 'inline-block' }} />
+                            <span style={{
+                              display: 'inline-flex', alignItems: 'center',
+                              fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em',
+                              color: tipoColor, background: tipoColor + '18',
+                              border: `0.5px solid ${tipoColor}45`,
+                              padding: '2px 8px', borderRadius: 20,
+                              flexShrink: 0, lineHeight: 1.3,
+                            }}>
                               {ag.tipo_descricao}
                             </span>
                           )}
-                          {ag.tipo_descricao && <span>·</span>}
-                          <span>{ag.profissional_nome}</span>
-                          <span>·</span>
-                          <span>{dur}min</span>
+                          <span style={{ fontSize: 11, color: 'var(--texto-terciario)', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                            {ag.profissional_nome} · {dur}min
+                          </span>
                         </div>
+                        {ag.observacao && (
+                          <div style={{
+                            fontSize: 11, color: 'var(--texto-terciario)', marginTop: 2,
+                            fontStyle: 'italic',
+                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                          }}
+                            title={ag.observacao}
+                          >
+                            {ag.observacao}
+                          </div>
+                        )}
                       </div>
-
-                      {/* Observação */}
-                      {ag.observacao && (
-                        <div style={{
-                          fontSize: 11, color: 'var(--texto-terciario)',
-                          maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden',
-                          textOverflow: 'ellipsis', flexShrink: 1,
-                          fontStyle: 'italic',
-                        }}
-                          title={ag.observacao}
-                        >
-                          {ag.observacao}
-                        </div>
-                      )}
 
                       {/* Telefone */}
                       {ag.paciente_celular && (
