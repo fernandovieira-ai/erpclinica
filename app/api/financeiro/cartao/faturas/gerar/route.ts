@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
        AND ($9::varchar IS NULL OR v.modalidade        = $9)
        AND ($10::varchar IS NULL OR v.nsu ILIKE '%' || $10 || '%' OR v.codigo_autorizacao ILIKE '%' || $10 || '%')
        AND ($11::int    IS NULL OR v.condicao_pagamento_id = $11)
-     ORDER BY p.data_prevista, v.adquirente, v.id, p.numero_parcela
+     ORDER BY v.adquirente, v.id, p.numero_parcela
      LIMIT 500`,
     [
       session.empresa_id_ativa,

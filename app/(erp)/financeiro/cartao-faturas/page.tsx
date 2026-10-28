@@ -128,6 +128,19 @@ export default function CartaoFaturasPage() {
   // respostas antigas que cheguem fora de ordem (ex.: filtro trocado antes
   // da resposta anterior voltar).
   const buscarPendentes = useCallback(async () => {
+    // Período "de/até" com só uma ponta preenchida normalmente é sinal de
+    // data inválida que o <input type="date"> não deixou completar (ex:
+    // digitou 31 num mês com 30 dias e o campo ficou vazio) — sem isso o
+    // filtro vira "sem limite" de um dos lados e traz muito mais do que
+    // o usuário pediu.
+    if ((filtro.data_emissao_inicio && !filtro.data_emissao_fim) || (!filtro.data_emissao_inicio && filtro.data_emissao_fim)) {
+      toast.error('Preencha as duas datas de Emissão (de e até) — confira se o dia digitado existe no mês.')
+      return
+    }
+    if ((filtro.data_vencimento_inicio && !filtro.data_vencimento_fim) || (!filtro.data_vencimento_inicio && filtro.data_vencimento_fim)) {
+      toast.error('Preencha as duas datas de Vencimento (de e até) — confira se o dia digitado existe no mês.')
+      return
+    }
     const buscaId = ++buscaIdRef.current
     setPendentesLoading(true)
     setPendentesBuscado(true)
@@ -291,8 +304,10 @@ export default function CartaoFaturasPage() {
                     {pendentesLoading && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 20, color: 'var(--texto-terciario)' }}>Buscando...</td></tr>}
                     {!pendentesLoading && pendentesBuscado && pendentes.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 24, color: 'var(--texto-terciario)' }}>Nenhuma venda pendente para esses filtros</td></tr>}
                     {!pendentesLoading && !pendentesBuscado && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 24, color: 'var(--texto-terciario)' }}>Informe os filtros desejados e clique em &quot;Filtrar&quot;</td></tr>}
-                    {!pendentesLoading && pendentes.map(p => (
-                      <tr key={p.parcela_id} style={{ cursor: 'pointer' }} onClick={() => toggleSelecionado(p.parcela_id)}>
+                    {!pendentesLoading && pendentes.map((p, i) => {
+                      const novaVenda = i === 0 || pendentes[i - 1].venda_cartao_id !== p.venda_cartao_id
+                      return (
+                      <tr key={p.parcela_id} style={{ cursor: 'pointer', borderTop: novaVenda && i > 0 ? '1.5px solid var(--borda-media)' : undefined }} onClick={() => toggleSelecionado(p.parcela_id)}>
                         <td onClick={e => e.stopPropagation()}>
                           <input type="checkbox" checked={selecionados.has(p.parcela_id)} onChange={() => toggleSelecionado(p.parcela_id)} />
                         </td>
@@ -306,7 +321,8 @@ export default function CartaoFaturasPage() {
                         <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)' }}>{fmtValor(p.valor)}</td>
                         <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)', fontWeight: 600 }}>{fmtValor(p.valor_liquido)}</td>
                       </tr>
-                    ))}
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
