@@ -635,7 +635,12 @@ export default function RecebimentoModal({ open, onClose, agendamento, agendamen
       const data = await res.json()
       setCondicoes(data.dados ?? [])
       if (data.dados?.length > 0) {
-        setNovaForma(prev => ({ ...prev, condicao_pagamento_id: data.dados[0].id }))
+        // Padrão é Dinheiro (forma mais comum no balcão) — a lista vem
+        // ordenada por descrição, então sem isso o default seria sempre a
+        // primeira em ordem alfabética (ex: "AMEX CREDITO"), o que não faz
+        // sentido como forma de pagamento padrão.
+        const dinheiro = data.dados.find((c: CondicaoPagamento) => c.tipo_pagamento === 'dinheiro')
+        setNovaForma(prev => ({ ...prev, condicao_pagamento_id: (dinheiro ?? data.dados[0]).id }))
       }
     } catch (error) {
       console.error('Erro ao carregar condições:', error)
