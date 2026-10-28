@@ -3,10 +3,12 @@
 //
 // Fluxo: recebimento (consulta/receita/baixa de título) com condição de
 // pagamento débito/crédito → gera automaticamente uma VendaCartao (com
-// parcelas previstas) → fn_gerar_faturas_cartao agrupa as parcelas em
-// FaturaCartao por conta+adquirente+data prevista → ao confirmar a fatura
-// (conferindo contra o que a operadora realmente cobrou) gera o
-// movimento bancário de entrada.
+// parcelas previstas) → o usuário seleciona as parcelas pendentes e
+// fn_gerar_faturas_cartao_selecao agrupa (soma) por ADQUIRENTE numa
+// FaturaCartao sem conta bancária ainda (fica "aberta") → ao confirmar
+// a fatura o usuário escolhe a conta bancária que recebeu o depósito
+// (conferindo contra o que a operadora realmente cobrou) e aí sim é
+// gerado o movimento bancário de entrada.
 
 export interface TaxaCartao {
   id:                        number
@@ -122,7 +124,7 @@ export interface FaturaCartaoParcelaItem {
 export interface FaturaCartao {
   id:                    number
   empresa_id:            number
-  conta_banco_id:        number
+  conta_banco_id:        number | null
   conta_banco_desc:      string | null
   adquirente:            string
   data_prevista:         string
@@ -130,6 +132,8 @@ export interface FaturaCartao {
   data_emissao_fim:      string | null
   nsus:                  string | null
   valor_previsto:        string
+  valor_desconto:        string
+  valor_acrescimo:       string
   valor_cobrado:         string | null
   qtd_parcelas:           number
   status:                FaturaCartaoStatus

@@ -59,8 +59,8 @@ export async function GET(req: NextRequest) {
 }
 
 // POST /api/financeiro/cartao/faturas/gerar  — body: { parcela_ids: number[] }
-// Agrupa exatamente as parcelas selecionadas (conferidas pelo usuário) em
-// faturas por conta+adquirente+data prevista.
+// Agrupa (soma) exatamente as parcelas selecionadas (conferidas pelo usuário)
+// numa fatura por adquirente — a conta bancária só é escolhida na confirmação.
 export async function POST(req: NextRequest) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })

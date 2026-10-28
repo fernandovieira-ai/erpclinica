@@ -18,7 +18,10 @@ export const gerarFaturasSelecaoSchema = z.object({
 export type GerarFaturasSelecaoInput = z.infer<typeof gerarFaturasSelecaoSchema>
 
 export const confirmarFaturaCartaoSchema = z.object({
-  valor_cobrado: z.number({ invalid_type_error: 'Valor cobrado inválido' }).positive('Valor cobrado deve ser maior que zero').optional().nullable(),
+  conta_banco_id:    z.number({ invalid_type_error: 'Conta bancária é obrigatória' }).int().positive('Selecione a conta bancária que recebeu o depósito'),
+  valor_desconto:    z.number({ invalid_type_error: 'Desconto inválido' }).min(0, 'Desconto deve ser >= 0').optional().default(0),
+  valor_acrescimo:   z.number({ invalid_type_error: 'Acréscimo inválido' }).min(0, 'Acréscimo deve ser >= 0').optional().default(0),
+  data_confirmacao:  z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida').optional().nullable(),
 })
 
 export type ConfirmarFaturaCartaoInput = z.infer<typeof confirmarFaturaCartaoSchema>

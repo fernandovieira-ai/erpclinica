@@ -12,7 +12,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     `SELECT f.id, f.empresa_id,
             f.conta_banco_id, cb.mnemonico AS conta_banco_desc,
             f.adquirente, TO_CHAR(f.data_prevista, 'YYYY-MM-DD') AS data_prevista,
-            f.valor_previsto, f.valor_cobrado, f.qtd_parcelas, f.status,
+            f.valor_previsto, f.valor_desconto, f.valor_acrescimo, f.valor_cobrado, f.qtd_parcelas, f.status,
             f.movimento_banco_id, TO_CHAR(f.data_confirmacao, 'YYYY-MM-DD') AS data_confirmacao,
             f.observacao, f.created_by, f.created_at,
             COALESCE((
@@ -33,7 +33,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
               WHERE p.fatura_cartao_id = f.id
             ), '[]') AS parcelas
      FROM tab_fatura_cartao f
-     JOIN tab_conta_banco cb ON cb.id = f.conta_banco_id
+     LEFT JOIN tab_conta_banco cb ON cb.id = f.conta_banco_id
      WHERE f.id = $1 AND f.empresa_id = $2`,
     [params.id, session.empresa_id_ativa],
   )

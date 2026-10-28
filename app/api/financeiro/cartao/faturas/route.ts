@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
               TO_CHAR(agg.data_emissao_fim, 'YYYY-MM-DD')    AS data_emissao_fim,
               agg.nsus
        FROM tab_fatura_cartao f
-       JOIN tab_conta_banco cb ON cb.id = f.conta_banco_id
+       LEFT JOIN tab_conta_banco cb ON cb.id = f.conta_banco_id
        LEFT JOIN LATERAL (
          SELECT MIN(v.data_venda::date) AS data_emissao_inicio,
                 MAX(v.data_venda::date) AS data_emissao_fim,

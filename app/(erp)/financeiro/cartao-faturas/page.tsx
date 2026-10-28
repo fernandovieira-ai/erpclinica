@@ -19,10 +19,6 @@ function fmtEmissao(inicio: string | null, fim: string | null) {
   if (!fim || fim === inicio) return fmtData(inicio)
   return `${fmtData(inicio)}–${fmtData(fim)}`
 }
-function hoje() {
-  return new Date().toISOString().slice(0, 10)
-}
-
 const STATUS_COR: Record<string, string> = {
   ABERTA:     'var(--cor-aviso)',
   CONFIRMADA: 'var(--cor-sucesso)',
@@ -53,7 +49,7 @@ interface FiltroGeracao {
 
 const FILTRO_VAZIO: FiltroGeracao = {
   data_emissao_inicio: '', data_emissao_fim: '',
-  data_vencimento_inicio: '', data_vencimento_fim: hoje(),
+  data_vencimento_inicio: '', data_vencimento_fim: '',
   conta_banco_id: '', condicao_pagamento_id: '', adquirente: '', bandeira: '', modalidade: '', busca: '',
 }
 
@@ -63,7 +59,7 @@ export default function CartaoFaturasPage() {
   const [total,    setTotal]    = useState(0)
   const [pages,    setPages]    = useState(1)
   const [loading,  setLoading]  = useState(false)
-  const [status,   setStatus]   = useState('')
+  const [status,   setStatus]   = useState('ABERTA')
   const [page,     setPage]     = useState(1)
   const [gerando,  setGerando]  = useState(false)
 
@@ -190,7 +186,7 @@ export default function CartaoFaturasPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Faturas de Cartão</h1>
-          <div style={{ fontSize: 12, color: 'var(--texto-terciario)', marginTop: 2 }}>Recebíveis previstos do adquirente, agrupados por conta + data — confirme para gerar o movimento bancário</div>
+          <div style={{ fontSize: 12, color: 'var(--texto-terciario)', marginTop: 2 }}>Recebíveis previstos, somados numa fatura por adquirente — confirme escolhendo a conta bancária para gerar o movimento bancário</div>
         </div>
         <button className="btn-primary" onClick={() => setShowFiltro(s => !s)}>
           {showFiltro ? <X size={15} /> : <Filter size={15} />} {showFiltro ? 'Fechar' : 'Gerar Faturas'}
@@ -363,7 +359,7 @@ export default function CartaoFaturasPage() {
                 {!loading && dados.map(f => (
                   <tr key={f.id} style={{ cursor: 'pointer' }} onClick={() => router.push(`/financeiro/cartao-faturas/${f.id}`)}>
                     <td style={{ fontFamily: 'var(--fonte-mono)', color: 'var(--texto-terciario)' }}>{f.id}</td>
-                    <td style={{ fontWeight: 500 }}>{f.conta_banco_desc}</td>
+                    <td style={{ fontWeight: 500, color: f.conta_banco_desc ? undefined : 'var(--texto-terciario)' }}>{f.conta_banco_desc ?? 'A definir na baixa'}</td>
                     <td style={{ fontSize: 12, color: 'var(--texto-secundario)' }}>{f.adquirente}</td>
                     <td style={{ fontFamily: 'var(--fonte-mono)', fontSize: 11, color: 'var(--texto-secundario)', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={f.nsus ?? undefined}>{f.nsus || '—'}</td>
                     <td style={{ fontFamily: 'var(--fonte-mono)', color: 'var(--texto-secundario)', fontSize: 12 }}>{fmtEmissao(f.data_emissao_inicio, f.data_emissao_fim)}</td>

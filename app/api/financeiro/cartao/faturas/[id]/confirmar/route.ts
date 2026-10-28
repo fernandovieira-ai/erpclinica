@@ -25,8 +25,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   try {
     const { rows } = await db.query(
-      `SELECT fn_confirmar_fatura_cartao($1, $2, $3) AS movimento_banco_id`,
-      [params.id, body.data.valor_cobrado ?? null, session.nome ?? null],
+      `SELECT fn_confirmar_fatura_cartao($1, $2, $3, $4, $5, $6) AS movimento_banco_id`,
+      [
+        params.id, body.data.conta_banco_id,
+        body.data.valor_desconto ?? 0, body.data.valor_acrescimo ?? 0,
+        body.data.data_confirmacao ?? null, session.nome ?? null,
+      ],
     )
     return NextResponse.json({ movimento_banco_id: rows[0].movimento_banco_id })
   } catch (err) {
