@@ -55,6 +55,7 @@ export interface VendaCartaoParcela {
   fatura_cartao_id:                number | null
   antecipado:                      boolean
   percentual_antecipacao_aplicado: string | null
+  percentual_mdr_efetivo:          string | null
 }
 
 export type VendaCartaoModalidade = 'DEBITO' | 'CREDITO_VISTA' | 'CREDITO_PARCELADO'

@@ -18,7 +18,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
             TO_CHAR(v.data_venda, 'YYYY-MM-DD"T"HH24:MI:SS') AS data_venda,
             v.percentual_mdr_aplicado, v.status, v.observacao,
             v.created_by, v.created_at,
-            (SELECT taxa.percentual_antecipacao_am FROM fn_taxa_cartao_vigente(v.condicao_pagamento_id, v.qtd_parcelas) taxa) AS percentual_antecipacao_am,
+            v.percentual_antecipacao_am_aplicado AS percentual_antecipacao_am,
             (SELECT CASE
                WHEN v.status = 'CANCELADO' THEN 'CANCELADO'
                WHEN count(*) FILTER (WHERE p.status = 'CONCILIADA') = count(*) THEN 'CONCILIADA'
@@ -40,7 +40,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
                          'status', p.status,
                          'fatura_cartao_id', p.fatura_cartao_id,
                          'antecipado', p.antecipado,
-                         'percentual_antecipacao_aplicado', p.percentual_antecipacao_aplicado
+                         'percentual_antecipacao_aplicado', p.percentual_antecipacao_aplicado,
+                         'percentual_mdr_efetivo', p.percentual_mdr_efetivo
                        ) ORDER BY p.numero_parcela
                      )
               FROM tab_venda_cartao_parcela p

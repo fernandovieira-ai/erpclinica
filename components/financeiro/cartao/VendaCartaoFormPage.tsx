@@ -145,7 +145,7 @@ export default function VendaCartaoFormPage({ venda }: Props) {
               <span style={{ color: 'var(--texto-terciario)' }}>Modalidade:</span>         <span>{venda.modalidade}</span>
               <span style={{ color: 'var(--texto-terciario)' }}>Parcelas:</span>           <span>{venda.qtd_parcelas}x</span>
               <span style={{ color: 'var(--texto-terciario)' }}>Valor Bruto:</span>        <span style={{ fontWeight: 600, fontFamily: 'var(--fonte-mono)' }}>{fmtValor(venda.valor_bruto)}</span>
-              <span style={{ color: 'var(--texto-terciario)' }}>MDR Aplicado:</span>       <span>{venda.percentual_mdr_aplicado ? `${Number(venda.percentual_mdr_aplicado).toFixed(4)}%` : '—'}</span>
+              <span style={{ color: 'var(--texto-terciario)' }}>MDR Base (1ª parc.):</span> <span>{venda.percentual_mdr_aplicado ? `${Number(venda.percentual_mdr_aplicado).toFixed(4)}%` : '—'}</span>
               <span style={{ color: 'var(--texto-terciario)' }}>NSU:</span>                <span style={{ fontFamily: 'var(--fonte-mono)' }}>{venda.nsu ?? '—'}</span>
               <span style={{ color: 'var(--texto-terciario)' }}>Cód. Autorização:</span>   <span style={{ fontFamily: 'var(--fonte-mono)' }}>{venda.codigo_autorizacao ?? '—'}</span>
               <span style={{ color: 'var(--texto-terciario)' }}>Data da Venda:</span>      <span>{new Date(venda.data_venda).toLocaleString('pt-BR')}</span>
@@ -167,6 +167,7 @@ export default function VendaCartaoFormPage({ venda }: Props) {
                     <th style={{ width: 50 }}>Nº</th>
                     <th style={{ textAlign: 'right' }}>Bruto</th>
                     <th style={{ textAlign: 'right' }}>Líquido</th>
+                    <th style={{ textAlign: 'right' }}>% Efetivo</th>
                     <th>Previsão</th>
                     <th style={{ textAlign: 'center' }}>Status</th>
                     <th style={{ width: 170 }}>Ações</th>
@@ -187,6 +188,9 @@ export default function VendaCartaoFormPage({ venda }: Props) {
                               era {fmtValor(p.valor_liquido_original)}
                             </div>
                           )}
+                        </td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--fonte-mono)', color: 'var(--texto-secundario)' }}>
+                          {p.percentual_mdr_efetivo ? `${Number(p.percentual_mdr_efetivo).toFixed(4)}%` : '—'}
                         </td>
                         <td style={{ fontFamily: 'var(--fonte-mono)', color: 'var(--texto-secundario)' }}>
                           {fmtData(p.data_prevista)}
@@ -227,7 +231,7 @@ export default function VendaCartaoFormPage({ venda }: Props) {
                       </tr>
                       {antecipandoId === p.id && (
                         <tr>
-                          <td colSpan={6} style={{ background: 'var(--bg-hover)', padding: '10px 12px' }}>
+                          <td colSpan={7} style={{ background: 'var(--bg-hover)', padding: '10px 12px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                               <label style={{ fontSize: 11, color: 'var(--texto-secundario)', display: 'flex', alignItems: 'center', gap: 6 }}>
                                 Nova data de recebimento:
