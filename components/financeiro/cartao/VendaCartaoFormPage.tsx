@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Ban, ArrowLeft, Zap, Undo2, ClipboardList, Receipt } from 'lucide-react'
@@ -46,8 +46,16 @@ export default function VendaCartaoFormPage({ venda }: Props) {
   const [antecipandoId, setAntecipandoId] = useState<number | null>(null)
   const [novaData, setNovaData] = useState('')
   const [processando, setProcessando] = useState<number | null>(null)
+  const [perfil, setPerfil] = useState<string | null>(null)
 
-  const podeCancelar = venda.status === 'PENDENTE' && venda.parcelas.every(p => p.status === 'PENDENTE')
+  useEffect(() => {
+    fetch('/api/auth/me').then(r => r.json()).then(d => setPerfil(d.perfil ?? null)).catch(() => {})
+  }, [])
+
+  // Cancelamento é restrito ao financeiro — o cliente pediu depois de um
+  // cancelamento acidental fora desse perfil.
+  const podeCancelar = (perfil === 'financeiro' || perfil === 'admin')
+    && venda.status === 'PENDENTE' && venda.parcelas.every(p => p.status === 'PENDENTE')
   const pctAntecipacaoAM = Number(venda.percentual_antecipacao_am) || 0
 
   async function cancelar() {

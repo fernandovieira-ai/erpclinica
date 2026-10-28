@@ -67,6 +67,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (body.action !== 'cancelar') {
     return NextResponse.json({ erro: 'Ação inválida' }, { status: 400 })
   }
+  if (session.perfil !== 'financeiro' && session.perfil !== 'admin') {
+    return NextResponse.json({ erro: 'Sem permissão — só o financeiro pode cancelar uma venda no cartão' }, { status: 403 })
+  }
 
   const db = getDb(session.database_name)
 
