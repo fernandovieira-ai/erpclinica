@@ -1,9 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { ChevronLeft, ChevronRight, RefreshCw, Filter, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, RefreshCw, Filter, X, Search } from 'lucide-react'
 import type { FaturaCartaoListItem, FaturaCartaoListResponse, VendaCartaoPendenteFatura, VendaCartaoPendenteFaturaResponse } from '@/types/cartao.types'
 
 function fmtValor(v: string | number | null) {
@@ -79,7 +79,9 @@ export default function CartaoFaturasPage() {
 
   const [pendentes, setPendentes] = useState<VendaCartaoPendenteFatura[]>([])
   const [pendentesLoading, setPendentesLoading] = useState(false)
+  const [pendentesBuscado, setPendentesBuscado] = useState(false)
   const [selecionados, setSelecionados] = useState<Set<number>>(new Set())
+  const buscaIdRef = useRef(0)
 
   const carregar = useCallback(async () => {
     setLoading(true)
@@ -124,28 +126,28 @@ export default function CartaoFaturasPage() {
     busca:                  filtro.busca || '',
   }), [filtro])
 
+  // Busca só ao clicar em "Filtrar" — não grava nada, apenas relista as
+  // vendas pendentes pra conferência; o agrupamento de fato só acontece ao
+  // clicar em "Gerar Fatura" com a seleção. Um id de busca descarta
+  // respostas antigas que cheguem fora de ordem (ex.: filtro trocado antes
+  // da resposta anterior voltar).
   const buscarPendentes = useCallback(async () => {
+    const buscaId = ++buscaIdRef.current
     setPendentesLoading(true)
+    setPendentesBuscado(true)
     try {
       const sp  = new URLSearchParams(filtroParams())
       const res = await fetch(`/api/financeiro/cartao/faturas/gerar?${sp}`)
+      if (buscaId !== buscaIdRef.current) return
       if (!res.ok) { toast.error('Erro ao buscar vendas pendentes'); return }
       const json: VendaCartaoPendenteFaturaResponse = await res.json()
+      if (buscaId !== buscaIdRef.current) return
       setPendentes(json.dados)
       setSelecionados(new Set(json.dados.map(p => p.parcela_id))) // seleciona tudo por padrão, usuário desmarca o que não quer
     } finally {
-      setPendentesLoading(false)
+      if (buscaId === buscaIdRef.current) setPendentesLoading(false)
     }
   }, [filtroParams])
-
-  // Busca ao vivo: toda mudança de filtro (com debounce) re-lista as vendas
-  // pendentes pra conferência, sem gravar nada — só ao clicar em "Gerar
-  // Fatura" com a seleção é que o agrupamento acontece de fato.
-  useEffect(() => {
-    if (!showFiltro) return
-    const timer = setTimeout(buscarPendentes, 350)
-    return () => clearTimeout(timer)
-  }, [showFiltro, buscarPendentes])
 
   function toggleSelecionado(parcelaId: number) {
     setSelecionados(prev => {
@@ -259,6 +261,12 @@ export default function CartaoFaturasPage() {
               </div>
             </div>
 
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+              <button className="btn-primary" onClick={buscarPendentes} disabled={pendentesLoading}>
+                <Search size={15} /> {pendentesLoading ? 'Buscando...' : 'Filtrar'}
+              </button>
+            </div>
+
             <div style={{ marginTop: 16 }}>
               {!pendentesLoading && pendentes.length > 0 && (
                 <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginBottom: 6 }}>
@@ -285,7 +293,8 @@ export default function CartaoFaturasPage() {
                   </thead>
                   <tbody>
                     {pendentesLoading && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 20, color: 'var(--texto-terciario)' }}>Buscando...</td></tr>}
-                    {!pendentesLoading && pendentes.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 24, color: 'var(--texto-terciario)' }}>Nenhuma venda pendente para esses filtros</td></tr>}
+                    {!pendentesLoading && pendentesBuscado && pendentes.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 24, color: 'var(--texto-terciario)' }}>Nenhuma venda pendente para esses filtros</td></tr>}
+                    {!pendentesLoading && !pendentesBuscado && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 24, color: 'var(--texto-terciario)' }}>Informe os filtros desejados e clique em &quot;Filtrar&quot;</td></tr>}
                     {!pendentesLoading && pendentes.map(p => (
                       <tr key={p.parcela_id} style={{ cursor: 'pointer' }} onClick={() => toggleSelecionado(p.parcela_id)}>
                         <td onClick={e => e.stopPropagation()}>
@@ -313,7 +322,7 @@ export default function CartaoFaturasPage() {
                   ? `${selecionadosInfo.qtd} venda(s) selecionada(s) — ${fmtValor(selecionadosInfo.valor)}`
                   : 'Nenhuma venda selecionada'}
               </div>
-              <button className="btn-ghost" onClick={() => { setFiltro(FILTRO_VAZIO); setPendentes([]); setSelecionados(new Set()) }} disabled={gerando}>Limpar filtros</button>
+              <button className="btn-ghost" onClick={() => { setFiltro(FILTRO_VAZIO); setPendentes([]); setSelecionados(new Set()); setPendentesBuscado(false) }} disabled={gerando}>Limpar filtros</button>
               <button className="btn-primary" onClick={gerarFaturas} disabled={gerando || pendentesLoading || selecionadosInfo.qtd === 0}>
                 <RefreshCw size={15} className={gerando ? 'spin' : ''} /> {gerando ? 'Gerando...' : 'Gerar Fatura'}
               </button>
