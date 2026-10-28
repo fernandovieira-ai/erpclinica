@@ -41,21 +41,25 @@ export default function CartaoVendasPage() {
   const [loading, setLoading] = useState(false)
   const [busca,   setBusca]   = useState('')
   const [status,  setStatus]  = useState('')
+  const [dataInicio, setDataInicio] = useState('')
+  const [dataFim,    setDataFim]    = useState('')
   const [page,    setPage]    = useState(1)
 
   const carregar = useCallback(async () => {
     setLoading(true)
     try {
-      const sp  = new URLSearchParams({ busca, status, page: String(page), limit: '50' })
+      const sp = new URLSearchParams({ busca, status, page: String(page), limit: '50' })
+      if (dataInicio) sp.set('data_inicio', dataInicio)
+      if (dataFim)    sp.set('data_fim', dataFim)
       const res = await fetch(`/api/financeiro/cartao/vendas?${sp}`)
       if (!res.ok) { toast.error('Erro ao carregar'); return }
       const data: VendaCartaoListResponse = await res.json()
       setDados(data.dados); setTotal(data.total); setPages(data.pages)
     } finally { setLoading(false) }
-  }, [busca, status, page])
+  }, [busca, status, dataInicio, dataFim, page])
 
   useEffect(() => { carregar() }, [carregar])
-  useEffect(() => { setPage(1) }, [busca, status])
+  useEffect(() => { setPage(1) }, [busca, status, dataInicio, dataFim])
 
   const inicio = (page - 1) * 50 + 1
   const fim    = Math.min(page * 50, total)
@@ -80,6 +84,14 @@ export default function CartaoVendasPage() {
             <option value="PENDENTE">Pendente</option>
             <option value="CANCELADO">Cancelado</option>
           </select>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <label style={{ fontSize: 11, color: 'var(--texto-secundario)' }}>Emissão de</label>
+            <input type="date" className="input-field" value={dataInicio} onChange={e => setDataInicio(e.target.value)} style={{ width: 150 }} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <label style={{ fontSize: 11, color: 'var(--texto-secundario)' }}>até</label>
+            <input type="date" className="input-field" value={dataFim} onChange={e => setDataFim(e.target.value)} style={{ width: 150 }} />
+          </div>
         </div>
 
         <div className="card">
