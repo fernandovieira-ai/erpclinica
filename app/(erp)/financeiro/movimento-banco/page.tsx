@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Plus, Search, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Search, ChevronLeft, ChevronRight, FileText } from 'lucide-react'
 import type { MovimentoBancoListItem, MovimentoBancoListResponse, ContaBancoListItem } from '@/types/cadastros.types'
 
 const TIPO_LABEL: Record<string, { label: string; cor: string }> = {
@@ -83,9 +83,14 @@ export default function MovimentoBancoPage() {
           <h1 className="page-title">Movimento Banco</h1>
           <div style={{ fontSize: 12, color: 'var(--texto-terciario)', marginTop: 2 }}>Extrato de movimentações bancárias por conta</div>
         </div>
-        <button className="btn-primary" onClick={() => router.push('/financeiro/movimento-banco/novo')}>
-          <Plus size={15} /> Novo Movimento
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn-ghost" onClick={() => router.push('/financeiro/movimento-banco/extrato')}>
+            <FileText size={15} /> Extrato Bancário
+          </button>
+          <button className="btn-primary" onClick={() => router.push('/financeiro/movimento-banco/novo')}>
+            <Plus size={15} /> Novo Movimento
+          </button>
+        </div>
       </div>
 
       <div className="page-body">

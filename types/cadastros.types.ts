@@ -655,6 +655,42 @@ export interface MovimentoBancoListResponse {
   pages:  number
 }
 
+export interface ExtratoBancarioMovimento {
+  id:                  number
+  tipo:                'E' | 'S'
+  valor:               string
+  data_movimento:      string
+  documento:           string | null
+  observacao:          string | null
+  conciliado:          boolean
+  pessoa_nome:         string | null
+  tipo_operacao_desc:  string | null
+  origem_tipo:         string | null
+  origem_desc:         string | null
+  saldo_disponivel:    string
+  saldo_conciliado:    string
+}
+
+export interface ExtratoBancarioResponse {
+  conta: {
+    id:           number
+    mnemonico:    string
+    banco_nome:   string | null
+    banco_codigo: string | null
+    agencia:      string
+    conta:        string
+    tipo:         'C' | 'P'
+  }
+  periodo:                 { inicio: string; fim: string }
+  saldoAnteriorDisponivel: number
+  saldoAnteriorConciliado: number
+  saldoFinalDisponivel:    number
+  saldoFinalConciliado:    number
+  totalEntradas:           number
+  totalSaidas:             number
+  dados: ExtratoBancarioMovimento[]
+}
+
 export interface MovimentoCaixa {
   id:                  number
   empresa_id:          number
@@ -784,6 +820,8 @@ export interface FluxoCaixaMovimento {
 
 export interface FluxoCaixaResponse {
   periodoDias: number
+  inicio:      string
+  fim:         string
   hoje:        string
   kpis:        FluxoCaixaKpis
   serie:       FluxoCaixaSeriePonto[]
