@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { FileSpreadsheet, FileBarChart, Loader2 } from 'lucide-react'
+import { FileSpreadsheet, Loader2 } from 'lucide-react'
 import type { DreResponse } from '@/types/cadastros.types'
 
 function fmtNum(v: number) {
@@ -185,15 +185,6 @@ export default function DrePage() {
 
         {dados && (
           <div className="card" style={{ overflow: 'hidden', maxWidth: 560, opacity: loading ? 0.6 : 1, transition: 'opacity 0.15s' }}>
-            <div className="card-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <FileBarChart size={15} style={{ color: 'var(--cor-primaria)' }} />
-                <span className="card-title">{dados.empresa_nome || 'DRE'}</span>
-              </div>
-              <span style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>
-                {dados.inicio.split('-').reverse().join('/')} a {dados.fim.split('-').reverse().join('/')} · valores em R$
-              </span>
-            </div>
             <div className="table-wrapper">
               <table className="table-base" style={{ fontSize: 12.5 }}>
                 <thead>
