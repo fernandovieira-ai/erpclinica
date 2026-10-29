@@ -19,6 +19,12 @@ import type { DreBloco, DreLinha, DreLinhaResultado, DreResponse } from '@/types
 // As fontes (receita por tipo de atendimento, despesas por tipo) já são
 // agregadas em SQL (GROUP BY), não linha a linha — o resultado
 // trafegado é O(categorias), não O(lançamentos).
+//
+// Receita Bruta: quando o atendimento usou um override de repasse por
+// categoria/convênio (tab_recebimento_consulta.categoria_repasse_id,
+// migração 80 — ex.: TCP com repasse diferente pra UNIMED EXTERNO),
+// a linha some separada da regra geral do tipo ("<tipo> - <categoria>"),
+// porque o custo (repasse médico) daquele grupo é outro — ver padroes.md §61.
 
 const DATA_RE = /^\d{4}-\d{2}-\d{2}$/
 const MAX_DIAS = 5 * 366 // até ~5 anos de período
@@ -59,6 +65,35 @@ function somarLinhas(linhas: DreLinha[]): number {
   return linhas.reduce((s, l) => s + l.valor, 0)
 }
 
+// Receita por tipo de atendimento, com a linha do override de repasse por
+// categoria (ex.: "TCP - UNIMED EXTERNO") logo abaixo da linha geral do
+// mesmo tipo — ordenar tudo só por valor (como construirLinhas faz)
+// espalharia essas duas linhas pela lista, dificultando comparar o que
+// rendeu diferente por causa do repasse.
+function construirLinhasReceita(registros: { tipo: string; categoria: string | null; valor: number }[]): DreLinha[] {
+  const porTipo = new Map<string, { geral: number; overrides: Map<string, number> }>()
+  for (const r of registros) {
+    const grupo = porTipo.get(r.tipo) ?? { geral: 0, overrides: new Map<string, number>() }
+    if (r.categoria) grupo.overrides.set(r.categoria, (grupo.overrides.get(r.categoria) ?? 0) + r.valor)
+    else grupo.geral += r.valor
+    porTipo.set(r.tipo, grupo)
+  }
+
+  const grupos = [...porTipo.entries()].map(([tipo, g]) => ({
+    tipo, geral: g.geral, overrides: g.overrides,
+    total: g.geral + [...g.overrides.values()].reduce((s, v) => s + v, 0),
+  }))
+  grupos.sort((a, b) => b.total - a.total || a.tipo.localeCompare(b.tipo))
+
+  const linhas: DreLinha[] = []
+  for (const g of grupos) {
+    if (g.geral !== 0 || g.overrides.size === 0) linhas.push({ descricao: g.tipo, valor: g.geral })
+    const overrides = [...g.overrides.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    for (const [categoria, valor] of overrides) linhas.push({ descricao: `${g.tipo} - ${categoria}`, valor })
+  }
+  return linhas
+}
+
 export async function GET(req: NextRequest) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
@@ -88,13 +123,14 @@ export async function GET(req: NextRequest) {
       { rows: [empresa] },
     ] = await Promise.all([
       db.query(
-        `SELECT at.descricao AS nome, SUM(rc.total_recebimento) AS valor
+        `SELECT at.descricao AS tipo, cat.descricao AS categoria, SUM(rc.total_recebimento) AS valor
            FROM tab_recebimento_consulta rc
-           JOIN tab_agendamento a      ON a.id  = rc.agendamento_id
+           JOIN tab_agendamento a       ON a.id  = rc.agendamento_id
            JOIN tab_agendamento_tipo at ON at.id = a.tipo_id
+           LEFT JOIN tab_categoria cat  ON cat.id = rc.categoria_repasse_id
           WHERE rc.empresa_id = $1
             AND rc.data_recebimento >= $2::date AND rc.data_recebimento <= $3::date
-          GROUP BY at.descricao`,
+          GROUP BY at.descricao, cat.descricao`,
         [empresaId, inicio, fim],
       ),
       db.query(
@@ -124,7 +160,10 @@ export async function GET(req: NextRequest) {
       despesasPorBloco[bloco].push({ nome: r.nome, valor: Number(r.valor) })
     }
 
-    const linhasReceita = construirLinhas(receitaRows as any, 1)
+    const linhasReceita = construirLinhasReceita(
+      (receitaRows as { tipo: string; categoria: string | null; valor: string }[])
+        .map(r => ({ tipo: r.tipo, categoria: r.categoria, valor: Number(r.valor) })),
+    )
     const linhasImposto = construirLinhas(despesasPorBloco.imposto, -1)
     const linhasCustos  = construirLinhas(despesasPorBloco.custos, -1)
     const linhasOpex        = construirLinhas(despesasPorBloco.opex, -1)
