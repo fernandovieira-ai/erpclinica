@@ -7,16 +7,18 @@ import type { DreBloco, DreLinha, DreLinhaResultado, DreResponse } from '@/types
 //
 // DRE gerencial consolidado do período (v1: total único, sem quebra
 // mensal — ver padroes.md). Receita Bruta = valor cheio do atendimento
-// (sem abater repasse médico); o repasse entra como linha de custo
-// dentro de "(CSV) Custos", igual ao relatório de referência do cliente
-// (planilha HiitCor). Agrupamento de despesas usa a hierarquia já
-// existente em tab_tipo_despesa (pai_id): cada "sintético" de topo
+// (sem abater repasse médico). Por pedido do usuário (2026-10-28),
+// "(CSV) Custos" por enquanto só traz o que está lançado de fato em
+// tab_despesa — o repasse médico (tab_recebimento_consulta.valor_profissional)
+// NÃO entra ainda, mesmo sendo custo na planilha de referência do
+// cliente (ver padroes.md §61). Agrupamento de despesas usa a hierarquia
+// já existente em tab_tipo_despesa (pai_id): cada "sintético" de topo
 // mapeia pra um bloco do DRE (ver BLOCO_POR_CODIGO). Investimento/CAPEX
 // (código '5', ind_capex) fica fora do DRE.
 //
-// As 3 fontes (receita por tipo de atendimento, repasse por médico,
-// despesas por tipo) já são agregadas em SQL (GROUP BY), não linha a
-// linha — o resultado trafegado é O(categorias), não O(lançamentos).
+// As fontes (receita por tipo de atendimento, despesas por tipo) já são
+// agregadas em SQL (GROUP BY), não linha a linha — o resultado
+// trafegado é O(categorias), não O(lançamentos).
 
 const DATA_RE = /^\d{4}-\d{2}-\d{2}$/
 const MAX_DIAS = 5 * 366 // até ~5 anos de período
@@ -82,7 +84,6 @@ export async function GET(req: NextRequest) {
   try {
     const [
       { rows: receitaRows },
-      { rows: repasseRows },
       { rows: despesaRows },
       { rows: [empresa] },
     ] = await Promise.all([
@@ -94,17 +95,6 @@ export async function GET(req: NextRequest) {
           WHERE rc.empresa_id = $1
             AND rc.data_recebimento >= $2::date AND rc.data_recebimento <= $3::date
           GROUP BY at.descricao`,
-        [empresaId, inicio, fim],
-      ),
-      db.query(
-        `SELECT p.nome AS nome, SUM(rc.valor_profissional) AS valor
-           FROM tab_recebimento_consulta rc
-           JOIN tab_agendamento a ON a.id = rc.agendamento_id
-           JOIN tab_pessoa p      ON p.id = a.profissional_id
-          WHERE rc.empresa_id = $1
-            AND rc.data_recebimento >= $2::date AND rc.data_recebimento <= $3::date
-            AND rc.valor_profissional > 0
-          GROUP BY p.nome`,
         [empresaId, inicio, fim],
       ),
       db.query(
@@ -136,10 +126,7 @@ export async function GET(req: NextRequest) {
 
     const linhasReceita = construirLinhas(receitaRows as any, 1)
     const linhasImposto = construirLinhas(despesasPorBloco.imposto, -1)
-    const linhasCustos  = construirLinhas(
-      [...(repasseRows as any[]).map(r => ({ ...r, nome: `Repasse — ${r.nome}` })), ...despesasPorBloco.custos],
-      -1,
-    )
+    const linhasCustos  = construirLinhas(despesasPorBloco.custos, -1)
     const linhasOpex        = construirLinhas(despesasPorBloco.opex, -1)
     const linhasComercial   = construirLinhas(despesasPorBloco.comercial, -1)
     const linhasFinanceiras = construirLinhas(despesasPorBloco.financeiras, -1)
