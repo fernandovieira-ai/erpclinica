@@ -22,6 +22,18 @@ function fmtData(d: string) {
   return d.slice(0, 10).split('-').reverse().join('/')
 }
 
+function toISO(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function primeiroDiaMesAtual() {
+  const hoje = new Date()
+  return toISO(new Date(hoje.getFullYear(), hoje.getMonth(), 1))
+}
+function ultimoDiaMesAtual() {
+  const hoje = new Date()
+  return toISO(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0))
+}
+
 export default function DespesasPage() {
   const router = useRouter()
   const [dados,       setDados]       = useState<DespesaListItem[]>([])
@@ -30,8 +42,8 @@ export default function DespesasPage() {
   const [loading,     setLoading]     = useState(false)
   const [busca,       setBusca]       = useState('')
   const [status,      setStatus]      = useState('')
-  const [dataInicio,  setDataInicio]  = useState('')
-  const [dataFim,     setDataFim]     = useState('')
+  const [dataInicio,  setDataInicio]  = useState(primeiroDiaMesAtual)
+  const [dataFim,     setDataFim]     = useState(ultimoDiaMesAtual)
   const [page,        setPage]        = useState(1)
   const [menu,         setMenu]         = useState<{ x: number; y: number; despesa: DespesaListItem } | null>(null)
   const [replicando,   setReplicando]   = useState<Despesa | null>(null)
@@ -125,6 +137,11 @@ export default function DespesasPage() {
             <label style={{ fontSize: 12, color: 'var(--texto-secundario)', whiteSpace: 'nowrap' }}>Até:</label>
             <input type="date" className="input-field" value={dataFim} onChange={e => setDataFim(e.target.value)} style={{ width: 140 }} />
           </div>
+          {(dataInicio || dataFim) && (
+            <button className="btn-ghost" onClick={() => { setDataInicio(''); setDataFim('') }} style={{ padding: '7px 10px', fontSize: 12 }}>
+              Limpar período
+            </button>
+          )}
         </div>
 
         <div className="card">
