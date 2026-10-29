@@ -49,9 +49,13 @@ export async function GET(req: NextRequest) {
       [ids],
     ),
     db.query(
+      // só a regra GERAL (categoria_id NULL) — overrides por categoria não
+      // acrescentam tipo novo, só mudam o % de um tipo que o profissional já
+      // faz; sem o filtro, um profissional com override duplicava o tipo_id
+      // aqui (1 linha geral + 1 por categoria com regra própria)
       `SELECT profissional_id, tipo_id
        FROM tab_profissional_tipo_percentual
-       WHERE profissional_id = ANY($1)`,
+       WHERE profissional_id = ANY($1) AND categoria_id IS NULL`,
       [ids],
     ),
   ])

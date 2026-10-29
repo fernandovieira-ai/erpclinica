@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Save, Trash2, ArrowLeft, Search, Plus, X, Camera, User, RefreshCw, Trash, AlertTriangle, ExternalLink } from 'lucide-react'
+import ProfissionalCategoriaOverrideModal, { type OverrideCategoria } from '@/components/cadastro/ProfissionalCategoriaOverrideModal'
 import { pessoaSchema, type PessoaInput } from '@/lib/validators/pessoa.schema'
 import type { Pessoa } from '@/types/cadastros.types'
 import { maskCelular } from '@/lib/utils'
@@ -568,26 +569,46 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
   const [percFixo,    setPercFixo]    = useState<Record<number, string>>({})
   const [loadingPerc, setLoadingPerc] = useState(false)
   const [savingPerc,  setSavingPerc]  = useState(false)
+  // Overrides de repasse por categoria (convênio), opcionais, por tipo de atendimento
+  const [percCategorias, setPercCategorias] = useState<{ id: number; descricao: string }[]>([])
+  const [percOverrides,  setPercOverrides]  = useState<Record<number, OverrideCategoria[]>>({})
+  const [categoriaModalTipoId, setCategoriaModalTipoId] = useState<number | null>(null)
 
   const carregarPercentuais = useCallback(async () => {
     if (!pessoa?.id) return
     setLoadingPerc(true)
     try {
-      const res = await fetch(`/api/clinica/profissionais/${pessoa.id}/percentuais`)
+      const [res, resCat] = await Promise.all([
+        fetch(`/api/clinica/profissionais/${pessoa.id}/percentuais`),
+        fetch(`/api/clinica/categorias?ativo=true&limit=100`),
+      ])
       const json = await res.json()
-      const dados: { tipo_id: number; descricao: string; ativo: boolean; percentual_profissional: number | null; valor_fixo: number | null }[] = json.dados ?? []
+      type DadosOverride = { categoria_id: number; categoria_descricao: string; percentual_profissional: number | null; valor_fixo: number | null }
+      const dados: { tipo_id: number; descricao: string; ativo: boolean; percentual_profissional: number | null; valor_fixo: number | null; overrides: DadosOverride[] }[] = json.dados ?? []
       setPercTipos(dados.map(d => ({ tipo_id: d.tipo_id, descricao: d.descricao, ativo: d.ativo })))
       const realiza: Record<number, boolean> = {}
       const edit: Record<number, string> = {}
       const fixo: Record<number, string> = {}
+      const overrides: Record<number, OverrideCategoria[]> = {}
       dados.forEach(d => {
         realiza[d.tipo_id] = d.percentual_profissional != null
         edit[d.tipo_id] = d.percentual_profissional != null ? String(Number(d.percentual_profissional)) : '100'
         fixo[d.tipo_id] = d.valor_fixo != null ? String(Number(d.valor_fixo)) : ''
+        overrides[d.tipo_id] = (d.overrides ?? []).map(o => ({
+          categoria_id: o.categoria_id,
+          categoria_descricao: o.categoria_descricao,
+          percentual: o.percentual_profissional != null ? String(Number(o.percentual_profissional)) : '100',
+          valor_fixo: o.valor_fixo != null ? String(Number(o.valor_fixo)) : '',
+        }))
       })
       setPercRealiza(realiza)
       setPercEdit(edit)
       setPercFixo(fixo)
+      setPercOverrides(overrides)
+      if (resCat.ok) {
+        const jsonCat = await resCat.json()
+        setPercCategorias((jsonCat.dados ?? []).map((c: { id: number; descricao: string }) => ({ id: c.id, descricao: c.descricao })))
+      }
     } finally { setLoadingPerc(false) }
   }, [pessoa?.id])
 
@@ -595,8 +616,8 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
     if (aba === 'Atendimentos' && pessoa?.id) carregarPercentuais()
   }, [aba, carregarPercentuais, pessoa?.id])
 
-  async function salvarPercentuais() {
-    if (!pessoa?.id) return
+  async function salvarPercentuais(): Promise<boolean> {
+    if (!pessoa?.id) return true
     setSavingPerc(true)
     try {
       const percentuais = percTipos
@@ -607,16 +628,30 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
           const f = percFixo[t.tipo_id]?.trim()
           // Valor fixo só segue junto quando o % é 0 (o servidor também ignora nos demais casos)
           const valor_fixo = percentual === 0 && f ? Number(f) : null
-          return { tipo_id: t.tipo_id, percentual, valor_fixo }
+          const overrides = (percOverrides[t.tipo_id] ?? []).map(o => {
+            const ov = o.percentual.trim()
+            const ovPercentual = ov === '' ? null : Number(ov)
+            const ovFixo = o.valor_fixo.trim()
+            return {
+              categoria_id: o.categoria_id,
+              percentual: ovPercentual,
+              valor_fixo: ovPercentual === 0 && ovFixo ? Number(ovFixo) : null,
+            }
+          })
+          return { tipo_id: t.tipo_id, percentual, valor_fixo, overrides }
         })
       const res = await fetch(`/api/clinica/profissionais/${pessoa.id}/percentuais`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ percentuais }),
       })
-      if (!res.ok) { toast.error('Erro ao salvar'); return }
+      if (!res.ok) { toast.error('Erro ao salvar os atendimentos'); return false }
       toast.success('Atendimentos do profissional salvos')
       carregarPercentuais()
+      return true
+    } catch {
+      toast.error('Erro de comunicação ao salvar os atendimentos')
+      return false
     } finally { setSavingPerc(false) }
   }
 
@@ -940,6 +975,21 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
         return
       }
 
+      // "Salvar Cadastro" salva tudo: se a aba Atendimentos já foi aberta nesta
+      // sessão (percTipos carregado do servidor), manda junto o que foi
+      // alterado lá também. Guarda por percTipos.length pra nunca mandar um PUT
+      // vazio de atendimentos quando a aba nunca foi visitada (apagaria os
+      // vínculos já cadastrados no servidor). O botão "Salvar atendimentos" da
+      // aba continua existindo à parte, pra salvar só essa parte sem mexer no
+      // resto do cadastro. Se essa parte falhar, não segue pro "sucesso"/
+      // navegação — o cadastro em si já foi salvo (o toast de erro de
+      // salvarPercentuais já avisou), mas fica aqui pra o usuário tentar de
+      // novo em vez de parecer que deu tudo certo.
+      if (pessoa && percTipos.length > 0) {
+        const okPerc = await salvarPercentuais()
+        if (!okPerc) return
+      }
+
       toast.success(pessoa ? 'Pessoa atualizada!' : 'Pessoa cadastrada!')
       if (!pessoa && json?.id) router.push(`/cadastro/pessoas/${json.id}${papelInicial ? `?papel=${papelInicial}` : ''}`)
       else if (!pessoa) router.push(listaHref)
@@ -1026,7 +1076,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
             background: 'var(--cor-primaria)', color: '#fff', border: 'none', borderRadius: 3,
             fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer', fontWeight: 600,
             opacity: saving ? 0.7 : 1 }}>
-          <Save size={13} /> {saving ? 'Salvando...' : 'Salvar'}
+          <Save size={13} /> {saving ? 'Salvando...' : 'Salvar Cadastro'}
         </button>
 
         {pessoa && (
@@ -2015,14 +2065,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
                 Nenhum tipo de atendimento cadastrado. Cadastre em <strong>Clínica → Tipos de Atendimento</strong> primeiro.
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 680 }}>
-                <div style={{ fontSize: 11.5, color: 'var(--texto-terciario)' }}>
-                  Marque os tipos de atendimento que este profissional realiza — só eles aparecem no
-                  agendamento dele. Para cada um, o <strong>% Profissional</strong> é a parte do valor
-                  recebido que fica com ele (em branco = 100%); o restante fica com a clínica.
-                  Se o % for <strong>0</strong>, informe o <strong>Valor Fixo</strong> que o profissional
-                  recebe por atendimento — a clínica fica com o restante do valor recebido.
-                </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 850 }}>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button
                     type="button"
@@ -2047,6 +2090,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
                       <th style={{ textAlign: 'right', padding: '4px 8px', color: 'var(--texto-secundario)', fontWeight: 600, width: 110 }}>% Profissional</th>
                       <th style={{ textAlign: 'right', padding: '4px 8px', color: 'var(--texto-secundario)', fontWeight: 600, width: 130 }}>Valor Fixo (R$)</th>
                       <th style={{ textAlign: 'right', padding: '4px 8px', color: 'var(--texto-secundario)', fontWeight: 600, width: 90 }}>% Clínica</th>
+                      <th style={{ textAlign: 'left', padding: '4px 8px', color: 'var(--texto-secundario)', fontWeight: 600, width: 190 }}>Categoria (convênio)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2103,6 +2147,42 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
                           <td style={{ padding: '4px 8px', textAlign: 'right', color: 'var(--texto-secundario)' }}>
                             {!realiza || !Number.isFinite(clinica) ? '-' : usaFixo ? 'restante' : `${clinica} %`}
                           </td>
+                          <td style={{ padding: '4px 8px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
+                              {realiza && (
+                                <button
+                                  type="button"
+                                  onClick={() => setCategoriaModalTipoId(t.tipo_id)}
+                                  title="Adicionar regra de repasse por categoria (convênio)"
+                                  style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0,
+                                    padding: '2px 6px', fontSize: 10.5, borderRadius: 3, cursor: 'pointer',
+                                    backgroundColor: 'var(--cor-primaria)', color: '#fff', border: 'none',
+                                  }}
+                                >
+                                  <Plus size={10} /> Categoria
+                                </button>
+                              )}
+                              {(percOverrides[t.tipo_id] ?? []).map(o => {
+                                const ovPct = o.percentual.trim() === '' ? 100 : Number(o.percentual)
+                                const label = ovPct === 0 && o.valor_fixo.trim()
+                                  ? `R$ ${Number(o.valor_fixo).toFixed(2)}`
+                                  : `${Number.isFinite(ovPct) ? ovPct : 100}%`
+                                return (
+                                  <span
+                                    key={o.categoria_id}
+                                    style={{
+                                      fontSize: 10.5, padding: '1px 6px', borderRadius: 3, whiteSpace: 'nowrap',
+                                      background: 'var(--bg-input)', border: '1px solid var(--borda-suave)',
+                                      color: 'var(--texto-secundario)',
+                                    }}
+                                  >
+                                    {o.categoria_descricao}: <strong style={{ color: 'var(--texto-principal)' }}>{label}</strong>
+                                  </span>
+                                )
+                              })}
+                            </div>
+                          </td>
                         </tr>
                       )
                     })}
@@ -2137,6 +2217,19 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
 
       </div>
     </form>
+
+    {categoriaModalTipoId != null && (
+      <ProfissionalCategoriaOverrideModal
+        tipoDescricao={percTipos.find(t => t.tipo_id === categoriaModalTipoId)?.descricao ?? ''}
+        categoriasDisponiveis={percCategorias}
+        overridesAtuais={percOverrides[categoriaModalTipoId] ?? []}
+        onClose={() => setCategoriaModalTipoId(null)}
+        onSalvar={(overrides) => {
+          setPercOverrides(prev => ({ ...prev, [categoriaModalTipoId]: overrides }))
+          setCategoriaModalTipoId(null)
+        }}
+      />
+    )}
 
     {pessoaDuplicada && (
       <div style={{

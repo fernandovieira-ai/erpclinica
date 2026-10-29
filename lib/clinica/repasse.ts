@@ -4,23 +4,34 @@ export interface RegraRepasse {
   percentual: number
   // Só vale com percentual = 0 (ver dividirRepasse). null = sem valor fixo.
   valor_fixo: number | null
+  // Categoria do override aplicado (snapshot/auditoria); null = usou a regra geral do tipo.
+  categoria_id: number | null
 }
 
 // Regra de repasse do profissional executante: % do valor recebido OU, com % = 0, valor fixo.
-// Fonte: tab_profissional_tipo_percentual (par profissional x tipo de atendimento).
+// Fonte: tab_profissional_tipo_percentual (par profissional x tipo de atendimento), com
+// override OPCIONAL por categoria (convenio) — só vale se o atendimento tiver categoria E
+// existir uma linha específica pra essa categoria; senão usa a linha geral (categoria_id NULL).
 // Sem linha cadastrada (ou sem tipo) => 100% (profissional fica com tudo).
 export async function regraRepasse(
   db: Queryable,
   profissionalId: number | null | undefined,
   tipoId: number | null | undefined,
+  categoriaId?: number | null,
 ): Promise<RegraRepasse> {
-  const padrao: RegraRepasse = { percentual: 100, valor_fixo: null }
+  const padrao: RegraRepasse = { percentual: 100, valor_fixo: null, categoria_id: null }
   if (!profissionalId || !tipoId) return padrao
   const { rows } = await db.query(
-    `SELECT percentual_profissional, valor_fixo
+    // categoriaId = $3 só é TRUE pra linha do override; combinado com "OR categoria_id IS NULL"
+    // garante que a linha geral sempre entra como candidata. ORDER BY prioriza o override
+    // (categoria_id IS NULL = false) sobre a regra geral quando os dois existem.
+    `SELECT percentual_profissional, valor_fixo, categoria_id
        FROM tab_profissional_tipo_percentual
-      WHERE profissional_id = $1 AND tipo_id = $2`,
-    [profissionalId, tipoId],
+      WHERE profissional_id = $1 AND tipo_id = $2
+        AND (categoria_id = $3 OR categoria_id IS NULL)
+      ORDER BY categoria_id IS NULL ASC
+      LIMIT 1`,
+    [profissionalId, tipoId, categoriaId ?? null],
   )
   if (rows.length === 0) return padrao
   const pct   = Number(rows[0].percentual_profissional)
@@ -28,6 +39,7 @@ export async function regraRepasse(
   return {
     percentual: Number.isFinite(pct) ? pct : 100,
     valor_fixo: fixo != null && Number.isFinite(fixo) ? fixo : null,
+    categoria_id: rows[0].categoria_id ?? null,
   }
 }
 

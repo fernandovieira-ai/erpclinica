@@ -395,12 +395,12 @@ export async function POST(req: NextRequest) {
     // agendamento_id -> medico_solicitante_id dos itens "normais" (profissional já definido):
     // aqui o solicitante é opcional e não troca o profissional_id/executor do agendamento.
     const solicitantesSimples = new Map<number, number>()
-    // agendamento_id -> { tipo_id, profissional_id } — usado pra calcular o repasse
-    const infoAgendamento = new Map<number, { tipo_id: number | null; profissional_id: number }>()
+    // agendamento_id -> { tipo_id, profissional_id, categoria_id } — usado pra calcular o repasse
+    const infoAgendamento = new Map<number, { tipo_id: number | null; profissional_id: number; categoria_id: number | null }>()
 
     for (const item of payload.itens) {
       const { rows } = await client.query(
-        `SELECT ag.id, ag.tipo_id, ag.profissional_id, pro.eh_clinica AS profissional_eh_clinica,
+        `SELECT ag.id, ag.tipo_id, ag.profissional_id, ag.categoria_id, pro.eh_clinica AS profissional_eh_clinica,
                 COALESCE(atc.valor, tp.valor) AS tipo_valor, atc.valor_prazo AS tipo_valor_prazo,
                 EXISTS (
                   SELECT 1 FROM tab_recebimento_consulta rc
@@ -451,6 +451,7 @@ export async function POST(req: NextRequest) {
       infoAgendamento.set(item.agendamento_id, {
         tipo_id: rows[0].tipo_id ?? null,
         profissional_id: rows[0].profissional_id,
+        categoria_id: rows[0].categoria_id ?? null,
       })
 
       if (rows[0].profissional_eh_clinica) {
@@ -575,7 +576,7 @@ export async function POST(req: NextRequest) {
       const profissionalRepasse = definicoesExecutor.get(item.agendamento_id)?.medico_executor_id
         ?? info?.profissional_id
         ?? null
-      const regra = await regraRepasse(client, profissionalRepasse, info?.tipo_id ?? null)
+      const regra = await regraRepasse(client, profissionalRepasse, info?.tipo_id ?? null, info?.categoria_id ?? null)
       const pct = regra.percentual
       const { valor_profissional, valor_clinica } = dividirRepasse(item.total_recebimento, regra)
 
@@ -585,8 +586,8 @@ export async function POST(req: NextRequest) {
           valor_original, valor_desconto, valor_acrescimo, valor_recebido, total_recebimento,
           batch_agendamento_id, movimento_caixa_id, movimento_banco_id, venda_cartao_id,
           data_recebimento, status_recebimento, observacao, created_by,
-          percentual_profissional, valor_profissional, valor_clinica
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+          percentual_profissional, valor_profissional, valor_clinica, categoria_repasse_id
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
         [
           session.empresa_id_ativa, item.agendamento_id, item.paciente_id, condicaoLegado,
           item.valor_original, item.valor_desconto, item.valor_acrescimo,
@@ -595,7 +596,7 @@ export async function POST(req: NextRequest) {
           item.data_recebimento, statusRecebimento,
           payload.observacao || null,
           session.nome ?? 'sistema',
-          pct, valor_profissional, valor_clinica,
+          pct, valor_profissional, valor_clinica, regra.categoria_id,
         ],
       )
     }
