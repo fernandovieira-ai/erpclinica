@@ -18,10 +18,13 @@ function fmtPct(v: number | null | undefined) {
 function toISO(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
-function hojeISO() { return toISO(new Date()) }
-function onzeMesesAtrasISO() {
+function primeiroDiaMesAtual() {
   const hoje = new Date()
-  return toISO(new Date(hoje.getFullYear(), hoje.getMonth() - 11, 1))
+  return toISO(new Date(hoje.getFullYear(), hoje.getMonth(), 1))
+}
+function ultimoDiaMesAtual() {
+  const hoje = new Date()
+  return toISO(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0))
 }
 
 type LinhaExibicao =
@@ -69,8 +72,8 @@ function montarLinhas(dados: DreResponse): LinhaExibicao[] {
 }
 
 export default function DrePage() {
-  const [inicio, setInicio]   = useState(onzeMesesAtrasISO)
-  const [fim, setFim]         = useState(hojeISO)
+  const [inicio, setInicio]   = useState(primeiroDiaMesAtual)
+  const [fim, setFim]         = useState(ultimoDiaMesAtual)
   const [dados, setDados]     = useState<DreResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [exportando, setExportando] = useState(false)
@@ -195,8 +198,8 @@ export default function DrePage() {
               <table className="table-base" style={{ fontSize: 12.5 }}>
                 <thead>
                   <tr>
-                    <th>Categoria</th>
-                    <th style={{ textAlign: 'right', minWidth: 130 }}>Valor do Período</th>
+                    <th style={{ padding: '6px 12px' }}>Categoria</th>
+                    <th style={{ padding: '6px 12px', textAlign: 'right', minWidth: 130 }}>Valor do Período</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -210,6 +213,7 @@ export default function DrePage() {
                     return (
                       <tr key={`${l.descricao}-${i}`} style={destaque ? { background: 'var(--bg-page)' } : undefined}>
                         <td style={{
+                          padding: '3px 12px',
                           fontWeight: destaque ? 700 : 400,
                           fontStyle: l.tipo === 'margem' ? 'italic' : 'normal',
                           paddingLeft: l.tipo === 'item' ? 24 : 12,
@@ -218,6 +222,7 @@ export default function DrePage() {
                           {l.descricao}
                         </td>
                         <td style={{
+                          padding: '3px 12px',
                           textAlign: 'right', fontFamily: 'var(--fonte-mono)',
                           fontWeight: destaque ? 700 : 400,
                           color: l.tipo === 'margem'
