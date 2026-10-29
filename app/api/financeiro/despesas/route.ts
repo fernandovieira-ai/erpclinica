@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
     params.push(data_fim)
   }
   if (busca) {
-    conds.push(`(d.documento ILIKE $${pi} OR p.nome ILIKE $${pi})`)
+    conds.push(`(d.documento ILIKE $${pi} OR p.nome ILIKE $${pi} OR td.descricao ILIKE $${pi})`)
     params.push(`%${busca}%`)
     pi++
   }
@@ -47,7 +47,8 @@ export async function GET(req: NextRequest) {
     db.query(
       `SELECT COUNT(*) AS n
        FROM tab_despesa d
-       LEFT JOIN tab_pessoa p ON p.id = d.pessoa_id
+       LEFT JOIN tab_pessoa       p  ON p.id  = d.pessoa_id
+       LEFT JOIN tab_tipo_despesa td ON td.id = d.tipo_despesa_id
        ${where}`,
       params,
     ),

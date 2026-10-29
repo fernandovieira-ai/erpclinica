@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
     params.push(fim)
   }
   if (busca) {
-    conds.push(`(p.nome ILIKE $${pi} OR d.documento ILIKE $${pi})`)
+    conds.push(`(p.nome ILIKE $${pi} OR d.documento ILIKE $${pi} OR td.descricao ILIKE $${pi} OR tp.descricao ILIKE $${pi})`)
     params.push(`%${busca}%`)
     pi++
   }

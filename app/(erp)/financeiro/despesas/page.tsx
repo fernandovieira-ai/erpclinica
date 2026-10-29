@@ -109,7 +109,7 @@ export default function DespesasPage() {
         <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
           <div style={{ position: 'relative', flex: '1 1 240px', minWidth: 200 }}>
             <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-terciario)' }} />
-            <input className="input-field" placeholder="Buscar por documento ou pessoa..." value={busca}
+            <input className="input-field" placeholder="Buscar por documento, pessoa ou tipo de despesa..." value={busca}
               onChange={e => setBusca(e.target.value)} style={{ paddingLeft: 32 }} />
           </div>
           <select className="input-field" value={status} onChange={e => setStatus(e.target.value)} style={{ width: 130 }}>

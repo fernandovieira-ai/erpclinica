@@ -207,11 +207,11 @@ export default function RelatorioDespesasTipoPage() {
             <input type="date" className="input-field" value={fim} onChange={(e) => setFim(e.target.value)} />
           </div>
           <div style={{ position: 'relative', flex: '1 1 240px', minWidth: 200 }}>
-            <label style={labelStyle}>Buscar fornecedor ou documento</label>
+            <label style={labelStyle}>Buscar fornecedor, documento ou tipo de despesa</label>
             <Search size={14} style={{ position: 'absolute', left: 10, top: 29, color: 'var(--texto-terciario)' }} />
             <input
               className="input-field"
-              placeholder="Nome do fornecedor ou nº documento..."
+              placeholder="Nome do fornecedor, nº documento ou tipo de despesa..."
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
               style={{ paddingLeft: 32, width: '100%' }}
