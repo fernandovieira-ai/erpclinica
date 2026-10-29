@@ -829,3 +829,33 @@ export interface FluxoCaixaResponse {
   projecao:    FluxoCaixaProjecaoBucket[]
   movimentos:  FluxoCaixaMovimento[]
 }
+
+// ─── DRE Gerencial ───────────────────────────────────────────────
+// v1: total consolidado do período (sem quebra mensal — ver padroes.md).
+
+export interface DreLinha {
+  descricao: string
+  valor:     number // despesa já negativa
+}
+
+export interface DreBloco {
+  chave:    'receita' | 'imposto' | 'custos' | 'opex' | 'comercial' | 'financeiras'
+  titulo:   string
+  linhas:   DreLinha[]
+  subtotal: number
+}
+
+export interface DreLinhaResultado {
+  chave:     string
+  descricao: string
+  valor:     number
+  margem?:   number | null // % sobre a receita bruta do período, quando aplicável
+}
+
+export interface DreResponse {
+  inicio:       string
+  fim:          string
+  blocos:       DreBloco[]
+  resultado:    DreLinhaResultado[]
+  empresa_nome: string
+}
