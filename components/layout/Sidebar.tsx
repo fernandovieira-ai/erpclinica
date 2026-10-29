@@ -12,7 +12,7 @@ import {
   Activity, ClipboardCheck,
   FileOutput, FileInput, FileUp, FileDown,
   ListTree, MinusCircle, PlusCircle, CalendarClock,
-  Timer, RefreshCcw, MessageCircle,
+  Timer, RefreshCcw, MessageCircle, KeyRound,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { Session } from '@/types/session'
@@ -89,6 +89,7 @@ const NAV: NavItem[] = [
   {
     label: 'Configurações', icon: <Settings size={16} />,
     children: [
+      { label: 'Alterar Senha', href: '/configuracoes/alterar-senha', icon: <KeyRound size={14} /> },
       { label: 'Empresas', href: '/configuracoes/empresas', icon: <Building2 size={14} /> },
       { label: 'Log de Auditoria', href: '/configuracoes/log-auditoria', icon: <ClipboardList size={14} /> },
     ],
