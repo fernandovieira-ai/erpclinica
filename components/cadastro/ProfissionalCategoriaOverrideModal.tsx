@@ -34,11 +34,7 @@ export default function ProfissionalCategoriaOverrideModal({
   function adicionar() {
     const cat = disponiveisParaAdicionar.find(c => c.id === novaCategoriaId)
     if (!cat) return
-    // percentual '' = 100% (mesmo padrão da linha geral, ver comentário em
-    // OverrideCategoria acima) - começar em '0' faria uma categoria nova
-    // "aplicar" silenciosamente, sem o admin mexer em nada, pagar R$0 ao
-    // profissional (0% sem valor fixo) até alguém notar.
-    setLinhas(l => [...l, { categoria_id: cat.id, categoria_descricao: cat.descricao, percentual: '', valor_fixo: '' }])
+    setLinhas(l => [...l, { categoria_id: cat.id, categoria_descricao: cat.descricao, percentual: '0', valor_fixo: '' }])
     setNovaCategoriaId(0)
   }
 
