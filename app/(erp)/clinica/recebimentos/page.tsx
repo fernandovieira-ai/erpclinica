@@ -211,8 +211,11 @@ export default function RecebimentosPage() {
     return Array.from(map.values())
   }, [agFiltrados])
 
+  // Só soma o que está PAGO de fato — bate com a Receita (Gerencial), que também só
+  // conta status_recebimento='PAGO'. Pendente/estornado continua mostrando o preço de
+  // tabela na linha (abaixo), mas não entra nesse total (é estimativa, não receita).
   const totalValor = agFiltrados.reduce((sum, ag) =>
-    sum + Number(ag.total_recebimento ?? ag.tipo_valor ?? 0), 0)
+    sum + (ag.status_recebimento === 'PAGO' ? Number(ag.total_recebimento ?? 0) : 0), 0)
 
   return (
     <>
@@ -375,7 +378,7 @@ export default function RecebimentosPage() {
                 ['AGENDADO', 'CONFIRMADO', 'AGUARDANDO', 'ATENDIDO'].includes(ag.status)
               )
               const totalGrupo = grupo.reduce((sum, ag) =>
-                sum + Number(ag.total_recebimento ?? ag.tipo_valor ?? 0), 0)
+                sum + (ag.status_recebimento === 'PAGO' ? Number(ag.total_recebimento ?? 0) : 0), 0)
 
               // Agrupa os PAGO por lote (movimento ou título A Prazo)
               const movimentosEstorno = new Map<string, AgendamentoListItem[]>()
