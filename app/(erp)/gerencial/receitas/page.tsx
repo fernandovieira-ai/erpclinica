@@ -6,6 +6,16 @@ import { toast } from 'sonner'
 import { ArrowLeft, Printer, FileSpreadsheet, Search, Loader2 } from 'lucide-react'
 import { gerarHtmlRelatorioReceitas, type ItemRelatorioReceita, type ResumoPorFormaReceita } from '@/components/gerencial/relatorioReceitasPrint'
 
+interface ProfissionalOpcao {
+  id:   number
+  nome: string
+}
+
+interface TipoProcedimentoOpcao {
+  id:        number
+  descricao: string
+}
+
 interface Resumo {
   qtd_atendimentos:   number
   valor_bruto:        number
@@ -61,6 +71,10 @@ export default function RelatorioReceitasPage() {
   const [inicio, setInicio]           = useState(primeiroDiaMesAtual)
   const [fim, setFim]                 = useState(ultimoDiaMesAtual)
   const [busca, setBusca]             = useState('')
+  const [profissionalId, setProfissionalId] = useState(0)
+  const [profissionais, setProfissionais]   = useState<ProfissionalOpcao[]>([])
+  const [tipoId, setTipoId]           = useState(0)
+  const [tipos, setTipos]             = useState<TipoProcedimentoOpcao[]>([])
   const [dados, setDados]             = useState<RespostaRelatorio | null>(null)
   const [loading, setLoading]         = useState(false)
   const [imprimindo, setImprimindo]   = useState(false)
@@ -73,6 +87,8 @@ export default function RelatorioReceitasPage() {
       const sp = new URLSearchParams()
       if (inicio && fim) { sp.set('inicio', inicio); sp.set('fim', fim) }
       if (busca.trim())  sp.set('busca', busca.trim())
+      if (profissionalId) sp.set('profissional_id', String(profissionalId))
+      if (tipoId)          sp.set('tipo_id', String(tipoId))
       const res  = await fetch(`/api/gerencial/receitas?${sp}`)
       const json: RespostaRelatorio = await res.json()
       if (!res.ok) { toast.error(json.erro || 'Erro ao carregar relatório'); return }
@@ -80,9 +96,20 @@ export default function RelatorioReceitasPage() {
     } finally {
       setLoading(false)
     }
-  }, [inicio, fim, busca])
+  }, [inicio, fim, busca, profissionalId, tipoId])
 
   useEffect(() => { carregar() }, [carregar])
+
+  useEffect(() => {
+    fetch('/api/clinica/profissionais')
+      .then((r) => r.json())
+      .then((d) => setProfissionais((d.dados ?? []).map((p: { id: number; nome: string }) => ({ id: p.id, nome: p.nome }))))
+      .catch(() => {})
+    fetch('/api/clinica/tipos-agendamento?ativo=true&limit=100')
+      .then((r) => r.json())
+      .then((d) => setTipos((d.dados ?? []).map((t: { id: number; descricao: string }) => ({ id: t.id, descricao: t.descricao }))))
+      .catch(() => {})
+  }, [])
 
   async function imprimir() {
     if (!dados || dados.itens.length === 0) return
@@ -99,6 +126,8 @@ export default function RelatorioReceitasPage() {
         inicio: inicio || null,
         fim:    fim    || null,
         buscaTexto:  busca.trim() || null,
+        medicoTexto: profissionais.find((p) => p.id === profissionalId)?.nome || null,
+        tipoTexto:   tipos.find((t) => t.id === tipoId)?.descricao || null,
         empresaNome: dados.empresa_nome,
         empresaLogo: dados.empresa_logo,
         emitidoPor:  dados.emitido_por,
@@ -200,6 +229,34 @@ export default function RelatorioReceitasPage() {
               onChange={(e) => setBusca(e.target.value)}
               style={{ paddingLeft: 32, width: '100%' }}
             />
+          </div>
+          <div style={{ minWidth: 200 }}>
+            <label style={labelStyle}>Médico (executante)</label>
+            <select
+              className="input-field"
+              value={profissionalId}
+              onChange={(e) => setProfissionalId(Number(e.target.value))}
+              style={{ width: '100%' }}
+            >
+              <option value={0}>Todos os médicos</option>
+              {profissionais.map((p) => (
+                <option key={p.id} value={p.id}>{p.nome}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ minWidth: 200 }}>
+            <label style={labelStyle}>Tipo de procedimento</label>
+            <select
+              className="input-field"
+              value={tipoId}
+              onChange={(e) => setTipoId(Number(e.target.value))}
+              style={{ width: '100%' }}
+            >
+              <option value={0}>Todos os tipos</option>
+              {tipos.map((t) => (
+                <option key={t.id} value={t.id}>{t.descricao}</option>
+              ))}
+            </select>
           </div>
           {(inicio || fim) && (
             <button className="btn-ghost" onClick={() => { setInicio(''); setFim('') }} style={{ padding: '7px 10px', fontSize: 12 }}>

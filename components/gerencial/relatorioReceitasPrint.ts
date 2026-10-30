@@ -33,6 +33,8 @@ export interface OpcoesRelatorioReceita {
   inicio:       string | null   // null = sem filtro de período (traz todo o histórico)
   fim:          string | null
   buscaTexto:   string | null
+  medicoTexto:  string | null
+  tipoTexto:    string | null
   empresaNome:  string
   empresaLogo:  string | null
   emitidoPor:   string
@@ -119,6 +121,8 @@ ${CSS_EXTRA}
   ${filtrosHtml([
     { k: 'Período', v: op.inicio && op.fim ? `${dataBR(op.inicio)} até ${dataBR(op.fim)}` : 'Todos os lançamentos' },
     { k: 'Busca',   v: op.buscaTexto || '<Todos>' },
+    { k: 'Médico',  v: op.medicoTexto || '<Todos>' },
+    { k: 'Tipo',    v: op.tipoTexto || '<Todos>' },
   ])}
 
   <table>

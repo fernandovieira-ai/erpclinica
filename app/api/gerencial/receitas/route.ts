@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 
-// GET /api/gerencial/receitas?inicio=YYYY-MM-DD&fim=YYYY-MM-DD&busca=
+// GET /api/gerencial/receitas?inicio=YYYY-MM-DD&fim=YYYY-MM-DD&busca=&profissional_id=&tipo_id=
 // Lançamento a lançamento (1 linha por recebimento pago), no formato do relatório gerencial de receita
 // (planilha "RECEITA" do cliente): paciente, procedimento, médico executante/solicitante, forma de
 // pagamento, taxa de cartão e repasse profissional x clínica — tudo já calculado no momento do
@@ -15,6 +15,18 @@ export async function GET(req: NextRequest) {
   const inicio = sp.get('inicio') || ''
   const fim    = sp.get('fim') || ''
   const busca  = sp.get('busca')?.trim() || ''
+
+  const profissionalIdRaw = sp.get('profissional_id')
+  const profissionalId    = profissionalIdRaw ? Number(profissionalIdRaw) : null
+  if (profissionalIdRaw && (!Number.isInteger(profissionalId) || profissionalId! <= 0)) {
+    return NextResponse.json({ erro: 'profissional_id inválido' }, { status: 400 })
+  }
+
+  const tipoIdRaw = sp.get('tipo_id')
+  const tipoId    = tipoIdRaw ? Number(tipoIdRaw) : null
+  if (tipoIdRaw && (!Number.isInteger(tipoId) || tipoId! <= 0)) {
+    return NextResponse.json({ erro: 'tipo_id inválido' }, { status: 400 })
+  }
 
   if ((inicio && !fim) || (fim && !inicio)) {
     return NextResponse.json({ erro: 'Informe início e fim do período' }, { status: 400 })
@@ -39,6 +51,14 @@ export async function GET(req: NextRequest) {
     conds.push(`(pac.nome ILIKE $${pi} OR tp.descricao ILIKE $${pi})`)
     params.push(`%${busca}%`)
     pi++
+  }
+  if (profissionalId) {
+    conds.push(`a.profissional_id = $${pi++}`)
+    params.push(profissionalId)
+  }
+  if (tipoId) {
+    conds.push(`a.tipo_id = $${pi++}`)
+    params.push(tipoId)
   }
 
   try {
