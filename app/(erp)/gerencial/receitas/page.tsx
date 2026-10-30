@@ -7,8 +7,9 @@ import { ArrowLeft, Printer, FileSpreadsheet, Search, Loader2 } from 'lucide-rea
 import { gerarHtmlRelatorioReceitas, type ItemRelatorioReceita, type ResumoPorFormaReceita } from '@/components/gerencial/relatorioReceitasPrint'
 
 interface ProfissionalOpcao {
-  id:   number
-  nome: string
+  id:       number
+  nome:     string
+  tipo_ids: number[]
 }
 
 interface TipoProcedimentoOpcao {
@@ -73,7 +74,7 @@ export default function RelatorioReceitasPage() {
   const [busca, setBusca]             = useState('')
   const [profissionalId, setProfissionalId] = useState(0)
   const [profissionais, setProfissionais]   = useState<ProfissionalOpcao[]>([])
-  const [tipoId, setTipoId]           = useState(0)
+  const [tipoIds, setTipoIds]         = useState<Set<number>>(new Set())
   const [tipos, setTipos]             = useState<TipoProcedimentoOpcao[]>([])
   const [dados, setDados]             = useState<RespostaRelatorio | null>(null)
   const [loading, setLoading]         = useState(false)
@@ -103,7 +104,7 @@ export default function RelatorioReceitasPage() {
   useEffect(() => {
     fetch('/api/clinica/profissionais')
       .then((r) => r.json())
-      .then((d) => setProfissionais((d.dados ?? []).map((p: { id: number; nome: string }) => ({ id: p.id, nome: p.nome }))))
+      .then((d) => setProfissionais((d.dados ?? []).map((p: { id: number; nome: string; tipo_ids?: number[] }) => ({ id: p.id, nome: p.nome, tipo_ids: p.tipo_ids ?? [] }))))
       .catch(() => {})
     fetch('/api/clinica/tipos-agendamento?ativo=true&limit=100')
       .then((r) => r.json())
@@ -111,19 +112,47 @@ export default function RelatorioReceitasPage() {
       .catch(() => {})
   }, [])
 
+  // Quando um médico é escolhido, a lista de tipos se restringe aos que ele
+  // realmente realiza (tab_profissional_tipo_percentual) — mesmo critério já
+  // usado na Agenda pra filtrar tipos por profissional.
+  const tiposDisponiveis = useMemo(() => {
+    if (!profissionalId) return tipos
+    const prof = profissionais.find((p) => p.id === profissionalId)
+    if (!prof) return tipos
+    return tipos.filter((t) => prof.tipo_ids.includes(t.id))
+  }, [tipos, profissionais, profissionalId])
+
+  // Tira da marcação os tipos que não fazem mais sentido pro médico escolhido.
+  useEffect(() => {
+    setTipoIds((atual) => {
+      const disponiveis = new Set(tiposDisponiveis.map((t) => t.id))
+      const novo = new Set([...atual].filter((id) => disponiveis.has(id)))
+      return novo.size === atual.size ? atual : novo
+    })
+  }, [tiposDisponiveis])
+
+  function alternarTipo(id: number) {
+    setTipoIds((atual) => {
+      const novo = new Set(atual)
+      if (novo.has(id)) novo.delete(id)
+      else novo.add(id)
+      return novo
+    })
+  }
+
   const itensFiltrados = useMemo(() => {
     if (!dados) return []
     const termo = busca.trim().toLowerCase()
     return dados.itens.filter((i) => {
       if (profissionalId && i.executante_id !== profissionalId) return false
-      if (tipoId && i.tipo_id !== tipoId) return false
+      if (tipoIds.size > 0 && (i.tipo_id == null || !tipoIds.has(i.tipo_id))) return false
       if (termo) {
         const alvo = `${i.paciente_nome ?? ''} ${i.procedimento ?? ''}`.toLowerCase()
         if (!alvo.includes(termo)) return false
       }
       return true
     })
-  }, [dados, busca, profissionalId, tipoId])
+  }, [dados, busca, profissionalId, tipoIds])
 
   const resumoFiltrado = useMemo<Resumo>(() => ({
     qtd_atendimentos:   itensFiltrados.length,
@@ -146,6 +175,10 @@ export default function RelatorioReceitasPage() {
     return [...mapa.values()].sort((a, b) => b.valor_bruto - a.valor_bruto)
   }, [itensFiltrados])
 
+  const tipoTexto = tipoIds.size > 0
+    ? tipos.filter((t) => tipoIds.has(t.id)).map((t) => t.descricao).join(', ')
+    : null
+
   async function imprimir() {
     if (!dados || itensFiltrados.length === 0) return
     setImprimindo(true)
@@ -162,7 +195,7 @@ export default function RelatorioReceitasPage() {
         fim:    fim    || null,
         buscaTexto:  busca.trim() || null,
         medicoTexto: profissionais.find((p) => p.id === profissionalId)?.nome || null,
-        tipoTexto:   tipos.find((t) => t.id === tipoId)?.descricao || null,
+        tipoTexto,
         empresaNome: dados.empresa_nome,
         empresaLogo: dados.empresa_logo,
         emitidoPor:  dados.emitido_por,
@@ -279,19 +312,27 @@ export default function RelatorioReceitasPage() {
               ))}
             </select>
           </div>
-          <div style={{ minWidth: 200 }}>
-            <label style={labelStyle}>Tipo de procedimento</label>
-            <select
-              className="input-field"
-              value={tipoId}
-              onChange={(e) => setTipoId(Number(e.target.value))}
-              style={{ width: '100%' }}
+          <div style={{ minWidth: 240 }}>
+            <label style={labelStyle}>
+              Tipo de procedimento {tipoIds.size > 0 ? `(${tipoIds.size} marcado${tipoIds.size > 1 ? 's' : ''})` : '(marque os que quer somar)'}
+            </label>
+            <div
+              style={{
+                display: 'flex', flexWrap: 'wrap', gap: '4px 10px',
+                padding: '6px 8px', border: '1px solid var(--borda)', borderRadius: 6,
+                maxHeight: 84, overflowY: 'auto', background: 'var(--bg-card)',
+              }}
             >
-              <option value={0}>Todos os tipos</option>
-              {tipos.map((t) => (
-                <option key={t.id} value={t.id}>{t.descricao}</option>
+              {tiposDisponiveis.length === 0 && (
+                <span style={{ fontSize: 12, color: 'var(--texto-terciario)' }}>Nenhum tipo disponível</span>
+              )}
+              {tiposDisponiveis.map((t) => (
+                <label key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, whiteSpace: 'nowrap' }}>
+                  <input type="checkbox" checked={tipoIds.has(t.id)} onChange={() => alternarTipo(t.id)} />
+                  {t.descricao}
+                </label>
               ))}
-            </select>
+            </div>
           </div>
           {(inicio || fim) && (
             <button className="btn-ghost" onClick={() => { setInicio(''); setFim('') }} style={{ padding: '7px 10px', fontSize: 12 }}>
