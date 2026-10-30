@@ -2,11 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 
-// GET /api/gerencial/receitas?inicio=YYYY-MM-DD&fim=YYYY-MM-DD&busca=&profissional_id=&tipo_id=
+// GET /api/gerencial/receitas?inicio=YYYY-MM-DD&fim=YYYY-MM-DD&busca=
 // Lançamento a lançamento (1 linha por recebimento pago), no formato do relatório gerencial de receita
 // (planilha "RECEITA" do cliente): paciente, procedimento, médico executante/solicitante, forma de
 // pagamento, taxa de cartão e repasse profissional x clínica — tudo já calculado no momento do
 // recebimento (tab_recebimento_consulta.valor_profissional/valor_clinica), não recalculado aqui.
+// Filtros de médico/tipo de procedimento são aplicados no cliente (ver app/(erp)/gerencial/receitas/page.tsx)
+// sobre o período já carregado, pra não bater no banco a cada troca de seleção — por isso os itens
+// trazem executante_id/tipo_id além dos nomes.
 export async function GET(req: NextRequest) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
@@ -15,18 +18,6 @@ export async function GET(req: NextRequest) {
   const inicio = sp.get('inicio') || ''
   const fim    = sp.get('fim') || ''
   const busca  = sp.get('busca')?.trim() || ''
-
-  const profissionalIdRaw = sp.get('profissional_id')
-  const profissionalId    = profissionalIdRaw ? Number(profissionalIdRaw) : null
-  if (profissionalIdRaw && (!Number.isInteger(profissionalId) || profissionalId! <= 0)) {
-    return NextResponse.json({ erro: 'profissional_id inválido' }, { status: 400 })
-  }
-
-  const tipoIdRaw = sp.get('tipo_id')
-  const tipoId    = tipoIdRaw ? Number(tipoIdRaw) : null
-  if (tipoIdRaw && (!Number.isInteger(tipoId) || tipoId! <= 0)) {
-    return NextResponse.json({ erro: 'tipo_id inválido' }, { status: 400 })
-  }
 
   if ((inicio && !fim) || (fim && !inicio)) {
     return NextResponse.json({ erro: 'Informe início e fim do período' }, { status: 400 })
@@ -52,14 +43,6 @@ export async function GET(req: NextRequest) {
     params.push(`%${busca}%`)
     pi++
   }
-  if (profissionalId) {
-    conds.push(`a.profissional_id = $${pi++}`)
-    params.push(profissionalId)
-  }
-  if (tipoId) {
-    conds.push(`a.tipo_id = $${pi++}`)
-    params.push(tipoId)
-  }
 
   try {
     const [{ rows }, { rows: [empresa] }] = await Promise.all([
@@ -67,9 +50,9 @@ export async function GET(req: NextRequest) {
         `SELECT
            rc.id, rc.data_recebimento, rc.total_recebimento,
            pac.nome AS paciente_nome,
-           exec.nome AS executante_nome,
+           a.profissional_id AS executante_id, exec.nome AS executante_nome,
            sol.nome AS solicitante_nome,
-           tp.descricao AS procedimento,
+           a.tipo_id, tp.descricao AS procedimento,
            cp.descricao AS forma_pagamento, cp.tipo_pagamento,
            vc.qtd_parcelas, vc.percentual_mdr_aplicado,
            rc.percentual_profissional, rc.valor_profissional, rc.valor_clinica
@@ -105,8 +88,10 @@ export async function GET(req: NextRequest) {
         id: r.id,
         data_recebimento: r.data_recebimento instanceof Date ? r.data_recebimento.toISOString().slice(0, 10) : String(r.data_recebimento).slice(0, 10),
         paciente_nome: r.paciente_nome,
+        executante_id: r.executante_id,
         executante_nome: r.executante_nome,
         solicitante_nome: r.solicitante_nome,
+        tipo_id: r.tipo_id,
         procedimento: r.procedimento,
         forma_pagamento: r.forma_pagamento,
         tipo_pagamento: r.tipo_pagamento,

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { ArrowLeft, Printer, FileSpreadsheet, Search, Loader2 } from 'lucide-react'
@@ -80,15 +80,15 @@ export default function RelatorioReceitasPage() {
   const [imprimindo, setImprimindo]   = useState(false)
   const [exportando, setExportando]   = useState(false)
 
+  // Só o período vai pro servidor — médico/tipo/busca filtram em memória o
+  // período já carregado, pra não bater no banco (host fora da rede privada
+  // do Railway, cada ida e volta custa latência) a cada troca de seleção.
   const carregar = useCallback(async () => {
     if ((inicio && !fim) || (fim && !inicio)) return
     setLoading(true)
     try {
       const sp = new URLSearchParams()
       if (inicio && fim) { sp.set('inicio', inicio); sp.set('fim', fim) }
-      if (busca.trim())  sp.set('busca', busca.trim())
-      if (profissionalId) sp.set('profissional_id', String(profissionalId))
-      if (tipoId)          sp.set('tipo_id', String(tipoId))
       const res  = await fetch(`/api/gerencial/receitas?${sp}`)
       const json: RespostaRelatorio = await res.json()
       if (!res.ok) { toast.error(json.erro || 'Erro ao carregar relatório'); return }
@@ -96,7 +96,7 @@ export default function RelatorioReceitasPage() {
     } finally {
       setLoading(false)
     }
-  }, [inicio, fim, busca, profissionalId, tipoId])
+  }, [inicio, fim])
 
   useEffect(() => { carregar() }, [carregar])
 
@@ -111,8 +111,43 @@ export default function RelatorioReceitasPage() {
       .catch(() => {})
   }, [])
 
+  const itensFiltrados = useMemo(() => {
+    if (!dados) return []
+    const termo = busca.trim().toLowerCase()
+    return dados.itens.filter((i) => {
+      if (profissionalId && i.executante_id !== profissionalId) return false
+      if (tipoId && i.tipo_id !== tipoId) return false
+      if (termo) {
+        const alvo = `${i.paciente_nome ?? ''} ${i.procedimento ?? ''}`.toLowerCase()
+        if (!alvo.includes(termo)) return false
+      }
+      return true
+    })
+  }, [dados, busca, profissionalId, tipoId])
+
+  const resumoFiltrado = useMemo<Resumo>(() => ({
+    qtd_atendimentos:   itensFiltrados.length,
+    valor_bruto:        itensFiltrados.reduce((acc, i) => acc + i.valor_bruto, 0),
+    valor_taxas:        itensFiltrados.reduce((acc, i) => acc + i.valor_taxa, 0),
+    valor_liquido:      itensFiltrados.reduce((acc, i) => acc + i.valor_liquido, 0),
+    valor_profissional: itensFiltrados.reduce((acc, i) => acc + i.valor_profissional, 0),
+    valor_clinica:      itensFiltrados.reduce((acc, i) => acc + i.valor_clinica, 0),
+  }), [itensFiltrados])
+
+  const porFormaFiltrado = useMemo<ResumoPorFormaReceita[]>(() => {
+    const mapa = new Map<string, ResumoPorFormaReceita>()
+    for (const i of itensFiltrados) {
+      const chave = i.forma_pagamento ?? '—'
+      const atual = mapa.get(chave) ?? { forma_pagamento: chave, qtd: 0, valor_bruto: 0 }
+      atual.qtd += 1
+      atual.valor_bruto += i.valor_bruto
+      mapa.set(chave, atual)
+    }
+    return [...mapa.values()].sort((a, b) => b.valor_bruto - a.valor_bruto)
+  }, [itensFiltrados])
+
   async function imprimir() {
-    if (!dados || dados.itens.length === 0) return
+    if (!dados || itensFiltrados.length === 0) return
     setImprimindo(true)
     const win = window.open('', '_blank', 'width=1100,height=750')
     if (!win) {
@@ -122,7 +157,7 @@ export default function RelatorioReceitasPage() {
     }
     win.document.write('<title>Gerando relatório...</title><body style="font-family:sans-serif;padding:24px;color:#555">Gerando relatório...</body>')
     try {
-      const html = gerarHtmlRelatorioReceitas(dados.itens, dados.por_forma, {
+      const html = gerarHtmlRelatorioReceitas(itensFiltrados, porFormaFiltrado, {
         inicio: inicio || null,
         fim:    fim    || null,
         buscaTexto:  busca.trim() || null,
@@ -144,11 +179,11 @@ export default function RelatorioReceitasPage() {
   }
 
   async function exportarExcel() {
-    if (!dados || dados.itens.length === 0) return
+    if (!dados || itensFiltrados.length === 0) return
     setExportando(true)
     try {
       const XLSX = await import('xlsx')
-      const linhas = dados.itens.map((i) => ({
+      const linhas = itensFiltrados.map((i) => ({
         'Data':                       fmtData(i.data_recebimento),
         'Paciente':                   i.paciente_nome ?? '',
         'Procedimento':               i.procedimento ?? '',
@@ -163,10 +198,10 @@ export default function RelatorioReceitasPage() {
       linhas.push({
         'Data': '', 'Paciente': '', 'Procedimento': '', 'Executante': '', 'Solicitante': '',
         'Forma de Pagamento':        'TOTAL GERAL',
-        'Taxa (R$)':                 dados.resumo.valor_taxas,
-        'Valor Bruto (R$)':          dados.resumo.valor_bruto,
-        'Repasse Profissional (R$)': dados.resumo.valor_profissional,
-        'Valor Clínica (R$)':        dados.resumo.valor_clinica,
+        'Taxa (R$)':                 resumoFiltrado.valor_taxas,
+        'Valor Bruto (R$)':          resumoFiltrado.valor_bruto,
+        'Repasse Profissional (R$)': resumoFiltrado.valor_profissional,
+        'Valor Clínica (R$)':        resumoFiltrado.valor_clinica,
       })
       const planilha = XLSX.utils.json_to_sheet(linhas)
       planilha['!cols'] = [
@@ -197,11 +232,11 @@ export default function RelatorioReceitasPage() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn-ghost" onClick={exportarExcel} disabled={exportando || !dados?.itens.length}>
+          <button className="btn-ghost" onClick={exportarExcel} disabled={exportando || !itensFiltrados.length}>
             {exportando ? <Loader2 size={15} className="spin" /> : <FileSpreadsheet size={15} />}
             Exportar Excel
           </button>
-          <button className="btn-primary" onClick={imprimir} disabled={imprimindo || !dados?.itens.length}>
+          <button className="btn-primary" onClick={imprimir} disabled={imprimindo || !itensFiltrados.length}>
             {imprimindo ? <Loader2 size={15} className="spin" /> : <Printer size={15} />}
             Imprimir
           </button>
@@ -268,21 +303,21 @@ export default function RelatorioReceitasPage() {
         {/* Resumo */}
         {dados && (
           <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
-            <CardResumo titulo="Atendimentos" valor={String(dados.resumo.qtd_atendimentos)} />
-            <CardResumo titulo="Valor bruto" valor={fmtValor(dados.resumo.valor_bruto)} />
-            <CardResumo titulo="Taxas de cartão" valor={fmtValor(dados.resumo.valor_taxas)} />
-            <CardResumo titulo="Valor líquido" valor={fmtValor(dados.resumo.valor_liquido)} />
-            <CardResumo titulo="Repasse profissionais" valor={fmtValor(dados.resumo.valor_profissional)} />
-            <CardResumo titulo="Valor clínica" valor={fmtValor(dados.resumo.valor_clinica)} />
+            <CardResumo titulo="Atendimentos" valor={String(resumoFiltrado.qtd_atendimentos)} />
+            <CardResumo titulo="Valor bruto" valor={fmtValor(resumoFiltrado.valor_bruto)} />
+            <CardResumo titulo="Taxas de cartão" valor={fmtValor(resumoFiltrado.valor_taxas)} />
+            <CardResumo titulo="Valor líquido" valor={fmtValor(resumoFiltrado.valor_liquido)} />
+            <CardResumo titulo="Repasse profissionais" valor={fmtValor(resumoFiltrado.valor_profissional)} />
+            <CardResumo titulo="Valor clínica" valor={fmtValor(resumoFiltrado.valor_clinica)} />
           </div>
         )}
 
         {/* Resumo por forma de pagamento */}
-        {dados && dados.por_forma.length > 0 && (
+        {dados && porFormaFiltrado.length > 0 && (
           <div className="card" style={{ padding: 12, marginBottom: 16 }}>
             <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: 'var(--texto-secundario)' }}>Por forma de pagamento</div>
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-              {dados.por_forma.map((f) => (
+              {porFormaFiltrado.map((f) => (
                 <div key={f.forma_pagamento} style={{ fontSize: 12 }}>
                   <strong>{f.forma_pagamento}</strong>: {f.qtd} · {fmtValor(f.valor_bruto)}
                 </div>
@@ -314,11 +349,11 @@ export default function RelatorioReceitasPage() {
                   <tr><td colSpan={10} style={{ textAlign: 'center', padding: 32, color: 'var(--texto-terciario)' }}>Carregando...</td></tr>
                 )}
 
-                {!loading && (!dados || dados.itens.length === 0) && (
+                {!loading && (!dados || itensFiltrados.length === 0) && (
                   <tr><td colSpan={10} style={{ textAlign: 'center', padding: 40, color: 'var(--texto-terciario)' }}>Nenhum recebimento encontrado para o filtro informado</td></tr>
                 )}
 
-                {!loading && dados?.itens.map((i) => (
+                {!loading && itensFiltrados.map((i) => (
                   <tr key={i.id}>
                     <td style={{ fontSize: 12 }}>{fmtData(i.data_recebimento)}</td>
                     <td style={{ fontWeight: 600 }}>{i.paciente_nome || '—'}</td>
@@ -335,14 +370,14 @@ export default function RelatorioReceitasPage() {
                   </tr>
                 ))}
               </tbody>
-              {dados && dados.itens.length > 0 && (
+              {itensFiltrados.length > 0 && (
                 <tfoot>
                   <tr style={{ background: 'var(--cor-primaria)' }}>
                     <td colSpan={6} style={{ fontWeight: 700, color: '#fff', padding: '8px 10px' }}>TOTAL GERAL</td>
-                    <td style={{ textAlign: 'right', fontWeight: 700, color: '#fff' }}>{fmtValor(dados.resumo.valor_taxas)}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 700, color: '#fff' }}>{fmtValor(dados.resumo.valor_bruto)}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 700, color: '#fff' }}>{fmtValor(dados.resumo.valor_profissional)}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 700, color: '#fff' }}>{fmtValor(dados.resumo.valor_clinica)}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 700, color: '#fff' }}>{fmtValor(resumoFiltrado.valor_taxas)}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 700, color: '#fff' }}>{fmtValor(resumoFiltrado.valor_bruto)}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 700, color: '#fff' }}>{fmtValor(resumoFiltrado.valor_profissional)}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 700, color: '#fff' }}>{fmtValor(resumoFiltrado.valor_clinica)}</td>
                   </tr>
                 </tfoot>
               )}

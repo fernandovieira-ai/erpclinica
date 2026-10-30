@@ -11,8 +11,10 @@ export interface ItemRelatorioReceita {
   id:                      number
   data_recebimento:        string   // YYYY-MM-DD
   paciente_nome:           string | null
+  executante_id:           number | null
   executante_nome:         string | null
   solicitante_nome:        string | null
+  tipo_id:                 number | null
   procedimento:            string | null
   forma_pagamento:         string | null
   qtd_parcelas:            number | null
