@@ -1,9 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { ArrowLeft, Printer, FileSpreadsheet, Search, Loader2 } from 'lucide-react'
+import { ArrowLeft, Printer, FileSpreadsheet, Search, Loader2, ChevronDown } from 'lucide-react'
 import { gerarHtmlRelatorioReceitas, type ItemRelatorioReceita, type ResumoPorFormaReceita } from '@/components/gerencial/relatorioReceitasPrint'
 
 interface ProfissionalOpcao {
@@ -76,6 +76,8 @@ export default function RelatorioReceitasPage() {
   const [profissionais, setProfissionais]   = useState<ProfissionalOpcao[]>([])
   const [tipoIds, setTipoIds]         = useState<Set<number>>(new Set())
   const [tipos, setTipos]             = useState<TipoProcedimentoOpcao[]>([])
+  const [tipoDropdownAberto, setTipoDropdownAberto] = useState(false)
+  const tipoDropdownRef = useRef<HTMLDivElement>(null)
   const [dados, setDados]             = useState<RespostaRelatorio | null>(null)
   const [loading, setLoading]         = useState(false)
   const [imprimindo, setImprimindo]   = useState(false)
@@ -130,6 +132,17 @@ export default function RelatorioReceitasPage() {
       return novo.size === atual.size ? atual : novo
     })
   }, [tiposDisponiveis])
+
+  useEffect(() => {
+    if (!tipoDropdownAberto) return
+    function aoClicarFora(e: MouseEvent) {
+      if (tipoDropdownRef.current && !tipoDropdownRef.current.contains(e.target as Node)) {
+        setTipoDropdownAberto(false)
+      }
+    }
+    document.addEventListener('mousedown', aoClicarFora)
+    return () => document.removeEventListener('mousedown', aoClicarFora)
+  }, [tipoDropdownAberto])
 
   function alternarTipo(id: number) {
     setTipoIds((atual) => {
@@ -312,27 +325,49 @@ export default function RelatorioReceitasPage() {
               ))}
             </select>
           </div>
-          <div style={{ minWidth: 240 }}>
-            <label style={labelStyle}>
-              Tipo de procedimento {tipoIds.size > 0 ? `(${tipoIds.size} marcado${tipoIds.size > 1 ? 's' : ''})` : '(marque os que quer somar)'}
-            </label>
-            <div
-              style={{
-                display: 'flex', flexWrap: 'wrap', gap: '4px 10px',
-                padding: '6px 8px', border: '1px solid var(--borda)', borderRadius: 6,
-                maxHeight: 84, overflowY: 'auto', background: 'var(--bg-card)',
-              }}
+          <div ref={tipoDropdownRef} style={{ position: 'relative', minWidth: 220 }}>
+            <label style={labelStyle}>Tipo de procedimento</label>
+            <button
+              type="button"
+              className="input-field"
+              onClick={() => setTipoDropdownAberto((v) => !v)}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', textAlign: 'left' }}
             >
-              {tiposDisponiveis.length === 0 && (
-                <span style={{ fontSize: 12, color: 'var(--texto-terciario)' }}>Nenhum tipo disponível</span>
-              )}
-              {tiposDisponiveis.map((t) => (
-                <label key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, whiteSpace: 'nowrap' }}>
-                  <input type="checkbox" checked={tipoIds.has(t.id)} onChange={() => alternarTipo(t.id)} />
-                  {t.descricao}
-                </label>
-              ))}
-            </div>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {tipoIds.size === 0 ? 'Todos os tipos' : `${tipoIds.size} tipo${tipoIds.size > 1 ? 's' : ''} marcado${tipoIds.size > 1 ? 's' : ''}`}
+              </span>
+              <ChevronDown size={14} style={{ flexShrink: 0, marginLeft: 6 }} />
+            </button>
+            {tipoDropdownAberto && (
+              <div
+                style={{
+                  position: 'absolute', top: '100%', left: 0, marginTop: 4, width: 280, zIndex: 20,
+                  background: 'var(--bg-card)', border: '1px solid var(--borda)', borderRadius: 6,
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.15)', maxHeight: 320, overflowY: 'auto',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', borderBottom: '1px solid var(--borda)' }}>
+                  <button type="button" className="btn-ghost" style={{ fontSize: 11, padding: '2px 6px' }} onClick={() => setTipoIds(new Set(tiposDisponiveis.map((t) => t.id)))}>
+                    Marcar todos
+                  </button>
+                  <button type="button" className="btn-ghost" style={{ fontSize: 11, padding: '2px 6px' }} onClick={() => setTipoIds(new Set())}>
+                    Limpar
+                  </button>
+                </div>
+                {tiposDisponiveis.length === 0 && (
+                  <div style={{ padding: 10, fontSize: 12, color: 'var(--texto-terciario)' }}>Nenhum tipo disponível</div>
+                )}
+                {tiposDisponiveis.map((t) => (
+                  <label
+                    key={t.id}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '6px 10px', cursor: 'pointer' }}
+                  >
+                    <input type="checkbox" checked={tipoIds.has(t.id)} onChange={() => alternarTipo(t.id)} />
+                    {t.descricao}
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
           {(inicio || fim) && (
             <button className="btn-ghost" onClick={() => { setInicio(''); setFim('') }} style={{ padding: '7px 10px', fontSize: 12 }}>
