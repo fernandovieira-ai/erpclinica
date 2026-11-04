@@ -742,6 +742,50 @@ export default function AgendamentoPage() {
         display: 'flex', flexDirection: 'column',
         overflow: 'auto',
       }}>
+        {/* Ações rápidas */}
+        <div style={{ padding: '12px 14px 8px', borderBottom: '0.5px solid var(--borda-suave)' }}>
+          <button
+            onClick={() => setBuscaPacienteOpen(true)}
+            style={{
+              width: '100%',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              padding: '7px 10px', fontSize: 11.5, fontWeight: 600,
+              background: 'none', border: '1px dashed var(--cor-primaria)', borderRadius: 5,
+              color: 'var(--cor-primaria)', cursor: 'pointer',
+            }}
+          >
+            <Search size={12} /> Consultar Paciente
+          </button>
+
+          <button
+            onClick={() => setBloqueioModalOpen(true)}
+            title="Bloquear o dia todo ou uma faixa de horário de um profissional (pontual, não altera a grade fixa)"
+            style={{
+              width: '100%', marginTop: 6,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              padding: '7px 10px', fontSize: 11.5, fontWeight: 600,
+              background: 'none', border: '1px dashed #E24B4A', borderRadius: 5,
+              color: '#E24B4A', cursor: 'pointer',
+            }}
+          >
+            <Ban size={12} /> Bloquear Agenda
+          </button>
+
+          <button
+            onClick={abrirEncaixe}
+            title="Criar um agendamento furando o conflito de horário e a disponibilidade do profissional — ação explícita, fica marcada como encaixe"
+            style={{
+              width: '100%', marginTop: 6,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              padding: '7px 10px', fontSize: 11.5, fontWeight: 600,
+              background: 'none', border: '1px dashed #F59E0B', borderRadius: 5,
+              color: '#F59E0B', cursor: 'pointer',
+            }}
+          >
+            <Zap size={12} /> Encaixar Paciente
+          </button>
+        </div>
+
         {/* Navegação do mês */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -849,59 +893,24 @@ export default function AgendamentoPage() {
           }}>
             Legenda
           </div>
-          {Object.entries(STATUS_LABEL).map(([k, v]) => (
-            <div key={k} style={{
-              display: 'flex', alignItems: 'center', gap: 7,
-              fontSize: 12, color: 'var(--texto-secundario)', marginBottom: 7,
-            }}>
-              <div style={{
-                width: 9, height: 9, borderRadius: 2,
-                background: STATUS_COLOR[k], flexShrink: 0,
-              }} />
-              {v}
-            </div>
-          ))}
-
-          <button
-            onClick={() => setBuscaPacienteOpen(true)}
-            style={{
-              width: '100%', marginTop: 6,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              padding: '7px 10px', fontSize: 11.5, fontWeight: 600,
-              background: 'none', border: '1px dashed var(--cor-primaria)', borderRadius: 5,
-              color: 'var(--cor-primaria)', cursor: 'pointer',
-            }}
-          >
-            <Search size={12} /> Consultar Paciente
-          </button>
-
-          <button
-            onClick={() => setBloqueioModalOpen(true)}
-            title="Bloquear o dia todo ou uma faixa de horário de um profissional (pontual, não altera a grade fixa)"
-            style={{
-              width: '100%', marginTop: 6,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              padding: '7px 10px', fontSize: 11.5, fontWeight: 600,
-              background: 'none', border: '1px dashed #E24B4A', borderRadius: 5,
-              color: '#E24B4A', cursor: 'pointer',
-            }}
-          >
-            <Ban size={12} /> Bloquear Agenda
-          </button>
-
-          <button
-            onClick={abrirEncaixe}
-            title="Criar um agendamento furando o conflito de horário e a disponibilidade do profissional — ação explícita, fica marcada como encaixe"
-            style={{
-              width: '100%', marginTop: 6,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              padding: '7px 10px', fontSize: 11.5, fontWeight: 600,
-              background: 'none', border: '1px dashed #F59E0B', borderRadius: 5,
-              color: '#F59E0B', cursor: 'pointer',
-            }}
-          >
-            <Zap size={12} /> Encaixar Paciente
-          </button>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 10 }}>
+            {[['AGENDADO', 'ATENDIDO'], ['CONFIRMADO', 'FALTOU'], ['AGUARDANDO', 'CANCELADO']].flatMap(([esq, dir]) => [
+              <div key={esq} style={{
+                display: 'flex', alignItems: 'center', gap: 7,
+                fontSize: 12, color: 'var(--texto-secundario)', marginBottom: 7,
+              }}>
+                <div style={{ width: 9, height: 9, borderRadius: 2, background: STATUS_COLOR[esq], flexShrink: 0 }} />
+                {STATUS_LABEL[esq]}
+              </div>,
+              <div key={dir} style={{
+                display: 'flex', alignItems: 'center', gap: 7,
+                fontSize: 12, color: 'var(--texto-secundario)', marginBottom: 7,
+              }}>
+                <div style={{ width: 9, height: 9, borderRadius: 2, background: STATUS_COLOR[dir], flexShrink: 0 }} />
+                {STATUS_LABEL[dir]}
+              </div>,
+            ])}
+          </div>
         </div>
 
         {/* Logo da empresa (cadastro > Dados Gerais) — empurrada pro rodapé via marginTop: auto */}
