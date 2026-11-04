@@ -42,7 +42,13 @@ interface AgendaExcecao {
 
 const DIAS_SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
 
-interface Props { pessoa?: Pessoa; papelInicial?: string }
+interface Props {
+  pessoa?:       Pessoa
+  papelInicial?: string
+  // Uso embutido (ex.: aba "Ficha" do modal de Consultar Paciente, na agenda):
+  // esconde ações de navegação/exclusão que não fazem sentido dentro de um modal.
+  embutido?:     boolean
+}
 
 const UFS: { sigla: string; nome: string }[] = [
   { sigla: 'AC', nome: 'ACRE' },
@@ -75,11 +81,11 @@ const UFS: { sigla: string; nome: string }[] = [
 ]
 
 // Linha de formulário estilo ERP: Label: [campo]
-function FormRow({ label, children, fullWidth }: { label: string; children: React.ReactNode; fullWidth?: boolean }) {
+function FormRow({ label, children, fullWidth, labelWidth = 110 }: { label: string; children: React.ReactNode; fullWidth?: boolean; labelWidth?: number }) {
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: fullWidth ? '1fr' : '110px 1fr',
+      gridTemplateColumns: fullWidth ? '1fr' : `${labelWidth}px minmax(0, 1fr)`,
       alignItems: 'center',
       gap: '2px 6px',
       minHeight: 26,
@@ -93,9 +99,21 @@ function FormRow({ label, children, fullWidth }: { label: string; children: Reac
           {label}
         </label>
       )}
-      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 4, alignItems: 'center', minWidth: 0 }}>
         {children}
       </div>
+    </div>
+  )
+}
+
+// Duas FormRow lado a lado — ficha mais compacta. Label menor que o padrão
+// (84px) pra sobrar espaço de verdade pro campo quando a coluna é estreita
+// (ex.: dentro do modal de Consultar Paciente, mais apertado que a página cheia).
+function FormRowDupla({ a, b, labelWidth = 84 }: { a: { label: string; node: React.ReactNode }; b: { label: string; node: React.ReactNode }; labelWidth?: number }) {
+  return (
+    <div style={{ display: 'flex', gap: 10, minWidth: 0 }}>
+      <div style={{ flex: 1, minWidth: 0 }}><FormRow label={a.label} labelWidth={labelWidth}>{a.node}</FormRow></div>
+      <div style={{ flex: 1, minWidth: 0 }}><FormRow label={b.label} labelWidth={labelWidth}>{b.node}</FormRow></div>
     </div>
   )
 }
@@ -254,7 +272,7 @@ function FotoCaptura({ foto, onChange }: { foto?: string | null; onChange: (v: s
   function confirmar() { onChange(capturada); setCapturada(null); setModo('idle') }
   function cancelar()  { pararStream(); setCapturada(null); setModo('idle') }
 
-  const AVATAR = 110
+  const AVATAR = 100
 
   return (
     <>
@@ -509,7 +527,7 @@ function mascaraCpfCnpj(valor: string, pj: boolean): string {
 const ABAS_PESSOA = ['Principal', 'Financeiro', 'Fiscal / Obs', 'Agenda', 'Atendimentos', 'Consultas'] as const
 type AbaPessoa = typeof ABAS_PESSOA[number]
 
-export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
+export default function PessoaFormPage({ pessoa, papelInicial, embutido }: Props) {
   const router  = useRouter()
   const [saving,       setSaving]      = useState(false)
   const [deleting,     setDeleting]    = useState(false)
@@ -524,11 +542,14 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
   const [tiposCobranca, setTiposCobranca] = useState<{ cod_tipo_cobranca: number; des_tipo_cobranca: string }[]>([])
 
   useEffect(() => {
+    // Embutido (modal de Consultar Paciente) só mostra a aba Principal — a
+    // aba Financeiro, única consumidora disso, nunca é alcançada ali.
+    if (embutido) return
     fetch('/api/cadastro/formas-pagamento?ativo=true&limit=200')
       .then(r => r.json())
       .then(d => setTiposCobranca(d.dados ?? []))
       .catch(() => {})
-  }, [])
+  }, [embutido])
 
   // ── Agenda do profissional ───────────────────────────────
   const [agenda,            setAgenda]            = useState<AgendaDia[]>([])
@@ -1055,21 +1076,23 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
         borderBottom: '1px solid var(--borda-media)',
         position: 'sticky', top: 0, zIndex: 20,
       }}>
-        <button type="button" onClick={() => router.push(listaHref)}
-          style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
-            background: 'none', border: '1px solid var(--borda-media)', borderRadius: 3,
-            fontSize: 12, cursor: 'pointer', color: 'var(--texto-secundario)' }}>
-          <ArrowLeft size={13} /> Voltar
-        </button>
+        {!embutido && (<>
+          <button type="button" onClick={() => router.push(listaHref)}
+            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
+              background: 'none', border: '1px solid var(--borda-media)', borderRadius: 3,
+              fontSize: 12, cursor: 'pointer', color: 'var(--texto-secundario)' }}>
+            <ArrowLeft size={13} /> Voltar
+          </button>
 
-        <div style={{ width: 1, height: 18, backgroundColor: 'var(--borda-media)', margin: '0 4px' }} />
+          <div style={{ width: 1, height: 18, backgroundColor: 'var(--borda-media)', margin: '0 4px' }} />
 
-        <button type="button" onClick={() => router.push(novoHref)}
-          style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
-            background: 'none', border: '1px solid var(--borda-media)', borderRadius: 3,
-            fontSize: 12, cursor: 'pointer', color: 'var(--texto-secundario)' }}>
-          <Plus size={13} /> Nova Pessoa
-        </button>
+          <button type="button" onClick={() => router.push(novoHref)}
+            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
+              background: 'none', border: '1px solid var(--borda-media)', borderRadius: 3,
+              fontSize: 12, cursor: 'pointer', color: 'var(--texto-secundario)' }}>
+            <Plus size={13} /> Nova Pessoa
+          </button>
+        </>)}
 
         <button type="submit" disabled={saving}
           style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 14px',
@@ -1079,7 +1102,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
           <Save size={13} /> {saving ? 'Salvando...' : 'Salvar Cadastro'}
         </button>
 
-        {pessoa && (
+        {pessoa && !embutido && (
           <button type="button" onClick={desativar} disabled={deleting}
             style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
               background: 'none', border: '1px solid var(--cor-erro)', borderRadius: 3,
@@ -1088,7 +1111,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
           </button>
         )}
 
-        {pessoa && (
+        {pessoa && !embutido && (
           <button type="button" onClick={excluir} disabled={excluding}
             style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
               background: 'var(--cor-erro)', color: '#fff', border: 'none', borderRadius: 3,
@@ -1105,7 +1128,8 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
         )}
       </div>
 
-      {/* ── Abas ────────────────────────────────────────────── */}
+      {/* ── Abas — embutido (modal de Consultar Paciente) mostra só Principal ── */}
+      {!embutido && (
       <div style={{
         display: 'flex', gap: 0,
         backgroundColor: 'var(--bg-page)',
@@ -1143,6 +1167,7 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
           )
         })}
       </div>
+      )}
 
       {/* ── Corpo do formulário ──────────────────────────────── */}
       <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto', flex: 1 }}>
@@ -1151,16 +1176,16 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
         {/* ══ SEÇÃO PRINCIPAL ════════════════════════════════════ */}
         <Secao titulo="Principal">
 
-          {/* Layout 3 colunas: Foto | Identificação | Dados pessoais */}
-          <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr 1fr', gap: '0 16px', alignItems: 'start' }}>
+          {/* Layout 3 colunas: Foto | Identificação + Endereço | Dados pessoais + Contato */}
+          <div style={{ display: 'grid', gridTemplateColumns: '104px 1fr 1fr', gap: '0 16px', alignItems: 'start' }}>
 
             {/* Col 1 — Foto */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 4 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 28 }}>
               {!pj ? (
                 <FotoCaptura foto={watch('foto') as string | null} onChange={v => setValue('foto', v)} />
               ) : (
                 <div style={{
-                  width: 110, height: 110, borderRadius: 8,
+                  width: 96, height: 96, borderRadius: 8,
                   backgroundColor: 'var(--bg-input)', border: '2px dashed var(--borda-media)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
@@ -1169,70 +1194,92 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
               )}
             </div>
 
-            {/* Col 2 — Nome + Natureza + CPF/CNPJ */}
+            {/* Col 2 — Natureza (à esquerda) + Nome/CPF/RG (ou CNPJ) ao lado, depois Endereço */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <FormRow label="Nome:">
-                <Input {...register('nome')}
-                  style={errors.nome ? { border: '1px solid var(--cor-erro)' } : undefined} />
-              </FormRow>
-              {errors.nome && <span style={{ fontSize: 11, color: 'var(--cor-erro)', paddingLeft: 116 }}>{errors.nome.message}</span>}
-              <FormRow label="Nome Fantasia:">
-                <Input {...register('nome_fantasia')} />
-              </FormRow>
-
-              {/* Natureza */}
-              <div style={{ display: 'flex', gap: 16, paddingLeft: 116, marginTop: 2 }}>
-                <fieldset style={{ border: '1px solid var(--borda-suave)', borderRadius: 3, padding: '4px 8px' }}>
-                  <legend style={{ fontSize: 10, color: 'var(--texto-terciario)', padding: '0 4px' }}>Natureza</legend>
-                  <div style={{ display: 'flex', gap: 12 }}>
+              <div style={{ display: 'flex', gap: 4, alignItems: 'flex-start' }}>
+                <fieldset style={{ border: '1px solid var(--borda-suave)', borderRadius: 3, padding: '3px 6px', width: 70, flexShrink: 0, boxSizing: 'border-box' }}>
+                  <legend style={{ fontSize: 9, color: 'var(--texto-terciario)', padding: '0 3px' }}>Natureza</legend>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                     {[{ v: 'F', l: 'Física' }, { v: 'J', l: 'Jurídica' }].map(({ v, l }) => (
-                      <label key={v} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }}>
+                      <label key={v} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                         <input type="radio" value={v} {...register('tipo_pessoa', { onChange: () => setValue('cpf_cnpj', '') })} /> {l}
                       </label>
                     ))}
                   </div>
                 </fieldset>
+
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <FormRow label="Nome:">
+                    <Input {...register('nome')}
+                      style={errors.nome ? { border: '1px solid var(--cor-erro)' } : undefined} />
+                  </FormRow>
+                  {errors.nome && <span style={{ fontSize: 11, color: 'var(--cor-erro)' }}>{errors.nome.message}</span>}
+
+                  {pj ? (<>
+                    <FormRow label="Nome Fantasia:">
+                      <Input {...register('nome_fantasia')} />
+                    </FormRow>
+                    <FormRow label="CNPJ:">
+                      <Input
+                        {...cpfCnpjField}
+                        placeholder="00.000.000/0001-00"
+                        style={{ fontFamily: 'var(--fonte-mono)' }}
+                        onChange={e => {
+                          const masked = mascaraCpfCnpj(e.target.value, pj)
+                          setValue('cpf_cnpj', masked, { shouldValidate: false })
+                        }}
+                        onBlur={e => {
+                          cpfCnpjField.onBlur(e)
+                          verificarCpfDuplicado()
+                        }}
+                      />
+                      <button type="button" onClick={buscarCnpj} disabled={buscandoCnpj}
+                        title="Buscar dados na Receita Federal"
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 3,
+                          padding: '3px 8px', whiteSpace: 'nowrap',
+                          background: 'none', border: '1px solid var(--borda-media)',
+                          borderRadius: 3, fontSize: 11, cursor: buscandoCnpj ? 'not-allowed' : 'pointer',
+                          color: buscandoCnpj ? 'var(--texto-terciario)' : 'var(--cor-primaria)',
+                          opacity: buscandoCnpj ? 0.6 : 1,
+                        }}>
+                        <Search size={11} />
+                        {buscandoCnpj ? 'Buscando...' : 'Receita Federal'}
+                      </button>
+                    </FormRow>
+                  </>) : (
+                    <FormRowDupla
+                      a={{
+                        label: 'CPF:',
+                        node: (
+                          <Input
+                            {...cpfCnpjField}
+                            placeholder="000.000.000-00"
+                            style={{ fontFamily: 'var(--fonte-mono)' }}
+                            onChange={e => {
+                              const masked = mascaraCpfCnpj(e.target.value, pj)
+                              setValue('cpf_cnpj', masked, { shouldValidate: false })
+                            }}
+                            onBlur={e => {
+                              cpfCnpjField.onBlur(e)
+                              verificarCpfDuplicado()
+                            }}
+                          />
+                        ),
+                      }}
+                      b={{ label: 'RG:', node: <Input {...register('rg_ie')} /> }}
+                    />
+                  )}
+                </div>
               </div>
 
-              <FormRow label={pj ? 'CNPJ:' : 'CPF:'}>
-                <Input
-                  {...cpfCnpjField}
-                  placeholder={pj ? '00.000.000/0001-00' : '000.000.000-00'}
-                  style={{ fontFamily: 'var(--fonte-mono)' }}
-                  onChange={e => {
-                    const masked = mascaraCpfCnpj(e.target.value, pj)
-                    setValue('cpf_cnpj', masked, { shouldValidate: false })
-                  }}
-                  onBlur={e => {
-                    cpfCnpjField.onBlur(e)
-                    verificarCpfDuplicado()
-                  }}
-                />
-                {pj && (
-                  <button type="button" onClick={buscarCnpj} disabled={buscandoCnpj}
-                    title="Buscar dados na Receita Federal"
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 3,
-                      padding: '3px 8px', whiteSpace: 'nowrap',
-                      background: 'none', border: '1px solid var(--borda-media)',
-                      borderRadius: 3, fontSize: 11, cursor: buscandoCnpj ? 'not-allowed' : 'pointer',
-                      color: buscandoCnpj ? 'var(--texto-terciario)' : 'var(--cor-primaria)',
-                      opacity: buscandoCnpj ? 0.6 : 1,
-                    }}>
-                    <Search size={11} />
-                    {buscandoCnpj ? 'Buscando...' : 'Receita Federal'}
-                  </button>
-                )}
-              </FormRow>
-
-              <FormRow label={pj ? 'IE-ST:' : 'RG:'}>
-                <Input {...register('rg_ie')} />
-              </FormRow>
               {pj && (
-                <FormRow label="I.M.:">
-                  <Input {...register('im')} />
-                </FormRow>
+                <FormRowDupla
+                  a={{ label: 'IE-ST:', node: <Input {...register('rg_ie')} /> }}
+                  b={{ label: 'I.M.:', node: <Input {...register('im')} /> }}
+                />
               )}
+
               {(indProfissional || indSolicitante) && (
                 <FormRow label="CRM:">
                   <Input {...register('crm')} style={{ width: 100, fontFamily: 'var(--fonte-mono)' }} />
@@ -1242,67 +1289,126 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
                   </Select>
                 </FormRow>
               )}
+
+              {/* Endereço — mesmo recuo da caixa Natureza, pra alinhar com Nome/CPF */}
+              <div style={{ paddingLeft: 74, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <FormRow label="CEP:">
+                  <Input {...register('cep')} style={{ width: 90, fontFamily: 'var(--fonte-mono)' }} placeholder="00000-000" />
+                  <button
+                    type="button"
+                    onClick={buscarCep}
+                    disabled={buscandoCep}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 3, padding: '3px 8px',
+                      background: 'none', border: '1px solid var(--borda-media)', borderRadius: 3,
+                      fontSize: 11, cursor: buscandoCep ? 'not-allowed' : 'pointer',
+                      color: buscandoCep ? 'var(--texto-terciario)' : 'var(--texto-secundario)',
+                      whiteSpace: 'nowrap', opacity: buscandoCep ? 0.6 : 1,
+                    }}
+                  >
+                    <Search size={11} /> {buscandoCep ? 'Buscando...' : 'Buscar'}
+                  </button>
+                </FormRow>
+                <FormRow label="Logradouro:">
+                  <Input {...register('logradouro')} />
+                </FormRow>
+                <FormRow label="Número:">
+                  <Input {...register('numero')} style={{ width: 70 }} />
+                  <label style={{ fontSize: 12, color: 'var(--texto-secundario)', whiteSpace: 'nowrap' }}>Compl.:</label>
+                  <Input {...register('complemento')} />
+                </FormRow>
+                <FormRow label="Bairro:">
+                  <Input {...register('bairro')} />
+                </FormRow>
+                <FormRow label="UF:">
+                  <Select {...register('uf')} style={{ width: 70 }}>
+                    <option value="">—</option>
+                    {UFS.map(u => <option key={u.sigla} value={u.sigla}>{u.sigla}</option>)}
+                  </Select>
+                  <label style={{ fontSize: 12, color: 'var(--texto-secundario)', whiteSpace: 'nowrap' }}>Cidade:</label>
+                  <Input {...register('cidade')} style={{ flex: 1 }} />
+                </FormRow>
+              </div>
             </div>
 
-            {/* Col 3 — Dados pessoais (apenas PF) */}
+            {/* Col 3 — Dados pessoais (apenas PF) + Contato */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {!pj && (<>
-                <FormRow label="Dt. Nasc.:">
-                  <Input type="date" {...register('data_nascimento')}
-                    style={{ width: 140, fontFamily: 'var(--fonte-mono)' }} />
-                  {(() => {
-                    const dn = watch('data_nascimento')
-                    if (!dn) return null
-                    const hoje = new Date()
-                    const nasc = new Date(dn + 'T00:00:00')
-                    let idade = hoje.getFullYear() - nasc.getFullYear()
-                    const m = hoje.getMonth() - nasc.getMonth()
-                    if (m < 0 || (m === 0 && hoje.getDate() < nasc.getDate())) idade--
-                    if (idade < 0 || idade > 150) return null
-                    return (
-                      <span style={{
-                        marginLeft: 6, fontSize: 12, fontWeight: 600,
-                        color: 'var(--cor-primaria)', whiteSpace: 'nowrap', alignSelf: 'center',
-                      }}>
-                        {idade} {idade === 1 ? 'ano' : 'anos'}
-                      </span>
-                    )
-                  })()}
-                </FormRow>
-                <FormRow label="Sexo:">
-                  <Select {...register('sexo')} style={{ width: 130 }}>
-                    <option value="">—</option>
-                    <option value="F">Feminino</option>
-                    <option value="M">Masculino</option>
-                  </Select>
-                </FormRow>
-                <FormRow label="Cor/Raça:">
-                  <Select {...register('cor_raca')} style={{ width: 160 }}>
-                    <option value="">—</option>
-                    <option value="BRANCA">Branca</option>
-                    <option value="PRETA">Preta</option>
-                    <option value="PARDA">Parda</option>
-                    <option value="AMARELA">Amarela</option>
-                    <option value="INDIGENA">Indígena</option>
-                  </Select>
-                </FormRow>
-                <FormRow label="Estado Civil:">
-                  <Select {...register('estado_civil')} style={{ width: 160 }}>
-                    <option value="">—</option>
-                    <option value="SOLTEIRO">Solteiro(a)</option>
-                    <option value="CASADO">Casado(a)</option>
-                    <option value="DIVORCIADO">Divorciado(a)</option>
-                    <option value="VIUVO">Viúvo(a)</option>
-                    <option value="UNIAO_ESTAVEL">União Estável</option>
-                  </Select>
-                </FormRow>
-                <FormRow label="Naturalidade:">
-                  <Input {...register('naturalidade')} placeholder="Cidade de nascimento" />
-                </FormRow>
-                <FormRow label="Profissão:">
-                  <Input {...register('profissao')} placeholder="Ex: MÉDICO, ENFERMEIRO..." />
-                </FormRow>
-                <div style={{ display: 'flex', gap: 8, paddingLeft: 116, alignItems: 'center', flexWrap: 'wrap' }}>
+                <FormRowDupla
+                  a={{
+                    label: 'Dt. Nasc.:',
+                    node: (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', minWidth: 0, rowGap: 1 }}>
+                        <Input type="date" {...register('data_nascimento')}
+                          style={{ width: 0, flex: '1 1 108px', minWidth: 108, fontFamily: 'var(--fonte-mono)' }} />
+                        {(() => {
+                          const dn = watch('data_nascimento')
+                          if (!dn) return null
+                          const hoje = new Date()
+                          const nasc = new Date(dn + 'T00:00:00')
+                          let idade = hoje.getFullYear() - nasc.getFullYear()
+                          const m = hoje.getMonth() - nasc.getMonth()
+                          if (m < 0 || (m === 0 && hoje.getDate() < nasc.getDate())) idade--
+                          if (idade < 0 || idade > 150) return null
+                          return (
+                            <span style={{
+                              fontSize: 12, fontWeight: 600,
+                              color: 'var(--cor-primaria)', whiteSpace: 'nowrap', flexShrink: 0,
+                            }}>
+                              {idade} {idade === 1 ? 'ano' : 'anos'}
+                            </span>
+                          )
+                        })()}
+                      </div>
+                    ),
+                  }}
+                  labelWidth={78}
+                  b={{
+                    label: 'Cor/Raça:',
+                    node: (
+                      <Select {...register('cor_raca')}>
+                        <option value="">—</option>
+                        <option value="BRANCA">Branca</option>
+                        <option value="PRETA">Preta</option>
+                        <option value="PARDA">Parda</option>
+                        <option value="AMARELA">Amarela</option>
+                        <option value="INDIGENA">Indígena</option>
+                      </Select>
+                    ),
+                  }}
+                />
+                <FormRowDupla
+                  a={{
+                    label: 'Sexo:',
+                    node: (
+                      <Select {...register('sexo')}>
+                        <option value="">—</option>
+                        <option value="F">Feminino</option>
+                        <option value="M">Masculino</option>
+                      </Select>
+                    ),
+                  }}
+                  b={{
+                    label: 'Estado Civil:',
+                    node: (
+                      <Select {...register('estado_civil')}>
+                        <option value="">—</option>
+                        <option value="SOLTEIRO">Solteiro(a)</option>
+                        <option value="CASADO">Casado(a)</option>
+                        <option value="DIVORCIADO">Divorciado(a)</option>
+                        <option value="VIUVO">Viúvo(a)</option>
+                        <option value="UNIAO_ESTAVEL">União Estável</option>
+                      </Select>
+                    ),
+                  }}
+                  labelWidth={92}
+                />
+                <FormRowDupla
+                  a={{ label: 'Naturalidade:', node: <Input {...register('naturalidade')} placeholder="Cidade de nascimento" /> }}
+                  b={{ label: 'Profissão:', node: <Input {...register('profissao')} placeholder="Ex: MÉDICO..." /> }}
+                  labelWidth={100}
+                />
+                <div style={{ display: 'flex', gap: 8, paddingLeft: 106, alignItems: 'center', flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     <span style={{ fontSize: 11, color: 'var(--texto-secundario)', whiteSpace: 'nowrap' }}>Altura (m):</span>
                     <Input
@@ -1342,74 +1448,23 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
                   })()}
                 </div>
               </>)}
-            </div>
-          </div>
 
-          {/* Separador */}
-          <div style={{ height: 1, backgroundColor: 'var(--borda-suave)', margin: '4px 0' }} />
-
-          {/* Endereço + Contato — 2 colunas */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px' }}>
-
-            {/* Endereço */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <FormRow label="CEP:">
-                <Input {...register('cep')} style={{ width: 90, fontFamily: 'var(--fonte-mono)' }} placeholder="00000-000" />
-                <button
-                  type="button"
-                  onClick={buscarCep}
-                  disabled={buscandoCep}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 3, padding: '3px 8px',
-                    background: 'none', border: '1px solid var(--borda-media)', borderRadius: 3,
-                    fontSize: 11, cursor: buscandoCep ? 'not-allowed' : 'pointer',
-                    color: buscandoCep ? 'var(--texto-terciario)' : 'var(--texto-secundario)',
-                    whiteSpace: 'nowrap', opacity: buscandoCep ? 0.6 : 1,
-                  }}
-                >
-                  <Search size={11} /> {buscandoCep ? 'Buscando...' : 'Buscar'}
-                </button>
-              </FormRow>
-              <FormRow label="Logradouro:">
-                <Input {...register('logradouro')} />
-              </FormRow>
-              <FormRow label="Número:">
-                <Input {...register('numero')} style={{ width: 70 }} />
-                <label style={{ fontSize: 12, color: 'var(--texto-secundario)', whiteSpace: 'nowrap' }}>Compl.:</label>
-                <Input {...register('complemento')} />
-              </FormRow>
-              <FormRow label="Bairro:">
-                <Input {...register('bairro')} />
-              </FormRow>
-              <FormRow label="Cidade:">
-                <Input {...register('cidade')} style={{ flex: 1 }} />
-              </FormRow>
-              <FormRow label="UF:">
-                <Select {...register('uf')} style={{ width: 200 }}>
-                  <option value="">—</option>
-                  {UFS.map(u => <option key={u.sigla} value={u.sigla}>{u.nome}</option>)}
-                </Select>
-              </FormRow>
-            </div>
-
-            {/* Contato */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <FormRow label="Telefone:">
-                <Input {...register('telefone')} placeholder="(  )      -    "
-                  style={{ fontFamily: 'var(--fonte-mono)', width: 150 }} />
-              </FormRow>
-              <FormRow label="Celular:">
-                <Input {...register('celular')} placeholder="(00) 00000-0000"
-                  style={{ fontFamily: 'var(--fonte-mono)', width: 150 }}
-                  onChange={e => setValue('celular', maskCelular(e.target.value), { shouldValidate: false })} />
-              </FormRow>
-              <FormRow label="WhatsApp:">
-                <Input {...register('whatsapp')} placeholder="(  )      -    "
-                  style={{ fontFamily: 'var(--fonte-mono)', width: 150 }} />
-              </FormRow>
-              <FormRow label="E-mail:">
-                <Input type="email" {...register('email')} />
-              </FormRow>
+              {/* Contato */}
+              <FormRowDupla
+                a={{ label: 'Telefone:', node: <Input {...register('telefone')} placeholder="(  )      -    " style={{ fontFamily: 'var(--fonte-mono)' }} /> }}
+                b={{
+                  label: 'Celular:',
+                  node: (
+                    <Input {...register('celular')} placeholder="(00) 00000-0000"
+                      style={{ fontFamily: 'var(--fonte-mono)' }}
+                      onChange={e => setValue('celular', maskCelular(e.target.value), { shouldValidate: false })} />
+                  ),
+                }}
+              />
+              <FormRowDupla
+                a={{ label: 'WhatsApp:', node: <Input {...register('whatsapp')} placeholder="(  )      -    " style={{ fontFamily: 'var(--fonte-mono)' }} /> }}
+                b={{ label: 'E-mail:', node: <Input type="email" {...register('email')} /> }}
+              />
               <FormRow label="E-mail NF-e:">
                 <Input type="email" {...register('email_nfe')} />
               </FormRow>
@@ -1420,112 +1475,125 @@ export default function PessoaFormPage({ pessoa, papelInicial }: Props) {
         {/* ══ FILIAÇÃO ════════════════════════════════════════════ */}
         {!pj && (
         <Secao titulo="Filiação">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px' }}>
 
-            {/* PAI */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--texto-secundario)', paddingLeft: 2, letterSpacing: '0.03em' }}>PAI</div>
-              <FormRow label="Nome:">
-                <BuscarPessoa
-                  pessoaId={watch('pai_pessoa_id') as number | null}
-                  nome={watch('pai_nome') as string}
-                  onSelect={(id, nome) => { setValue('pai_pessoa_id', id); setValue('pai_nome', nome) }}
-                  onNomeChange={v => { setValue('pai_nome', v); setValue('pai_pessoa_id', null) }}
-                  onLimpar={() => { setValue('pai_pessoa_id', null); setValue('pai_nome', '') }}
-                  placeholder="Nome do pai..."
-                />
-              </FormRow>
-              <FormRow label="">
+            {/* Coluna esquerda — PAI / MÃE */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--texto-secundario)', width: 34, flexShrink: 0, letterSpacing: '0.03em' }}>PAI</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <FormRow label="Nome:">
+                    <BuscarPessoa
+                      pessoaId={watch('pai_pessoa_id') as number | null}
+                      nome={watch('pai_nome') as string}
+                      onSelect={(id, nome) => { setValue('pai_pessoa_id', id); setValue('pai_nome', nome) }}
+                      onNomeChange={v => { setValue('pai_nome', v); setValue('pai_pessoa_id', null) }}
+                      onLimpar={() => { setValue('pai_pessoa_id', null); setValue('pai_nome', '') }}
+                      placeholder="Nome do pai..."
+                    />
+                  </FormRow>
+                </div>
                 <Check label="É paciente" checked={!!watch('pai_paciente')} onChange={e => setValue('pai_paciente', e.target.checked)} />
-              </FormRow>
-            </div>
+              </div>
 
-            {/* MÃE */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--texto-secundario)', paddingLeft: 2, letterSpacing: '0.03em' }}>MÃE</div>
-              <FormRow label="Nome:">
-                <BuscarPessoa
-                  pessoaId={watch('mae_pessoa_id') as number | null}
-                  nome={watch('mae_nome') as string}
-                  onSelect={(id, nome) => { setValue('mae_pessoa_id', id); setValue('mae_nome', nome) }}
-                  onNomeChange={v => { setValue('mae_nome', v); setValue('mae_pessoa_id', null) }}
-                  onLimpar={() => { setValue('mae_pessoa_id', null); setValue('mae_nome', '') }}
-                  placeholder="Nome da mãe..."
-                />
-              </FormRow>
-              <FormRow label="">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--texto-secundario)', width: 34, flexShrink: 0, letterSpacing: '0.03em' }}>MÃE</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <FormRow label="Nome:">
+                    <BuscarPessoa
+                      pessoaId={watch('mae_pessoa_id') as number | null}
+                      nome={watch('mae_nome') as string}
+                      onSelect={(id, nome) => { setValue('mae_pessoa_id', id); setValue('mae_nome', nome) }}
+                      onNomeChange={v => { setValue('mae_nome', v); setValue('mae_pessoa_id', null) }}
+                      onLimpar={() => { setValue('mae_pessoa_id', null); setValue('mae_nome', '') }}
+                      placeholder="Nome da mãe..."
+                    />
+                  </FormRow>
+                </div>
                 <Check label="É paciente" checked={!!watch('mae_paciente')} onChange={e => setValue('mae_paciente', e.target.checked)} />
-              </FormRow>
+              </div>
             </div>
 
-            {/* CÔNJUGE */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--texto-secundario)', paddingLeft: 2, letterSpacing: '0.03em' }}>CÔNJUGE</div>
-              <FormRow label="Nome:">
-                <BuscarPessoa
-                  pessoaId={watch('conjuge_pessoa_id') as number | null}
-                  nome={watch('conjuge_nome') as string}
-                  onSelect={(id, nome) => { setValue('conjuge_pessoa_id', id); setValue('conjuge_nome', nome) }}
-                  onNomeChange={v => { setValue('conjuge_nome', v); setValue('conjuge_pessoa_id', null) }}
-                  onLimpar={() => { setValue('conjuge_pessoa_id', null); setValue('conjuge_nome', '') }}
-                  placeholder="Nome do cônjuge..."
-                />
-              </FormRow>
-              <FormRow label="">
+            {/* Coluna direita — CÔNJUGE / INDICAÇÃO */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--texto-secundario)', width: 60, flexShrink: 0, letterSpacing: '0.03em' }}>CÔNJUGE</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <FormRow label="Nome:">
+                    <BuscarPessoa
+                      pessoaId={watch('conjuge_pessoa_id') as number | null}
+                      nome={watch('conjuge_nome') as string}
+                      onSelect={(id, nome) => { setValue('conjuge_pessoa_id', id); setValue('conjuge_nome', nome) }}
+                      onNomeChange={v => { setValue('conjuge_nome', v); setValue('conjuge_pessoa_id', null) }}
+                      onLimpar={() => { setValue('conjuge_pessoa_id', null); setValue('conjuge_nome', '') }}
+                      placeholder="Nome do cônjuge..."
+                    />
+                  </FormRow>
+                </div>
                 <Check label="É paciente" checked={!!watch('conjuge_paciente')} onChange={e => setValue('conjuge_paciente', e.target.checked)} />
-              </FormRow>
-            </div>
+              </div>
 
-            {/* INDICAÇÃO */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--texto-secundario)', paddingLeft: 2, letterSpacing: '0.03em' }}>INDICAÇÃO</div>
-              <FormRow label="Nome:">
-                <BuscarPessoa
-                  pessoaId={watch('indicacao_pessoa_id') as number | null}
-                  nome={watch('indicacao_nome') as string}
-                  onSelect={(id, nome) => { setValue('indicacao_pessoa_id', id); setValue('indicacao_nome', nome) }}
-                  onNomeChange={v => { setValue('indicacao_nome', v); setValue('indicacao_pessoa_id', null) }}
-                  onLimpar={() => { setValue('indicacao_pessoa_id', null); setValue('indicacao_nome', '') }}
-                  placeholder="Quem indicou..."
-                />
-              </FormRow>
-              <FormRow label="Fone:">
-                <Input {...register('indicacao_fone')} type="search" placeholder="(  )      -    "
-                  style={{ width: 150, fontFamily: 'var(--fonte-mono)' }} />
-              </FormRow>
-              {(() => {
-                const OPCOES_INDICACAO = ['AMIGO', 'INSTAGRAM', 'GOOGLE', 'MEDICO', 'EMPRESAS', 'OUTROS']
-                const valorAtual = (watch('indicacao_ligacao') as string) || ''
-                const ehOutros = valorAtual !== '' && !OPCOES_INDICACAO.includes(valorAtual)
-                const selecao = valorAtual === '' ? '' : (ehOutros ? 'OUTROS' : valorAtual)
-                return (
-                  <>
-                    <FormRow label="Tipos de Indicação:">
-                      <Select
-                        value={selecao}
-                        onChange={e => setValue('indicacao_ligacao', e.target.value === 'OUTROS' ? 'OUTROS' : e.target.value)}
-                      >
-                        <option value="">—</option>
-                        <option value="AMIGO">Amigo</option>
-                        <option value="INSTAGRAM">Instagram</option>
-                        <option value="GOOGLE">Google</option>
-                        <option value="MEDICO">Médico</option>
-                        <option value="EMPRESAS">Empresas</option>
-                        <option value="OUTROS">Outros</option>
-                      </Select>
-                    </FormRow>
-                    {selecao === 'OUTROS' && (
-                      <FormRow label="Qual:">
-                        <Input
-                          value={ehOutros ? valorAtual : ''}
-                          onChange={e => setValue('indicacao_ligacao', e.target.value || 'OUTROS')}
-                          placeholder="Especifique..."
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--texto-secundario)', width: 60, flexShrink: 0, letterSpacing: '0.03em', paddingTop: 5 }}>INDICAÇÃO</span>
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <FormRow label="Nome:">
+                    <BuscarPessoa
+                      pessoaId={watch('indicacao_pessoa_id') as number | null}
+                      nome={watch('indicacao_nome') as string}
+                      onSelect={(id, nome) => { setValue('indicacao_pessoa_id', id); setValue('indicacao_nome', nome) }}
+                      onNomeChange={v => { setValue('indicacao_nome', v); setValue('indicacao_pessoa_id', null) }}
+                      onLimpar={() => { setValue('indicacao_pessoa_id', null); setValue('indicacao_nome', '') }}
+                      placeholder="Quem indicou..."
+                    />
+                  </FormRow>
+                  {(() => {
+                    const OPCOES_INDICACAO = ['AMIGO', 'INSTAGRAM', 'GOOGLE', 'MEDICO', 'EMPRESAS', 'OUTROS']
+                    const valorAtual = (watch('indicacao_ligacao') as string) || ''
+                    const ehOutros = valorAtual !== '' && !OPCOES_INDICACAO.includes(valorAtual)
+                    const selecao = valorAtual === '' ? '' : (ehOutros ? 'OUTROS' : valorAtual)
+                    return (
+                      <>
+                        <FormRowDupla
+                          a={{
+                            label: 'Fone:',
+                            node: (
+                              <Input {...register('indicacao_fone')} type="search" placeholder="(  )      -    "
+                                style={{ fontFamily: 'var(--fonte-mono)' }} />
+                            ),
+                          }}
+                          b={{
+                            label: 'Tipos de Indicação:',
+                            node: (
+                              <Select
+                                value={selecao}
+                                onChange={e => setValue('indicacao_ligacao', e.target.value === 'OUTROS' ? 'OUTROS' : e.target.value)}
+                              >
+                                <option value="">—</option>
+                                <option value="AMIGO">Amigo</option>
+                                <option value="INSTAGRAM">Instagram</option>
+                                <option value="GOOGLE">Google</option>
+                                <option value="MEDICO">Médico</option>
+                                <option value="EMPRESAS">Empresas</option>
+                                <option value="OUTROS">Outros</option>
+                              </Select>
+                            ),
+                          }}
+                          labelWidth={120}
                         />
-                      </FormRow>
-                    )}
-                  </>
-                )
-              })()}
+                        {selecao === 'OUTROS' && (
+                          <FormRow label="Qual:">
+                            <Input
+                              value={ehOutros ? valorAtual : ''}
+                              onChange={e => setValue('indicacao_ligacao', e.target.value || 'OUTROS')}
+                              placeholder="Especifique..."
+                            />
+                          </FormRow>
+                        )}
+                      </>
+                    )
+                  })()}
+                </div>
+              </div>
             </div>
 
           </div>
