@@ -10,7 +10,9 @@ import {
 import { format, parseISO, isToday, differenceInYears } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { AgendamentoListItem, Prontuario } from '@/types/clinica.types'
+import type { Pessoa } from '@/types/cadastros.types'
 import { maskCelular } from '@/lib/utils'
+import PessoaFormPage from '@/components/cadastro/PessoaFormPage'
 
 interface Paciente {
   id:              number
@@ -117,8 +119,15 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
   const [pacienteSel,  setPacienteSel]  = useState<Paciente | null>(null)
   const [agendamentos, setAgendamentos] = useState<AgendamentoListItem[]>([])
   const [prontuarios,  setProntuarios]  = useState<Record<number, Prontuario>>({})
-  const [loadingFicha, setLoadingFicha] = useState(false)
+  const [loadingAgendamentos, setLoadingAgendamentos] = useState(false)
   const [abertoId,     setAbertoId]     = useState<number | null>(null)
+  // id do paciente cujos agendamentos/prontuários já estão carregados em memória (cache simples por seleção)
+  const [agendamentosDeId, setAgendamentosDeId] = useState<number | null>(null)
+
+  // Aba interna do modal (só existe com paciente selecionado): Ficha (cadastro) ou Agendamentos (histórico)
+  const [abaModal,          setAbaModal]          = useState<'ficha' | 'agendamentos'>('ficha')
+  const [pessoaCompleta,    setPessoaCompleta]    = useState<Pessoa | null>(null)
+  const [loadingPessoa,     setLoadingPessoa]     = useState(false)
 
   useEffect(() => {
     if (!open) {
@@ -128,6 +137,9 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
       setAgendamentos([])
       setProntuarios({})
       setAbertoId(null)
+      setAbaModal('ficha')
+      setPessoaCompleta(null)
+      setAgendamentosDeId(null)
     }
   }, [open])
 
@@ -135,6 +147,56 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
     if (open && pacienteInicial) selecionarPaciente(pacienteInicial)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, pacienteInicial])
+
+  // Carrega o cadastro completo (mesma fonte da tela de Cadastro > Pessoas) pra aba Ficha.
+  // É a única chamada feita ao selecionar o paciente — o resto (agendamentos/prontuários)
+  // só entra em jogo se o usuário realmente clicar na aba Agendamentos (ver efeito abaixo).
+  useEffect(() => {
+    if (!pacienteSel || abaModal !== 'ficha') return
+    if (pessoaCompleta?.id === pacienteSel.id) return
+    // Guarda contra corrida: se o paciente selecionado mudar (ou o modal fechar)
+    // antes da resposta chegar, essa resposta desatualizada é descartada.
+    let cancelado = false
+    setLoadingPessoa(true)
+    fetch(`/api/cadastro/pessoas/${pacienteSel.id}`)
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(d => { if (!cancelado) setPessoaCompleta(d.dados ?? d) })
+      .catch(() => { if (!cancelado) setPessoaCompleta(null) })
+      .finally(() => { if (!cancelado) setLoadingPessoa(false) })
+    return () => { cancelado = true }
+  }, [pacienteSel, abaModal, pessoaCompleta])
+
+  // Carrega agendamentos + prontuários só quando a aba Agendamentos é aberta de fato
+  // (lazy) — evita a consulta pesada (histórico completo, até 500 linhas com joins)
+  // disputar banco/rede com a Ficha logo na abertura do modal, quando ninguém olhou
+  // pra essa aba ainda. Cacheia por paciente pra não refazer ao alternar de aba.
+  useEffect(() => {
+    if (!pacienteSel || abaModal !== 'agendamentos') return
+    if (agendamentosDeId === pacienteSel.id) return
+    const id = pacienteSel.id
+    // Mesma guarda contra corrida usada na busca da Ficha acima.
+    let cancelado = false
+    setLoadingAgendamentos(true)
+    Promise.all([
+      fetch(`/api/clinica/agendamentos?${new URLSearchParams({ paciente_id: String(id), order: 'desc', limit: '500', incluir_avulso: 'true' })}`),
+      fetch(`/api/clinica/prontuarios?${new URLSearchParams({ paciente_id: String(id) })}`),
+    ])
+      .then(async ([resAg, resPr]) => {
+        const dataAg = resAg.ok ? await resAg.json() : { dados: [] }
+        const dataPr = resPr.ok ? await resPr.json() : { dados: [] }
+        if (cancelado) return
+        setAgendamentos(dataAg.dados ?? [])
+        const mapa: Record<number, Prontuario> = {}
+        for (const pr of (dataPr.dados ?? []) as Prontuario[]) mapa[pr.agendamento_id] = pr
+        setProntuarios(mapa)
+        setAgendamentosDeId(id)
+      })
+      .catch(() => {
+        if (!cancelado) { setAgendamentos([]); setProntuarios({}) }
+      })
+      .finally(() => { if (!cancelado) setLoadingAgendamentos(false) })
+    return () => { cancelado = true }
+  }, [pacienteSel, abaModal, agendamentosDeId])
 
   useEffect(() => {
     if (pacienteSel) return
@@ -154,31 +216,14 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
     return () => clearTimeout(t)
   }, [busca, pacienteSel])
 
-  async function selecionarPaciente(p: Paciente) {
+  function selecionarPaciente(p: Paciente) {
     setPacienteSel(p)
     setBusca(p.nome)
     setPacientes([])
     setAbertoId(null)
-    setLoadingFicha(true)
-    try {
-      // Histórico completo: sem filtro de status/data — passado e futuro, mesma fonte
-      // de dados da agenda (AGENDAMENTO_LISTA_COLUNAS), então já traz tipo/categoria/profissional.
-      const [resAg, resPr] = await Promise.all([
-        fetch(`/api/clinica/agendamentos?${new URLSearchParams({ paciente_id: String(p.id), order: 'desc', limit: '500', incluir_avulso: 'true' })}`),
-        fetch(`/api/clinica/prontuarios?${new URLSearchParams({ paciente_id: String(p.id) })}`),
-      ])
-      const dataAg = resAg.ok ? await resAg.json() : { dados: [] }
-      const dataPr = resPr.ok ? await resPr.json() : { dados: [] }
-      setAgendamentos(dataAg.dados ?? [])
-      const mapa: Record<number, Prontuario> = {}
-      for (const pr of (dataPr.dados ?? []) as Prontuario[]) mapa[pr.agendamento_id] = pr
-      setProntuarios(mapa)
-    } catch {
-      setAgendamentos([])
-      setProntuarios({})
-    } finally {
-      setLoadingFicha(false)
-    }
+    setAgendamentos([])
+    setProntuarios({})
+    setAgendamentosDeId(null)
   }
 
   function trocarPaciente() {
@@ -188,6 +233,8 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
     setAgendamentos([])
     setProntuarios({})
     setAbertoId(null)
+    setAgendamentosDeId(null)
+    setPessoaCompleta(null)
   }
 
   if (!open) return null
@@ -221,7 +268,7 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
       <div style={{
         background: 'var(--bg-card)',
         borderRadius: 12,
-        width: '100%', maxWidth: pacienteSel ? 760 : 520,
+        width: '100%', maxWidth: pacienteSel ? (abaModal === 'ficha' ? 1240 : 780) : 520,
         maxHeight: '88vh',
         display: 'flex', flexDirection: 'column',
         boxShadow: '0 16px 48px rgba(0,0,0,0.3)',
@@ -276,7 +323,7 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
               value={busca}
               onChange={e => {
                 setBusca(e.target.value)
-                if (pacienteSel) { setPacienteSel(null); setAgendamentos([]); setProntuarios({}) }
+                if (pacienteSel) { setPacienteSel(null); setAgendamentos([]); setProntuarios({}); setAgendamentosDeId(null); setPessoaCompleta(null) }
               }}
               placeholder="Buscar paciente por nome ou CPF..."
               style={{
@@ -319,7 +366,48 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
           )}
         </div>
 
-        {/* Corpo */}
+        {/* Abas internas — só com paciente selecionado */}
+        {pacienteSel && (
+          <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--borda-media)', padding: '0 18px', flexShrink: 0 }}>
+            {([{ v: 'ficha', l: 'Ficha' }, { v: 'agendamentos', l: 'Agendamentos' }] as const).map(({ v, l }) => {
+              const ativa = abaModal === v
+              return (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setAbaModal(v)}
+                  style={{
+                    padding: '8px 14px', fontSize: 12.5,
+                    fontWeight: ativa ? 600 : 400,
+                    color: ativa ? 'var(--cor-primaria)' : 'var(--texto-secundario)',
+                    background: 'none', border: 'none',
+                    borderBottom: ativa ? '2px solid var(--cor-primaria)' : '2px solid transparent',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {l}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Corpo — aba Ficha: cadastro completo (mesmo componente de Cadastro > Pessoas) */}
+        {pacienteSel && abaModal === 'ficha' && (
+          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {loadingPessoa && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', padding: '32px 0', color: 'var(--texto-terciario)', fontSize: 12 }}>
+                <Loader2 size={14} className="spin" /> Carregando ficha do paciente...
+              </div>
+            )}
+            {!loadingPessoa && pessoaCompleta && (
+              <PessoaFormPage pessoa={pessoaCompleta} embutido />
+            )}
+          </div>
+        )}
+
+        {/* Corpo — aba Agendamentos: histórico + prontuário, como já era */}
+        {(!pacienteSel || abaModal === 'agendamentos') && (
         <div style={{ flex: 1, overflowY: 'auto', padding: pacienteSel ? '14px 18px' : 0 }}>
           {!pacienteSel && (
             <div style={{ padding: '36px 16px', textAlign: 'center', fontSize: 12, color: 'var(--texto-terciario)' }}>
@@ -328,13 +416,13 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
             </div>
           )}
 
-          {pacienteSel && loadingFicha && (
+          {pacienteSel && loadingAgendamentos && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', padding: '32px 0', color: 'var(--texto-terciario)', fontSize: 12 }}>
-              <Loader2 size={14} className="spin" /> Carregando ficha do paciente...
+              <Loader2 size={14} className="spin" /> Carregando agendamentos e histórico...
             </div>
           )}
 
-          {pacienteSel && !loadingFicha && (
+          {pacienteSel && !loadingAgendamentos && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               {/* Dados cadastrais */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, fontSize: 12 }}>
@@ -557,21 +645,24 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
             </div>
           )}
         </div>
+        )}
 
-        {/* Footer */}
-        <div style={{
-          padding: '9px 18px',
-          borderTop: '1px solid var(--borda-suave)',
-          display: 'flex', alignItems: 'center', gap: 6,
-          background: 'var(--bg-page)',
-          flexShrink: 0,
-          fontSize: 11, color: 'var(--texto-terciario)',
-        }}>
-          <CalendarCheck2 size={12} />
-          {pacienteSel
-            ? 'Consulta somente leitura — clique num agendamento futuro para abrir e editar.'
-            : 'Busque um paciente para ver agendamentos, prontuários e histórico completo.'}
-        </div>
+        {/* Footer — a aba Ficha já tem sua própria barra de ações (Salvar Cadastro) */}
+        {abaModal !== 'ficha' && (
+          <div style={{
+            padding: '9px 18px',
+            borderTop: '1px solid var(--borda-suave)',
+            display: 'flex', alignItems: 'center', gap: 6,
+            background: 'var(--bg-page)',
+            flexShrink: 0,
+            fontSize: 11, color: 'var(--texto-terciario)',
+          }}>
+            <CalendarCheck2 size={12} />
+            {pacienteSel
+              ? 'Consulta somente leitura — clique num agendamento futuro para abrir e editar.'
+              : 'Busque um paciente para ver agendamentos, prontuários e histórico completo.'}
+          </div>
+        )}
       </div>
     </div>
   )
