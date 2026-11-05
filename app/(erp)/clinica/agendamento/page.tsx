@@ -72,6 +72,18 @@ function durMinutes(ag: AgendamentoListItem) {
   return (new Date(ag.data_hora_fim).getTime() - new Date(ag.data_hora_inicio).getTime()) / 60000
 }
 
+// Primeiro nome de quem criou o agendamento (ag.created_by = session.nome gravado no POST),
+// pra exibir discreto no card sem ocupar espaço com o nome completo.
+function criadorPrimeiroNome(ag: AgendamentoListItem) {
+  return ag.created_by?.trim().split(/\s+/)[0] ?? null
+}
+
+// Tooltip completo (nome + data/hora) pro hover do card inteiro.
+function criadorTooltip(ag: AgendamentoListItem) {
+  if (!ag.created_by) return undefined
+  return `Agendado por: ${ag.created_by}${ag.created_at ? ` em ${format(parseISO(ag.created_at), "dd/MM/yyyy HH:mm")}` : ''}`
+}
+
 const SLOT_H = 44
 
 export default function AgendamentoPage() {
@@ -1132,6 +1144,7 @@ export default function AgendamentoPage() {
                     <div
                       key={ag.id}
                       onClick={e => abrirEditar(ag, e)}
+                      title={criadorTooltip(ag)}
                       style={{
                         display: 'flex', alignItems: 'center', gap: 12,
                         background: statusColor + '12',
@@ -1180,15 +1193,18 @@ export default function AgendamentoPage() {
                             {ag.profissional_nome} · {dur}min
                           </span>
                         </div>
-                        {ag.observacao && (
+                        {(ag.observacao || ag.created_by) && (
                           <div style={{
                             fontSize: 11, color: 'var(--texto-terciario)', marginTop: 2,
-                            fontStyle: 'italic',
                             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                           }}
-                            title={ag.observacao}
+                            title={ag.observacao ?? undefined}
                           >
-                            {ag.observacao}
+                            {ag.observacao && <span style={{ fontStyle: 'italic' }}>{ag.observacao}</span>}
+                            {ag.observacao && ag.created_by && ' '}
+                            {ag.created_by && (
+                              <span style={{ opacity: 0.6 }}>— por {criadorPrimeiroNome(ag)}</span>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1309,6 +1325,7 @@ export default function AgendamentoPage() {
                   <div
                     key={ag.id}
                     onClick={e => abrirEditar(ag, e)}
+                    title={criadorTooltip(ag)}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 10,
                       background: '#F59E0B0C',
@@ -1527,6 +1544,7 @@ export default function AgendamentoPage() {
                         <div
                           key={ag.id}
                           onClick={e => abrirEditar(ag, e)}
+                          title={criadorTooltip(ag)}
                           style={{
                             position: 'absolute', left: 2, right: 2, top: 2,
                             height, zIndex: 2,
@@ -1631,6 +1649,7 @@ export default function AgendamentoPage() {
                       <div
                         key={ag.id}
                         onClick={e => abrirEditar(ag, e)}
+                        title={criadorTooltip(ag)}
                         style={{
                           fontSize: 11, fontWeight: 500,
                           background: statusColor + '20',
@@ -1695,6 +1714,7 @@ export default function AgendamentoPage() {
                 <div
                   key={ag.id}
                   onClick={e => abrirEditar(ag, e)}
+                  title={criadorTooltip(ag)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 12,
                     background: statusColor + '12',
@@ -1743,17 +1763,20 @@ export default function AgendamentoPage() {
                     </div>
                   </div>
 
-                  {/* Observação */}
-                  {ag.observacao && (
+                  {/* Observação + quem agendou */}
+                  {(ag.observacao || ag.created_by) && (
                     <div style={{
                       fontSize: 11, color: 'var(--texto-terciario)',
                       maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden',
                       textOverflow: 'ellipsis', flexShrink: 1,
-                      fontStyle: 'italic',
                     }}
-                      title={ag.observacao}
+                      title={ag.observacao ?? undefined}
                     >
-                      {ag.observacao}
+                      {ag.observacao && <span style={{ fontStyle: 'italic' }}>{ag.observacao}</span>}
+                      {ag.observacao && ag.created_by && ' '}
+                      {ag.created_by && (
+                        <span style={{ opacity: 0.6 }}>— por {criadorPrimeiroNome(ag)}</span>
+                      )}
                     </div>
                   )}
 
@@ -1905,6 +1928,7 @@ export default function AgendamentoPage() {
             <div
               key={ag.id}
               onClick={e => abrirEditar(ag, e)}
+              title={criadorTooltip(ag)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 12,
                 background: statusColor + '12',
@@ -1953,17 +1977,20 @@ export default function AgendamentoPage() {
                 </div>
               </div>
 
-              {/* Observação */}
-              {ag.observacao && (
+              {/* Observação + quem agendou */}
+              {(ag.observacao || ag.created_by) && (
                 <div style={{
                   fontSize: 11, color: 'var(--texto-terciario)',
                   maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden',
                   textOverflow: 'ellipsis', flexShrink: 1,
-                  fontStyle: 'italic',
                 }}
-                  title={ag.observacao}
+                  title={ag.observacao ?? undefined}
                 >
-                  {ag.observacao}
+                  {ag.observacao && <span style={{ fontStyle: 'italic' }}>{ag.observacao}</span>}
+                  {ag.observacao && ag.created_by && ' '}
+                  {ag.created_by && (
+                    <span style={{ opacity: 0.6 }}>— por {criadorPrimeiroNome(ag)}</span>
+                  )}
                 </div>
               )}
 

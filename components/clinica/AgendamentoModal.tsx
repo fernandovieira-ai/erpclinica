@@ -1292,7 +1292,15 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           background: 'var(--bg-page)',
         }}>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {isEdit && agendamento?.created_by && (
+              <span
+                style={{ fontSize: 11, color: 'var(--texto-terciario)', opacity: 0.7 }}
+                title={agendamento.created_at ? `Agendado em ${format(parseISO(agendamento.created_at), 'dd/MM/yyyy HH:mm')}` : undefined}
+              >
+                Criado por {agendamento.created_by}
+              </span>
+            )}
             {isEdit && pacienteSel && (
               <button
                 onClick={() => setFichaPacienteOpen(true)}

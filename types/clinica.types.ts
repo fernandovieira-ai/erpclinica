@@ -86,6 +86,7 @@ export type AgendamentoListItem = Pick<
   | 'categoria_id' | 'categoria_descricao'
   | 'horario_chegada' | 'horario_inicio_atendimento'
   | 'eh_encaixe' | 'encaixe_motivo' | 'periodo' | 'avulso'
+  | 'created_by' | 'created_at'
 > & {
   tipo_valor?: number | null
   tipo_valor_prazo?: number | null
