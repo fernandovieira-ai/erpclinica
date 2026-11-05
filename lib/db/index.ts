@@ -67,7 +67,9 @@ export function getDb(database: string): Pool {
       database,
       ssl:                     process.env.PG_SSL === 'false' ? false : { rejectUnauthorized: false },
       max:                     5,
-      idleTimeoutMillis:       30_000,
+      // 120s (igual dbControl/dbSaas desde 1a53729) — menos handshakes novos
+      // com o host externo do postgres, que é onde a instabilidade de rede bate.
+      idleTimeoutMillis:       120_000,
       connectionTimeoutMillis: 5_000,
       keepAlive:               true,
       keepAliveInitialDelayMillis: 10_000,

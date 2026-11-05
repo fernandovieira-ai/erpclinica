@@ -11,6 +11,7 @@ import { getDb } from '@/lib/db'
 export const dynamic = 'force-dynamic'
 
 const INTERVALO_MS = 1500
+const INTERVALO_MAX_MS = 15_000 // teto do backoff durante instabilidade de conexão
 const HEARTBEAT_A_CADA_CICLOS = 20 // ~30s — mantém proxies (nginx/ALB) com idle-timeout curto vivos
 
 export async function GET(req: NextRequest) {
@@ -34,6 +35,7 @@ export async function GET(req: NextRequest) {
       }
 
       let ciclos = 0
+      let falhasConsecutivas = 0
 
       const check = async () => {
         if (closed) return
@@ -45,6 +47,7 @@ export async function GET(req: NextRequest) {
                (SELECT COALESCE(EXTRACT(EPOCH FROM MAX(lida_em)), 0) FROM tab_mensagem WHERE empresa_id = $1 AND remetente_id = $2) AS vistas`,
             [session.empresa_id_ativa, session.usuario_id],
           )
+          falhasConsecutivas = 0
           const sig = JSON.stringify(rows[0])
           if (sig !== lastSignature) {
             lastSignature = sig
@@ -56,8 +59,15 @@ export async function GET(req: NextRequest) {
           }
         } catch (err) {
           console.error('[mensagens:stream]', err)
+          falhasConsecutivas++
         }
-        if (!closed) timer = setTimeout(check, INTERVALO_MS)
+        // Backoff exponencial após falha: evita que N abas abertas martelem o pool
+        // de conexões (max 5 por tenant) bem na janela em que ele já está sofrendo
+        // com queda de conexão com o postgres.
+        const proximoIntervalo = falhasConsecutivas > 0
+          ? Math.min(INTERVALO_MS * 2 ** falhasConsecutivas, INTERVALO_MAX_MS)
+          : INTERVALO_MS
+        if (!closed) timer = setTimeout(check, proximoIntervalo)
       }
 
       send('ping', '1')
