@@ -407,6 +407,10 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
     setDuplicados([])
     setConfirmarNaoDuplicado(false)
     setConfirmEncaixeAberto(false)
+    // Sem isso, resolver um cadastro duplicado, fechar sem salvar e depois abrir/salvar OUTRO
+    // agendamento mandaria excluir_paciente_anterior_id de uma sessão anterior — apagando um
+    // paciente sem relação com o agendamento atual.
+    setPacienteParaExcluirAposSalvar(null)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, agendamento, dataHoraInicio, profissionalPre, encaixeInicial])
 
@@ -719,7 +723,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
         if (corpo?.pacienteAnteriorExcluido) {
           toast.success(`Cadastro duplicado "${pacienteParaExcluirAposSalvar.nome}" (sem CPF) removido.`)
         } else {
-          toast.info(`Cadastro duplicado "${pacienteParaExcluirAposSalvar.nome}" não foi removido — ainda tem outros vínculos (recebimento, prontuário ou outro agendamento).`)
+          toast.info(`Cadastro duplicado "${pacienteParaExcluirAposSalvar.nome}" não foi removido automaticamente (pode já não existir mais, ou ainda ter outros vínculos — recebimento, prontuário ou outro agendamento). Se precisar, exclua manualmente em Cadastro > Pessoas.`)
         }
         setPacienteParaExcluirAposSalvar(null)
       }
@@ -1535,10 +1539,18 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
       // também o paciente deste agendamento, e marca o cadastro antigo (sem CPF) pra ser
       // excluído no próximo "Salvar alterações" — ver handleSalvar.
       onPacienteTrocado={(novo, antigo) => {
+        // Só aplica no agendamento se o cadastro trocado era o paciente ATUAL deste
+        // agendamento (pacienteSel aqui, não o da Ficha) — se o usuário usou a busca da
+        // Ficha pra abrir outra pessoa qualquer e resolveu uma duplicidade nela, isso não
+        // deve trocar nem marcar exclusão pro paciente deste agendamento.
+        if (!antigo || !pacienteSel || antigo.id !== pacienteSel.id) {
+          toast.info(`Cadastro de "${novo.nome}" atualizado — isso não afeta o paciente deste agendamento.`)
+          return
+        }
         setForm(f => ({ ...f, paciente_id: novo.id }))
         setPacienteSel(novo)
         setBuscaPaciente(novo.nome)
-        if (antigo && antigo.id !== novo.id) {
+        if (antigo.id !== novo.id) {
           setPacienteParaExcluirAposSalvar({ id: antigo.id, nome: antigo.nome })
           toast.info(`Paciente do agendamento atualizado para ${novo.nome}. O cadastro duplicado "${antigo.nome}" será removido ao salvar, se não tiver outros vínculos.`)
         } else {

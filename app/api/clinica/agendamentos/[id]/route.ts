@@ -167,8 +167,16 @@ export async function PUT(req: NextRequest, { params }: Params) {
     let pacienteAnteriorExcluido = false
     if (d.excluir_paciente_anterior_id && d.excluir_paciente_anterior_id !== d.paciente_id) {
       try {
+        // Guarda extra além do FK/try-catch: só remove o formato exato que o cadastro rápido
+        // da clínica cria (POST /api/clinica/pacientes — só ind_paciente=true, sem CPF e sem
+        // nenhum outro papel). Protege um cadastro que também seja profissional/cliente/
+        // fornecedor/etc. de ser apagado por engano se o id errado chegar aqui.
         const del = await db.query(
-          `DELETE FROM tab_pessoa WHERE id = $1 AND empresa_id = $2 AND ind_paciente = true`,
+          `DELETE FROM tab_pessoa
+           WHERE id = $1 AND empresa_id = $2 AND ind_paciente = true AND cpf_cnpj IS NULL
+             AND ind_profissional = false AND ind_solicitante = false
+             AND ind_cliente = false AND ind_fornecedor = false
+             AND ind_banco = false AND ind_transportador = false`,
           [d.excluir_paciente_anterior_id, session.empresa_id_ativa],
         )
         pacienteAnteriorExcluido = (del.rowCount ?? 0) > 0
