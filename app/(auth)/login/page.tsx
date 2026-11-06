@@ -84,7 +84,12 @@ export default function LoginPage() {
         // é desmontada ao trocar de rota, então não há necessidade (e não se
         // deve) voltar o loading a false aqui, senão o botão "destrava" antes
         // do dashboard terminar de carregar e parece que o clique não funcionou.
-        router.push(data.redir)
+        //
+        // Navegação completa (não router.push): o layout do ERP é cacheado
+        // pelo App Router — logar como outro usuário no mesmo navegador e
+        // navegar via client-side reaproveitaria esse cache e mostraria o
+        // nome/empresa da sessão anterior perto do botão "Sair".
+        window.location.href = data.redir
         return
       }
 

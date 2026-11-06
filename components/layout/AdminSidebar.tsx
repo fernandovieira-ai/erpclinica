@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { LayoutGrid, Server, LogOut, Shield } from 'lucide-react'
 import type { AdminSession } from '@/types/session'
 
@@ -9,11 +9,12 @@ interface Props { admin: AdminSession }
 
 export default function AdminSidebar({ admin }: Props) {
   const pathname = usePathname()
-  const router   = useRouter()
 
   async function logout() {
     await fetch('/api/admin/auth/logout', { method: 'POST' })
-    router.push('/admin/login')
+    // Navegação completa (não router.push): evita reaproveitar o cache de
+    // rota do App Router, que manteria o admin da sessão anterior na tela.
+    window.location.href = '/admin/login'
   }
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/')

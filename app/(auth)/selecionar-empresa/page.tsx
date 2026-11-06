@@ -38,7 +38,9 @@ export default function SelecionarEmpresaPage() {
       }
       sessionStorage.removeItem('empresas_login')
       // Mantém o loading até a navegação concluir (ver nota em login/page.tsx).
-      router.push(data.redir)
+      // Navegação completa: evita reaproveitar o cache de rota do App Router
+      // com a sidebar de uma sessão/empresa anterior.
+      window.location.href = data.redir
     } catch {
       setErro('Erro de conexão')
       setLoading(false)

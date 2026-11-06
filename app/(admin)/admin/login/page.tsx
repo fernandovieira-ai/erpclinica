@@ -1,11 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Shield } from 'lucide-react'
 
 export default function AdminLoginPage() {
-  const router = useRouter()
   const [email,   setEmail]   = useState('')
   const [senha,   setSenha]   = useState('')
   const [erro,    setErro]    = useState('')
@@ -28,7 +26,9 @@ export default function AdminLoginPage() {
         return
       }
       // Mantém o loading até a navegação concluir (ver nota em login/page.tsx do ERP).
-      router.push(data.redir)
+      // Navegação completa: evita reaproveitar o cache de rota do App Router
+      // com o admin da sessão anterior na sidebar.
+      window.location.href = data.redir
     } catch {
       setErro('Erro de conexão')
       setLoading(false)

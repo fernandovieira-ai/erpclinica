@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import {
   LayoutDashboard, TrendingUp, TrendingDown, DollarSign, FileText,
   Users, Settings, LogOut, ChevronDown, ChevronRight,
@@ -101,7 +101,6 @@ const NAV: NavItem[] = [
 export default function Sidebar({ session }: Props) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const router   = useRouter()
   const [open, setOpen] = useState<string[]>(() =>
     NAV
       .filter(item => item.children?.some(c => {
@@ -129,7 +128,10 @@ export default function Sidebar({ session }: Props) {
 
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST' })
-    router.push('/login')
+    // Navegação completa (não router.push): o layout do ERP é um Server
+    // Component cacheado pelo App Router — uma navegação client-side reaproveita
+    // esse cache e continua mostrando o usuário/empresa da sessão anterior.
+    window.location.href = '/login'
   }
 
   const isActive = (href: string) => {
