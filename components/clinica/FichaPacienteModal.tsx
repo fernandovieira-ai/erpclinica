@@ -401,7 +401,18 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
               </div>
             )}
             {!loadingPessoa && pessoaCompleta && (
-              <PessoaFormPage pessoa={pessoaCompleta} embutido />
+              <PessoaFormPage
+                pessoa={pessoaCompleta}
+                embutido
+                // CPF/CNPJ digitado já pertence a outra pessoa: troca a ficha exibida pra
+                // ela dentro do MESMO modal, sem navegar (ver Props.onConsultarCadastroExistente
+                // em PessoaFormPage — por padrão ele faria router.push e tiraria o usuário
+                // do agendamento que estava editando).
+                onConsultarCadastroExistente={p => selecionarPaciente({
+                  id: p.id, nome: p.nome, cpf_cnpj: null, celular: null,
+                  telefone: null, cidade: null, uf: null, email: null, data_nascimento: null,
+                })}
+              />
             )}
           </div>
         )}

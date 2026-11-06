@@ -48,6 +48,11 @@ interface Props {
   // Uso embutido (ex.: aba "Ficha" do modal de Consultar Paciente, na agenda):
   // esconde ações de navegação/exclusão que não fazem sentido dentro de um modal.
   embutido?:     boolean
+  // Só em uso embutido: quando o CPF/CNPJ digitado já pertence a outra pessoa, troca pra
+  // ficha dela dentro do MESMO modal em vez de navegar (ver botão "Usar este cadastro" no
+  // aviso de duplicidade) — sem isso, router.push tirava o usuário do agendamento que estava
+  // editando (fechava o modal junto, perdendo o contexto).
+  onConsultarCadastroExistente?: (pessoa: { id: number; nome: string }) => void
 }
 
 const UFS: { sigla: string; nome: string }[] = [
@@ -527,7 +532,7 @@ function mascaraCpfCnpj(valor: string, pj: boolean): string {
 const ABAS_PESSOA = ['Principal', 'Financeiro', 'Fiscal / Obs', 'Agenda', 'Atendimentos', 'Consultas'] as const
 type AbaPessoa = typeof ABAS_PESSOA[number]
 
-export default function PessoaFormPage({ pessoa, papelInicial, embutido }: Props) {
+export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsultarCadastroExistente }: Props) {
   const router  = useRouter()
   const [saving,       setSaving]      = useState(false)
   const [deleting,     setDeleting]    = useState(false)
@@ -2337,7 +2342,9 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido }: Props
               {pessoaDuplicada.nome}
             </div>
             <div style={{ marginTop: 10, fontSize: 12, color: 'var(--texto-secundario)' }}>
-              Deseja consultar o cadastro existente em vez de criar um novo?
+              {onConsultarCadastroExistente
+                ? 'Deseja usar o cadastro existente em vez de criar um novo?'
+                : 'Deseja consultar o cadastro existente em vez de criar um novo?'}
             </div>
           </div>
 
@@ -2357,7 +2364,14 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido }: Props
             </button>
             <button
               type="button"
-              onClick={() => router.push(`/cadastro/pessoas/${pessoaDuplicada.id}`)}
+              onClick={() => {
+                if (onConsultarCadastroExistente) {
+                  onConsultarCadastroExistente(pessoaDuplicada)
+                  setPessoaDuplicada(null)
+                } else {
+                  router.push(`/cadastro/pessoas/${pessoaDuplicada.id}`)
+                }
+              }}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 padding: '5px 14px', fontSize: 12, fontWeight: 600,
@@ -2365,7 +2379,7 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido }: Props
                 cursor: 'pointer',
               }}
             >
-              <ExternalLink size={13} /> Consultar cadastro
+              <ExternalLink size={13} /> {onConsultarCadastroExistente ? 'Usar este cadastro' : 'Consultar cadastro'}
             </button>
           </div>
         </div>
