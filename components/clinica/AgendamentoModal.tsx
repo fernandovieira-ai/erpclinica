@@ -217,6 +217,10 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
   const [horarioPickerOpen, setHorarioPickerOpen] = useState(false)
   const [fichaPacienteOpen, setFichaPacienteOpen] = useState(false)
   const [confirmEncaixeAberto, setConfirmEncaixeAberto] = useState(false)
+  // Resolução de cadastro duplicado (aba Ficha > "Usar este cadastro"): guarda o id do
+  // cadastro antigo (errado, normalmente sem CPF) pra excluir ao salvar — ver handleSalvar
+  // e PUT /api/clinica/agendamentos/[id] (excluir_paciente_anterior_id).
+  const [pacienteParaExcluirAposSalvar, setPacienteParaExcluirAposSalvar] = useState<{ id: number; nome: string } | null>(null)
   // Referência estável: sem o useMemo, um objeto novo a cada render faria o efeito de
   // carregamento da ficha (open + pacienteInicial) refazer as buscas de agendamentos/prontuário
   // a cada re-render do modal enquanto a ficha estivesse aberta, não só na abertura.
@@ -695,6 +699,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
           eh_encaixe:       form.eh_encaixe,
           encaixe_motivo:   form.eh_encaixe && form.encaixe_motivo.trim() ? form.encaixe_motivo.trim() : null,
           periodo:          form.eh_encaixe ? form.periodo || null : null,
+          excluir_paciente_anterior_id: pacienteParaExcluirAposSalvar?.id ?? null,
         }),
       })
 
@@ -704,10 +709,20 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
         return
       }
 
+      const corpo: { agendamento?: AgendamentoListItem; pacienteAnteriorExcluido?: boolean } | null =
+        await res.json().catch(() => null)
       // No lançamento o servidor devolve o item pronto; a agenda insere na hora, sem refazer a lista
-      const criado: { agendamento?: AgendamentoListItem } | null = isEdit ? null : await res.json().catch(() => null)
+      const criado = isEdit ? null : corpo
 
       toast.success(isEdit ? 'Agendamento atualizado!' : 'Agendamento criado!')
+      if (pacienteParaExcluirAposSalvar) {
+        if (corpo?.pacienteAnteriorExcluido) {
+          toast.success(`Cadastro duplicado "${pacienteParaExcluirAposSalvar.nome}" (sem CPF) removido.`)
+        } else {
+          toast.info(`Cadastro duplicado "${pacienteParaExcluirAposSalvar.nome}" não foi removido — ainda tem outros vínculos (recebimento, prontuário ou outro agendamento).`)
+        }
+        setPacienteParaExcluirAposSalvar(null)
+      }
       onSaved(criado?.agendamento)
       onClose()
     } finally {
@@ -1516,6 +1531,20 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
       onClose={() => setFichaPacienteOpen(false)}
       onAbrirAgendamento={() => setFichaPacienteOpen(false)}
       pacienteInicial={pacienteInicialFicha}
+      // Resolução de cadastro duplicado dentro da aba Ficha ("Usar este cadastro"): troca
+      // também o paciente deste agendamento, e marca o cadastro antigo (sem CPF) pra ser
+      // excluído no próximo "Salvar alterações" — ver handleSalvar.
+      onPacienteTrocado={(novo, antigo) => {
+        setForm(f => ({ ...f, paciente_id: novo.id }))
+        setPacienteSel(novo)
+        setBuscaPaciente(novo.nome)
+        if (antigo && antigo.id !== novo.id) {
+          setPacienteParaExcluirAposSalvar({ id: antigo.id, nome: antigo.nome })
+          toast.info(`Paciente do agendamento atualizado para ${novo.nome}. O cadastro duplicado "${antigo.nome}" será removido ao salvar, se não tiver outros vínculos.`)
+        } else {
+          toast.info(`Paciente do agendamento atualizado para ${novo.nome} — clique em "Salvar alterações" pra confirmar.`)
+        }
+      }}
     />
     </>
   )

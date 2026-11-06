@@ -160,7 +160,24 @@ export async function PUT(req: NextRequest, { params }: Params) {
       dadosDepois: depoisRows[0],
     })
 
-    return NextResponse.json({ ok: true })
+    // Resolução de cadastro duplicado (aba Ficha > "Usar este cadastro"): tenta excluir o
+    // cadastro antigo (sem CPF) agora que o agendamento já foi repontado pro correto. Fora
+    // da transação acima de propósito — se falhar (outro vínculo: recebimento, prontuário,
+    // outro agendamento), não desfaz o save do agendamento, só não remove o duplicado.
+    let pacienteAnteriorExcluido = false
+    if (d.excluir_paciente_anterior_id && d.excluir_paciente_anterior_id !== d.paciente_id) {
+      try {
+        const del = await db.query(
+          `DELETE FROM tab_pessoa WHERE id = $1 AND empresa_id = $2 AND ind_paciente = true`,
+          [d.excluir_paciente_anterior_id, session.empresa_id_ativa],
+        )
+        pacienteAnteriorExcluido = (del.rowCount ?? 0) > 0
+      } catch {
+        pacienteAnteriorExcluido = false
+      }
+    }
+
+    return NextResponse.json({ ok: true, pacienteAnteriorExcluido })
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {})
     console.error('[PUT /api/clinica/agendamentos]', err)

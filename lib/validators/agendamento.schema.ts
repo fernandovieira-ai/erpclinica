@@ -21,6 +21,11 @@ export const agendamentoSchema = z.object({
   // Furar conflito de horário/disponibilidade igual ao encaixe (não disputa a agenda,
   // nem aparece nela), mas sem período — tem hora normal (default: agora).
   avulso:           z.boolean().default(false),
+  // Resolução de cadastro duplicado (ver botão "Usar este cadastro" na aba Ficha, dentro do
+  // agendamento): além de trocar o paciente_id acima pro cadastro correto, oferece excluir
+  // o cadastro antigo (normalmente criado sem CPF pelo cadastro rápido) ao salvar. Só remove
+  // se não houver outros vínculos (recebimento, prontuário, outro agendamento) — ver PUT.
+  excluir_paciente_anterior_id: z.number().int().positive().optional().nullable(),
 }).refine(
   d => !d.eh_encaixe || !!d.periodo,
   { message: 'Selecione o período do encaixe (manhã ou tarde)', path: ['periodo'] },

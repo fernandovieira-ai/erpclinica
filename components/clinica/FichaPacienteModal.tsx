@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import {
   X, Search, Loader2, User, Phone, MapPin, Mail, IdCard, Cake, ExternalLink,
   CalendarClock, CalendarCheck2, History, AlertTriangle, ChevronDown, ChevronUp,
@@ -33,6 +34,10 @@ interface Props {
   // Pula a tela de busca e abre direto na ficha deste paciente (ex.: botão
   // "Consultar paciente" dentro do modal de agendamento, que já tem os dados dele)
   pacienteInicial?:   Paciente | null
+  // Avisa quem abriu o modal (ex.: AgendamentoModal) que o paciente exibido mudou por
+  // resolução de cadastro duplicado (botão "Usar este cadastro" na aba Ficha) — pra também
+  // trocar o paciente selecionado no agendamento, não só aqui dentro da ficha.
+  onPacienteTrocado?: (novo: Paciente, antigo: Paciente | null) => void
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -112,7 +117,7 @@ function StatCard({ label, valor, sub, cor }: { label: string; valor: string; su
   )
 }
 
-export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, pacienteInicial }: Props) {
+export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, pacienteInicial, onPacienteTrocado }: Props) {
   const [busca,        setBusca]        = useState('')
   const [pacientes,    setPacientes]    = useState<Paciente[]>([])
   const [loadingBusca, setLoadingBusca] = useState(false)
@@ -224,6 +229,49 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
     setAgendamentos([])
     setProntuarios({})
     setAgendamentosDeId(null)
+  }
+
+  // Resolução de cadastro duplicado (aviso "Pessoa já cadastrada" dentro da aba Ficha): troca
+  // a ficha exibida pro cadastro correto, sem navegar (ver onConsultarCadastroExistente em
+  // PessoaFormPage). O cadastro errado normalmente veio do cadastro rápido feito às pressas
+  // no agendamento (só nome/data/cpf) — se ele tem celular/telefone que o certo não tem,
+  // copia esse contato pro certo antes de trocar, senão esse dado se perderia. O usuário
+  // ainda revisa e confirma clicando em "Salvar Cadastro". onPacienteTrocado avisa quem abriu
+  // este modal (AgendamentoModal) pra também trocar o paciente selecionado no agendamento.
+  async function usarCadastroExistente(p: { id: number; nome: string }) {
+    const antigo = pacienteSel
+    let pessoaCerta: Pessoa | null = null
+    try {
+      const res = await fetch(`/api/cadastro/pessoas/${p.id}`)
+      if (res.ok) pessoaCerta = await res.json()
+    } catch { /* segue sem pré-preencher — a Ficha ainda busca o cadastro certo normalmente */ }
+
+    if (pessoaCerta && antigo) {
+      const faltaCelular  = !pessoaCerta.celular  && antigo.celular
+      const faltaTelefone = !pessoaCerta.telefone && antigo.telefone
+      if (faltaCelular || faltaTelefone) {
+        pessoaCerta = {
+          ...pessoaCerta,
+          celular:  faltaCelular  ? antigo.celular  : pessoaCerta.celular,
+          telefone: faltaTelefone ? antigo.telefone : pessoaCerta.telefone,
+        }
+        toast.info(`Contato do cadastro duplicado copiado pra "${pessoaCerta.nome}" — confira e clique em "Salvar Cadastro" pra confirmar.`)
+      }
+    }
+
+    const novo: Paciente = {
+      id: p.id, nome: p.nome,
+      cpf_cnpj: pessoaCerta?.cpf_cnpj ?? null,
+      celular:  pessoaCerta?.celular  ?? null,
+      telefone: pessoaCerta?.telefone ?? null,
+      cidade:   pessoaCerta?.cidade   ?? null,
+      uf:       pessoaCerta?.uf       ?? null,
+      email:    pessoaCerta?.email    ?? null,
+      data_nascimento: pessoaCerta?.data_nascimento ?? null,
+    }
+    selecionarPaciente(novo)
+    if (pessoaCerta) setPessoaCompleta(pessoaCerta)
+    onPacienteTrocado?.(novo, antigo)
   }
 
   function trocarPaciente() {
@@ -408,10 +456,7 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
                 // ela dentro do MESMO modal, sem navegar (ver Props.onConsultarCadastroExistente
                 // em PessoaFormPage — por padrão ele faria router.push e tiraria o usuário
                 // do agendamento que estava editando).
-                onConsultarCadastroExistente={p => selecionarPaciente({
-                  id: p.id, nome: p.nome, cpf_cnpj: null, celular: null,
-                  telefone: null, cidade: null, uf: null, email: null, data_nascimento: null,
-                })}
+                onConsultarCadastroExistente={usarCadastroExistente}
               />
             )}
           </div>
