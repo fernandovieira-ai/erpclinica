@@ -10,9 +10,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
 
-  const db             = getDb(session.database_name)
   const profissionalId = Number(params.id)
-  const sp             = req.nextUrl.searchParams
+  if (!Number.isInteger(profissionalId) || profissionalId <= 0) {
+    return NextResponse.json({ erro: 'Profissional inválido' }, { status: 400 })
+  }
+
+  const db = getDb(session.database_name)
+  const sp = req.nextUrl.searchParams
   const dataInicio     = sp.get('data_inicio')    || format(new Date(), 'yyyy-MM-dd')
   const duracaoParam   = Number(sp.get('duracao_min') || 0) // 0 = usar intervalo_min da grade
   const horaInicioMinParam = sp.get('hora_inicio_min') || null  // HH:MM ou null

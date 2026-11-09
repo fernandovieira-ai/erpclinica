@@ -3,6 +3,10 @@ import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 import { antecipaParcelaCartaoSchema } from '@/lib/validators/cartao.schema'
 
+function idInvalido(id: string): boolean {
+  return !/^\d+$/.test(id)
+}
+
 // POST /api/financeiro/cartao/vendas/parcelas/[id]/antecipar  — body: { nova_data_prevista: string }
 // Aplica a taxa de antecipação (percentual_antecipacao_am da condição, pro-rata
 // pelos dias antecipados) sobre o valor líquido atual da parcela e adianta a
@@ -10,6 +14,7 @@ import { antecipaParcelaCartaoSchema } from '@/lib/validators/cartao.schema'
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Parcela não encontrada' }, { status: 404 })
 
   const body = antecipaParcelaCartaoSchema.safeParse(await req.json().catch(() => ({})))
   if (!body.success) return NextResponse.json({ erro: body.error.flatten() }, { status: 400 })

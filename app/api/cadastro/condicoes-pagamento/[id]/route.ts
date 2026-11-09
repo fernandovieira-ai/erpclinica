@@ -3,10 +3,15 @@ import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 import { condicaoPagamentoSchema } from '@/lib/validators/condicao-pagamento.schema'
 
+function idInvalido(id: string): boolean {
+  return !/^\d+$/.test(id)
+}
+
 // GET /api/cadastro/condicoes-pagamento/[id]
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
 
   const db = getDb(session.database_name)
   const { rows } = await db.query(
@@ -24,6 +29,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
 
   const json = await req.json()
 
@@ -65,6 +71,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
 
   const db = getDb(session.database_name)
   const result = await db.query(

@@ -5,9 +5,14 @@ import { categoriaSchema } from '@/lib/validators/agendamento.schema'
 
 type Params = { params: { id: string } }
 
+function idInvalido(id: string): boolean {
+  return !/^\d+$/.test(id)
+}
+
 export async function GET(req: NextRequest, { params }: Params) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
 
   const db = getDb(session.database_name)
   const { rows } = await db.query(
@@ -22,6 +27,7 @@ export async function GET(req: NextRequest, { params }: Params) {
 export async function PATCH(req: NextRequest, { params }: Params) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
 
   const body = await req.json()
   const db   = getDb(session.database_name)
@@ -57,6 +63,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 export async function DELETE(req: NextRequest, { params }: Params) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
 
   const db = getDb(session.database_name)
   try {

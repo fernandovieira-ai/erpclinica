@@ -2,10 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 
+function idInvalido(id: string): boolean {
+  return !/^\d+$/.test(id)
+}
+
 // DELETE /api/clinica/agenda-profissional/[id]
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
 
   const db = getDb(session.database_name)
   const { rowCount } = await db.query(

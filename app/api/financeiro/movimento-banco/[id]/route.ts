@@ -3,10 +3,15 @@ import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 import { movimentoBancoSchema } from '@/lib/validators/movimento-banco.schema'
 
+function idInvalido(id: string): boolean {
+  return !/^\d+$/.test(id)
+}
+
 // GET /api/financeiro/movimento-banco/[id]
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
 
   const db = getDb(session.database_name)
   const { rows } = await db.query(
@@ -75,6 +80,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
 
   const raw = await req.json()
   const db  = getDb(session.database_name)
@@ -138,6 +144,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
 
   const db = getDb(session.database_name)
   const { rowCount } = await db.query(

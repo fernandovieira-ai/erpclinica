@@ -8,9 +8,17 @@ import { avaliarDisponibilidade, sqlDadosDisponibilidade } from '@/lib/clinica/d
 
 type Params = { params: { id: string } }
 
+// id não numérico (ex: "exportar" — path que não existe, só bate aqui porque
+// o Next casa qualquer coisa com [id]) nunca vai achar registro; devolver 404
+// direto evita erro 500 de cast (22P02) no Postgres pra tráfego de scanner/bot.
+function idInvalido(id: string): boolean {
+  return !/^\d+$/.test(id)
+}
+
 export async function GET(req: NextRequest, { params }: Params) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
 
   const db = getDb(session.database_name)
   const { rows } = await db.query(
@@ -44,6 +52,7 @@ export async function GET(req: NextRequest, { params }: Params) {
 export async function PUT(req: NextRequest, { params }: Params) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
 
   const body = agendamentoSchema.safeParse(await req.json())
   if (!body.success) return NextResponse.json({ erro: body.error.flatten() }, { status: 400 })
@@ -201,6 +210,7 @@ const STATUS_AGENDAMENTO = ['AGENDADO', 'CONFIRMADO', 'AGUARDANDO', 'ATENDIDO', 
 export async function PATCH(req: NextRequest, { params }: Params) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
 
   const { status, origem } = await req.json()
   if (!STATUS_AGENDAMENTO.includes(status)) {
@@ -260,6 +270,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 export async function DELETE(req: NextRequest, { params }: Params) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
 
   const db = getDb(session.database_name)
   try {

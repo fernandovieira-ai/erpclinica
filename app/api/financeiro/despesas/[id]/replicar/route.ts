@@ -4,6 +4,10 @@ import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 import { registrarAuditoria } from '@/lib/auditoria'
 
+function idInvalido(id: string): boolean {
+  return !/^\d+$/.test(id)
+}
+
 const replicarSchema = z.object({
   data_despesa: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida'),
   valor:        z.number({ invalid_type_error: 'Valor inválido' }).positive('Valor deve ser maior que zero'),
@@ -19,6 +23,7 @@ const replicarSchema = z.object({
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Despesa não encontrada' }, { status: 404 })
 
   const raw  = await req.json()
   const body = replicarSchema.safeParse(raw)

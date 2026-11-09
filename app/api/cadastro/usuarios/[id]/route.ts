@@ -5,10 +5,17 @@ import { getDb } from '@/lib/db'
 import { usuarioUpdateSchema } from '@/lib/validators/usuario.schema'
 import { registrarAuditoria } from '@/lib/auditoria'
 
+// Number(params.id) sozinho não basta: id não numérico vira NaN e ainda assim
+// estoura erro de cast (22P02) no Postgres ao ser enviado como parâmetro.
+function idInvalido(id: string): boolean {
+  return !/^\d+$/.test(id)
+}
+
 // GET /api/cadastro/usuarios/[id]
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
 
   const db = getDb(session.database_name)
   const { rows } = await db.query(
@@ -36,6 +43,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
 
   const id  = Number(params.id)
   const db  = getDb(session.database_name)
@@ -128,6 +136,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
 
   const id = Number(params.id)
   if (id === session.usuario_id) {

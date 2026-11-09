@@ -7,6 +7,12 @@ interface EstornoPayload {
   motivo_estorno: string
 }
 
+// parseInt(id) sozinho não basta: id não numérico vira NaN e ainda assim
+// estoura erro de cast (22P02) no Postgres ao ser enviado como parâmetro.
+function idInvalido(id: string): boolean {
+  return !/^\d+$/.test(id)
+}
+
 // GET - Buscar recebimento específico
 export async function GET(
   req: NextRequest,
@@ -19,6 +25,7 @@ export async function GET(
 
   try {
     const { id } = await params
+    if (idInvalido(id)) return NextResponse.json({ erro: 'Recebimento não encontrado' }, { status: 404 })
     const recebimentoId = parseInt(id)
 
     const { rows } = await client.query(
@@ -67,6 +74,7 @@ export async function DELETE(
 
   try {
     const { id } = await params
+    if (idInvalido(id)) return NextResponse.json({ erro: 'Recebimento não encontrado' }, { status: 404 })
     const recebimentoId = parseInt(id)
     const payload: EstornoPayload = await req.json()
 

@@ -3,10 +3,17 @@ import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 import { centroCustoSchema } from '@/lib/validators/centro-custo.schema'
 
+// id não numérico nunca bate em nenhum registro (coluna é integer); devolver
+// 404 direto evita erro de cast (22P02) no Postgres pra tráfego de scanner/bot.
+function idInvalido(id: string): boolean {
+  return !/^\d+$/.test(id)
+}
+
 // GET /api/cadastro/centros-custo/[id]
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
 
   const db = getDb(session.database_name)
   const { rows } = await db.query(
@@ -26,6 +33,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
 
   const json = await req.json()
 
@@ -71,6 +79,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
 
   const db = getDb(session.database_name)
   const result = await db.query(

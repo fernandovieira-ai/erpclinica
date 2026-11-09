@@ -6,6 +6,13 @@ import { registrarAuditoria } from '@/lib/auditoria'
 type Params = { params: { id: string } }
 type Queryable = { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[] }> }
 
+// id não numérico nunca bate em tab_pessoa.id (integer); sem isso, o
+// SELECT dentro de validarProfissional estoura erro de cast (22P02) antes
+// mesmo de poder devolver "Profissional não encontrado".
+function idInvalido(id: string): boolean {
+  return !/^\d+$/.test(id)
+}
+
 async function validarProfissional(db: Queryable, id: string, empresaId: number) {
   const { rows } = await db.query(
     `SELECT id FROM tab_pessoa WHERE id = $1 AND empresa_id = $2 AND ind_profissional = true`,
@@ -38,6 +45,7 @@ function resumoRegras(
 export async function GET(req: NextRequest, { params }: Params) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Profissional não encontrado' }, { status: 404 })
 
   const db = getDb(session.database_name)
   if (!(await validarProfissional(db as unknown as Queryable, params.id, session.empresa_id_ativa))) {
@@ -90,6 +98,7 @@ export async function GET(req: NextRequest, { params }: Params) {
 export async function PUT(req: NextRequest, { params }: Params) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Profissional não encontrado' }, { status: 404 })
 
   const empresaId = session.empresa_id_ativa
   const client    = await getDb(session.database_name).connect()

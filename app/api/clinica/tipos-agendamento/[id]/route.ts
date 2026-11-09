@@ -5,9 +5,14 @@ import { agendamentoTipoSchema } from '@/lib/validators/agendamento.schema'
 
 type Params = { params: { id: string } }
 
+function idInvalido(id: string): boolean {
+  return !/^\d+$/.test(id)
+}
+
 export async function GET(req: NextRequest, { params }: Params) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
 
   const db = getDb(session.database_name)
   const { rows } = await db.query(
@@ -24,6 +29,7 @@ export async function GET(req: NextRequest, { params }: Params) {
 export async function PATCH(req: NextRequest, { params }: Params) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
 
   const body = await req.json()
   const db   = getDb(session.database_name)
@@ -40,7 +46,6 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   // abaixo regrava valor e voa_clinical_type (ficariam NULL num PATCH com só eh_exame).
   if ('eh_exame' in body && Object.keys(body).length === 1) {
     if (typeof body.eh_exame !== 'boolean') return NextResponse.json({ erro: 'eh_exame deve ser verdadeiro ou falso' }, { status: 400 })
-    if (!/^\d+$/.test(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
     const { rowCount } = await db.query(
       `UPDATE tab_agendamento_tipo SET eh_exame = $1 WHERE id = $2 AND empresa_id = $3`,
       [body.eh_exame, params.id, session.empresa_id_ativa],
@@ -82,6 +87,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 export async function DELETE(req: NextRequest, { params }: Params) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (idInvalido(params.id)) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
 
   const db = getDb(session.database_name)
   try {
