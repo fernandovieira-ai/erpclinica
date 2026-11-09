@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
+import { calcularValoresRecebimento } from '@/lib/clinica/calculo-recebimento'
 
 // GET /api/gerencial/receitas?inicio=YYYY-MM-DD&fim=YYYY-MM-DD&busca=
 // Lançamento a lançamento (1 linha por recebimento pago), no formato do relatório gerencial de receita
@@ -78,12 +79,7 @@ export async function GET(req: NextRequest) {
     const itens = rows.map((r) => {
       const valorBruto   = Number(r.total_recebimento)
       const percentualMdr = r.percentual_mdr_aplicado != null ? Number(r.percentual_mdr_aplicado) : 0
-      // Taxa rateada pelo valor do próprio item, não pelo valor total da venda de cartão
-      // (vc.valor_bruto) — um recebimento em lote (N atendimentos pagos numa única tacada de
-      // cartão) compartilha o mesmo venda_cartao_id entre as N linhas de tab_recebimento_consulta,
-      // então usar vc.valor_bruto como base repetia a taxa cheia da venda em cada linha.
-      const valorTaxa    = percentualMdr > 0 ? Math.round(valorBruto * (percentualMdr / 100) * 100) / 100 : 0
-      const valorLiquido = Math.round((valorBruto - valorTaxa) * 100) / 100
+      const { valorTaxa, valorLiquido } = calcularValoresRecebimento(valorBruto, percentualMdr)
       return {
         id: r.id,
         data_recebimento: r.data_recebimento instanceof Date ? r.data_recebimento.toISOString().slice(0, 10) : String(r.data_recebimento).slice(0, 10),
