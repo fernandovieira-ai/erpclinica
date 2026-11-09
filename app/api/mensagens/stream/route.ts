@@ -18,7 +18,6 @@ export async function GET(req: NextRequest) {
   const session = await getSession(req)
   if (!session) return new Response('Não autenticado', { status: 401 })
 
-  const db = getDb(session.database_name)
   const encoder = new TextEncoder()
   let closed = false
   let lastSignature = ''
@@ -40,7 +39,11 @@ export async function GET(req: NextRequest) {
       const check = async () => {
         if (closed) return
         try {
-          const { rows } = await db.query(
+          // getDb() de novo a cada ciclo (não reusar uma referência capturada no
+          // início): além de pegar o pool atual, atualiza o lastUsedAt do tenant
+          // em lib/db/index.ts, evitando que o evictIdlePools feche esse pool por
+          // "ociosidade" enquanto esta conexão fica aberta por horas.
+          const { rows } = await getDb(session.database_name).query(
             `SELECT
                (SELECT COALESCE(MAX(id), 0) FROM tab_mensagem WHERE empresa_id = $1 AND destinatario_id = $2) AS recebidas,
                (SELECT COUNT(*) FROM tab_mensagem WHERE empresa_id = $1 AND destinatario_id = $2 AND lida_em IS NULL AND NOT oculta_destinatario) AS nao_lidas,
