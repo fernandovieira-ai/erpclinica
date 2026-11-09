@@ -44,6 +44,10 @@ interface Props {
   // Abre o modal já marcado como encaixe (furar conflito de horário + disponibilidade do
   // profissional) — usado pelo botão "Encaixar Paciente" da sidebar da agenda
   encaixeInicial?:  boolean
+  // Lista de profissionais já carregada pela tela que abre o modal (ex: page.tsx busca uma
+  // vez no mount) — evita refazer o fetch de /api/clinica/profissionais em toda abertura.
+  // Se não vier, o modal busca por conta própria (comportamento original).
+  profissionaisIniciais?: ProfissionalListItem[]
 }
 
 const STATUS_OPTIONS = [
@@ -193,7 +197,7 @@ function ConfirmarEncaixeModal({
   )
 }
 
-export default function AgendamentoModal({ open, onClose, onSaved, agendamento, dataHoraInicio, profissionalPre, encaixeInicial }: Props) {
+export default function AgendamentoModal({ open, onClose, onSaved, agendamento, dataHoraInicio, profissionalPre, encaixeInicial, profissionaisIniciais }: Props) {
   const isEdit    = !!agendamento
   const jaFoiPago = isEdit && agendamento?.status_recebimento === 'PAGO'
 
@@ -288,7 +292,9 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
     setExigeCpfCnpj(false)
     setExigeCelular(true)
     Promise.all([
-      fetch('/api/clinica/profissionais').then(r => r.json()),
+      profissionaisIniciais?.length
+        ? Promise.resolve({ dados: profissionaisIniciais })
+        : fetch('/api/clinica/profissionais').then(r => r.json()),
       // limit=100 (máximo da rota): o padrão é 50 e cortaria em silêncio os tipos além do 50º
       fetch('/api/clinica/tipos-agendamento?limit=100').then(r => r.json()),
       fetch('/api/clinica/categorias?limit=200').then(r => r.json()),
@@ -309,7 +315,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
       setCarregado(true)
     })
     return () => { cancelado = true }
-  }, [open])
+  }, [open, profissionaisIniciais])
 
   // Popular form ao editar ou ao clicar em slot
   useEffect(() => {

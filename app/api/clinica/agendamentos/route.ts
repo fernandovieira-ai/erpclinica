@@ -11,6 +11,12 @@ import { autoFinalizarAgendamentosPagos } from '@/lib/clinica/auto-finalizar'
 import type { Pool } from 'pg'
 
 const _tableCache = new Map<string, boolean>()
+
+// Throttle do autoFinalizarAgendamentosPagos: a tela de agenda dispara 2-3 GETs em
+// sequência a cada navegação (dia/mês/confirmar) — o UPDATE é idempotente, então não
+// precisa rodar em todos, só de tempos em tempos por empresa.
+const _autoFinalizarCache = new Map<number, number>()
+const AUTO_FINALIZAR_THROTTLE_MS = 60_000
 async function tabelaExiste(db: Pool, dbName: string, tableName: string): Promise<boolean> {
   const key = `${dbName}:${tableName}`
   if (_tableCache.has(key)) return _tableCache.get(key)!
@@ -79,7 +85,11 @@ export async function GET(req: NextRequest) {
   // clicou "Finalizar atendimento" — ver lib/clinica/auto-finalizar.ts. Roda em toda
   // listagem (agenda, recebimentos, ficha do paciente), não depende de login/cron.
   if (temTabelaRecebimento) {
-    await autoFinalizarAgendamentosPagos(db, session.empresa_id_ativa)
+    const ultimaExec = _autoFinalizarCache.get(session.empresa_id_ativa) ?? 0
+    if (Date.now() - ultimaExec > AUTO_FINALIZAR_THROTTLE_MS) {
+      await autoFinalizarAgendamentosPagos(db, session.empresa_id_ativa)
+      _autoFinalizarCache.set(session.empresa_id_ativa, Date.now())
+    }
   }
 
   const selectRecebimento = temTabelaRecebimento

@@ -131,12 +131,15 @@ export default function AgendamentoPage() {
   const [confirmarAtendidoAg, setConfirmarAtendidoAg] = useState<AgendamentoListItem | null>(null)
   const [marcandoAtendido, setMarcandoAtendido] = useState(false)
 
-  // Relógio ao vivo para calcular tempo de espera em tempo real
+  // Relógio ao vivo para calcular tempo de espera em tempo real — só usado nos chips
+  // "Aguardando" da Visão Dia e da Lista; nas outras views o tick só forçaria re-render
+  // sem nenhum uso, então o interval fica parado fora delas.
   const [agora, setAgora] = useState(() => new Date())
   useEffect(() => {
+    if (view !== 'dia' && view !== 'lista') return
     const id = setInterval(() => setAgora(new Date()), 30_000)
     return () => clearInterval(id)
-  }, [])
+  }, [view])
 
   function formatarTempoEspera(horario: string | null | undefined): string {
     if (!horario) return ''
@@ -989,6 +992,13 @@ export default function AgendamentoPage() {
     const agsHojeEncaixes = agsHoje
       .filter(ag => ag.eh_encaixe)
       .sort((a, b) => (a.periodo !== b.periodo ? (a.periodo === 'TARDE' ? 1 : -1) : a.id - b.id))
+    // Faz o parseISO uma vez por agendamento (não a cada slot da grade) — o resto da
+    // lógica abaixo (filter por início exato / some por sobreposição) continua igual.
+    const agsHojeGradeParsed = agsHojeGrade.map(ag => ({
+      ag,
+      ini: parseISO(ag.data_hora_inicio),
+      fim: parseISO(ag.data_hora_fim),
+    }))
 
     const agora = new Date()
     const minutoAtual = agora.getHours() * 60 + agora.getMinutes()
@@ -1089,16 +1099,11 @@ export default function AgendamentoPage() {
           const isPrimeiraDaHora = slotIdx === 0 || horasDia[slotIdx - 1].h !== slot.h
           const slotDt    = setMinutes(setHours(selectedDay, slot.h), slot.m)
           const isPast    = slotDt < agora && !isAtual
-          const ags       = agsHojeGrade.filter(ag => {
-            const ini = parseISO(ag.data_hora_inicio)
-            return ini.getHours() === slot.h && ini.getMinutes() === slot.m
-          })
+          const ags       = agsHojeGradeParsed
+            .filter(({ ini }) => ini.getHours() === slot.h && ini.getMinutes() === slot.m)
+            .map(({ ag }) => ag)
           // slot coberto por agendamento que começou antes
-          const isOccupied = agsHojeGrade.some(ag => {
-            const ini = parseISO(ag.data_hora_inicio)
-            const fim = parseISO(ag.data_hora_fim)
-            return slotDt >= ini && slotDt < fim
-          })
+          const isOccupied = agsHojeGradeParsed.some(({ ini, fim }) => slotDt >= ini && slotDt < fim)
           // slot dentro de um período de pausa cadastrado pro profissional filtrado — mostra o
           // rótulo mesmo em horário já passado (ex.: hoje às 10h, pausa cadastrada 08:30-15:30
           // ainda deve aparecer marcada das 08:30 em diante, não só a partir da hora atual)
@@ -1453,6 +1458,17 @@ export default function AgendamentoPage() {
   // ── Visão Semana ─────────────────────────────────────────────
   function renderSemana() {
     const dias = eachDayOfInterval({ start: periodo.ini, end: periodo.fim })
+    // Agrupa os agendamentos por dia+horário uma única vez (O(M)) em vez de refiltrar
+    // (com parseISO) o array inteiro de agendamentos pra cada combinação slot×dia da
+    // grade (O(slots × dias × M)) — mesmo resultado, só muda como é calculado.
+    const agsPorDiaHora = new Map<string, AgendamentoListItem[]>()
+    for (const ag of agendamentos) {
+      const ini = parseISO(ag.data_hora_inicio)
+      const key = `${format(ini, 'yyyy-MM-dd')} ${ini.getHours()}:${ini.getMinutes()}`
+      const lista = agsPorDiaHora.get(key)
+      if (lista) lista.push(ag)
+      else agsPorDiaHora.set(key, [ag])
+    }
     return (
       <div style={{ overflow: 'auto', flex: 1 }}>
         <div style={{ display: 'grid', gridTemplateColumns: '58px repeat(7, 1fr)', minWidth: 700 }}>
@@ -1551,10 +1567,7 @@ export default function AgendamentoPage() {
               {dias.map(dia => {
                 const dataStr = format(dia, 'yyyy-MM-dd')
                 const indisponível = diasIndisponíveis.has(dataStr)
-                const ags = agendamentos.filter(ag => {
-                  const ini = parseISO(ag.data_hora_inicio)
-                  return isSameDay(ini, dia) && ini.getHours() === slot.h && ini.getMinutes() === slot.m
-                })
+                const ags = agsPorDiaHora.get(`${dataStr} ${slot.h}:${slot.m}`) ?? []
                 const proxSlot   = horasSemana[slotIdx + 1]
                 const slotDurMin = proxSlot ? (proxSlot.h * 60 + proxSlot.m) - (slot.h * 60 + slot.m) : 30
                 const pausa      = ags.length === 0 ? pausaDoSlot(dia, slot.h * 60 + slot.m, slotDurMin) : null
@@ -2276,6 +2289,7 @@ export default function AgendamentoPage() {
         dataHoraInicio={slotInicio}
         profissionalPre={profissionais.find(p => p.id === profFiltro) ?? null}
         encaixeInicial={modoEncaixe}
+        profissionaisIniciais={profissionais}
       />
 
       <NovoHorarioModal
