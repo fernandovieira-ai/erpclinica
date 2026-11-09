@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ChevronLeft, ChevronRight, Plus, CalendarDays, LayoutGrid, List,
-  Stethoscope, RefreshCw, UserCheck, Search, Ban, Zap,
+  Stethoscope, RefreshCw, UserCheck, Search, Ban, Zap, CheckCircle2,
 } from 'lucide-react'
 import {
   format, startOfWeek, endOfWeek, addWeeks, subWeeks,
@@ -127,6 +127,9 @@ export default function AgendamentoPage() {
   const [agendamentoAtual, setAgendamentoAtual] = useState<AgendamentoListItem | null>(null)
   const [agendamentosAtuais, setAgendamentosAtuais] = useState<AgendamentoListItem[]>([])
   const [modalPacienteOcultarFinalizar, setModalPacienteOcultarFinalizar] = useState(false)
+
+  const [confirmarAtendidoAg, setConfirmarAtendidoAg] = useState<AgendamentoListItem | null>(null)
+  const [marcandoAtendido, setMarcandoAtendido] = useState(false)
 
   // Relógio ao vivo para calcular tempo de espera em tempo real
   const [agora, setAgora] = useState(() => new Date())
@@ -652,6 +655,30 @@ export default function AgendamentoPage() {
       carregar()
     } else {
       toast.error('Erro ao atualizar status do paciente')
+    }
+  }
+
+  function pedirConfirmacaoAtendido(ag: AgendamentoListItem, e: React.MouseEvent) {
+    e.stopPropagation()
+    setConfirmarAtendidoAg(ag)
+  }
+
+  async function confirmarMarcarAtendido() {
+    if (!confirmarAtendidoAg) return
+    setMarcandoAtendido(true)
+    const res = await fetch(`/api/clinica/agendamentos/${confirmarAtendidoAg.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'ATENDIDO', origem: 'agenda_exame' }),
+    })
+    setMarcandoAtendido(false)
+    if (res.ok) {
+      toast.success('Exame marcado como atendido!')
+      setConfirmarAtendidoAg(null)
+      carregar()
+    } else {
+      const data = await res.json().catch(() => null)
+      toast.error(data?.erro ?? 'Erro ao marcar exame como atendido')
     }
   }
 
@@ -1264,6 +1291,29 @@ export default function AgendamentoPage() {
                               ? `${format(parseISO(ag.horario_chegada), 'HH:mm')} · ${formatarTempoEspera(ag.horario_chegada)}`
                               : 'Aguardando'
                             : 'Chegou?'}
+                        </button>
+                      )}
+
+                      {/* Exame já pago no dia — pode marcar atendido direto, sem passar pela Sala de Espera */}
+                      {ag.tipo_eh_exame && ag.status_recebimento === 'PAGO'
+                        && ag.status !== 'ATENDIDO' && ag.status !== 'CANCELADO' && ag.status !== 'FALTOU'
+                        && isToday(parseISO(ag.data_hora_inicio)) && (
+                        <button
+                          onClick={e => pedirConfirmacaoAtendido(ag, e)}
+                          title="Marcar exame como atendido"
+                          style={{
+                            flexShrink: 0,
+                            display: 'flex', alignItems: 'center', gap: 4,
+                            padding: '3px 9px', borderRadius: 20,
+                            border: '1px solid #22C55E',
+                            background: '#22C55E20',
+                            color: '#22C55E',
+                            fontSize: 11, fontWeight: 600,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <CheckCircle2 size={12} />
+                          Marcar atendido
                         </button>
                       )}
 
@@ -2052,6 +2102,29 @@ export default function AgendamentoPage() {
                 </button>
               )}
 
+              {/* Exame já pago no dia — pode marcar atendido direto, sem passar pela Sala de Espera */}
+              {ag.tipo_eh_exame && ag.status_recebimento === 'PAGO'
+                && ag.status !== 'ATENDIDO' && ag.status !== 'CANCELADO' && ag.status !== 'FALTOU'
+                && isToday(parseISO(ag.data_hora_inicio)) && (
+                <button
+                  onClick={e => pedirConfirmacaoAtendido(ag, e)}
+                  title="Marcar exame como atendido"
+                  style={{
+                    flexShrink: 0,
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    padding: '3px 9px', borderRadius: 20,
+                    border: '1px solid #22C55E',
+                    background: '#22C55E20',
+                    color: '#22C55E',
+                    fontSize: 11, fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <CheckCircle2 size={12} />
+                  Marcar atendido
+                </button>
+              )}
+
               {/* Badge de encaixe */}
               {ag.eh_encaixe && (
                 <div
@@ -2237,6 +2310,101 @@ export default function AgendamentoPage() {
         onSaved={() => { carregar(); carregarConfirmar() }}
         ocultarFinalizar={modalPacienteOcultarFinalizar}
       />
+
+      <ConfirmarAtendidoModal
+        agendamento={confirmarAtendidoAg}
+        marcando={marcandoAtendido}
+        onCancelar={() => { if (!marcandoAtendido) setConfirmarAtendidoAg(null) }}
+        onConfirmar={confirmarMarcarAtendido}
+      />
     </>
+  )
+}
+
+function ConfirmarAtendidoModal({
+  agendamento, marcando, onCancelar, onConfirmar,
+}: {
+  agendamento: AgendamentoListItem | null
+  marcando: boolean
+  onCancelar: () => void
+  onConfirmar: () => void
+}) {
+  if (!agendamento) return null
+  return (
+    <div
+      onClick={onCancelar}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1200,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          backgroundColor: 'var(--bg-card)', borderRadius: 12,
+          width: '100%', maxWidth: 380,
+          padding: '30px 26px 22px',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+          textAlign: 'center',
+        }}
+      >
+        <div style={{
+          width: 54, height: 54, borderRadius: '50%', margin: '0 auto 16px',
+          background: 'var(--cor-primaria-light)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <CheckCircle2 size={26} style={{ color: 'var(--cor-primaria)' }} />
+        </div>
+
+        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--texto-principal)', marginBottom: 8 }}>
+          Marcar exame como atendido?
+        </div>
+        <div style={{ fontSize: 12.5, color: 'var(--texto-secundario)', lineHeight: 1.55, marginBottom: 24 }}>
+          O exame de <strong style={{ color: 'var(--texto-principal)' }}>{agendamento.paciente_nome}</strong>
+          {' '}será marcado como atendido. Essa ação não pode ser clicada por engano — confirme pra continuar.
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <button
+            type="button"
+            disabled={marcando}
+            onClick={onConfirmar}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              padding: '10px 16px', borderRadius: 8,
+              background: marcando ? '#15a073' : 'linear-gradient(135deg,#1D9E75,#15a073)',
+              color: '#fff', border: 'none',
+              fontSize: 13.5, fontWeight: 700, cursor: marcando ? 'not-allowed' : 'pointer',
+              opacity: marcando ? 0.75 : 1,
+              boxShadow: '0 2px 8px rgba(29,158,117,0.35)',
+              letterSpacing: '0.02em',
+              transition: 'opacity 0.15s',
+            }}
+            onMouseEnter={e => { if (!marcando) e.currentTarget.style.opacity = '0.88' }}
+            onMouseLeave={e => { if (!marcando) e.currentTarget.style.opacity = '1' }}
+          >
+            <CheckCircle2 size={15} />
+            {marcando ? 'Marcando...' : 'Sim, marcar atendido'}
+          </button>
+          <button
+            type="button"
+            disabled={marcando}
+            onClick={onCancelar}
+            style={{
+              padding: '9px 16px', borderRadius: 8,
+              background: 'none', border: '1px solid var(--borda-media)',
+              color: 'var(--texto-secundario)',
+              fontSize: 12.5, fontWeight: 600,
+              cursor: marcando ? 'not-allowed' : 'pointer',
+              opacity: marcando ? 0.6 : 1,
+            }}
+          >
+            Não, cancelar
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }

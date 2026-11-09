@@ -54,6 +54,7 @@ export interface Agendamento {
   tipo_cor:              string | null
   tipo_duracao_min:      number | null
   tipo_voa_clinical_type: string | null
+  tipo_eh_exame:         boolean | null
   especialidade_id:      number | null
   especialidade_descricao: string | null
   especialidade_cor:     string | null
@@ -80,7 +81,7 @@ export type AgendamentoListItem = Pick<
   | 'id' | 'paciente_id' | 'paciente_nome' | 'paciente_celular'
   | 'profissional_id' | 'profissional_nome' | 'profissional_eh_clinica'
   | 'medico_solicitante_id' | 'medico_solicitante_nome'
-  | 'tipo_id' | 'tipo_descricao' | 'tipo_cor' | 'tipo_voa_clinical_type'
+  | 'tipo_id' | 'tipo_descricao' | 'tipo_cor' | 'tipo_voa_clinical_type' | 'tipo_eh_exame'
   | 'especialidade_id' | 'especialidade_descricao'
   | 'data_hora_inicio' | 'data_hora_fim' | 'status' | 'motivo' | 'observacao'
   | 'categoria_id' | 'categoria_descricao'

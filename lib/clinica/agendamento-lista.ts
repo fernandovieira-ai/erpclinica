@@ -16,6 +16,7 @@ export const AGENDAMENTO_LISTA_COLUNAS = `
        tp.id    AS tipo_id,         tp.descricao AS tipo_descricao,
        tp.cor   AS tipo_cor,        tp.duracao_min AS tipo_duracao_min,
        tp.voa_clinical_type AS tipo_voa_clinical_type,
+       tp.eh_exame AS tipo_eh_exame,
        COALESCE(atc.valor, tp.valor) AS tipo_valor,
        atc.valor_prazo AS tipo_valor_prazo,
        esp.id   AS especialidade_id, esp.descricao AS especialidade_descricao,

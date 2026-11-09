@@ -202,7 +202,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
 
-  const { status } = await req.json()
+  const { status, origem } = await req.json()
   if (!STATUS_AGENDAMENTO.includes(status)) {
     return NextResponse.json({ erro: 'Status inválido' }, { status: 400 })
   }
@@ -219,6 +219,32 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   } else if (status === 'ATENDIDO') {
     // Registra o momento em que o atendimento começou
     extraSql = ', horario_inicio_atendimento = COALESCE(horario_inicio_atendimento, NOW())'
+
+    // Regra vale só pro botão "Marcar atendido" da Agenda (origem='agenda_exame'), que
+    // marca exame como atendido direto, sem passar pelo médico. O "Finalizar Atendimento"
+    // da Sala de Espera continua sem essa restrição, como já era antes.
+    if (origem === 'agenda_exame') {
+      const { rows: checkRows } = await db.query(
+        `SELECT tp.eh_exame,
+                (a.data_hora_inicio::date = CURRENT_DATE) AS eh_hoje,
+                EXISTS (
+                  SELECT 1 FROM tab_recebimento_consulta rc
+                  WHERE rc.agendamento_id = a.id AND rc.status_recebimento = 'PAGO'
+                ) AS pago
+           FROM tab_agendamento a
+           LEFT JOIN tab_agendamento_tipo tp ON tp.id = a.tipo_id
+          WHERE a.id = $1 AND a.empresa_id = $2`,
+        [params.id, session.empresa_id_ativa],
+      )
+      if (!checkRows.length) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
+      const { eh_exame, eh_hoje, pago } = checkRows[0]
+      if (eh_exame && (!pago || !eh_hoje)) {
+        return NextResponse.json(
+          { erro: 'Exame só pode ser marcado como atendido no dia do agendamento, após o pagamento' },
+          { status: 400 },
+        )
+      }
+    }
   }
 
   const { rows } = await db.query(
