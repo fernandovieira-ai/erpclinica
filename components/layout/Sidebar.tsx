@@ -231,11 +231,11 @@ export default function Sidebar({ session }: Props) {
               <button
                 key={c.usuario_id}
                 onClick={() => abrirPainel(c.usuario_id, c.nome)}
-                className="mensagem-destaque"
+                className={`mensagem-destaque ${pulsando ? 'mensagem-destaque-pulse' : ''}`}
               >
                 <AvatarUsuario nome={c.nome} tamanho={26} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="mensagem-destaque-label">Nova mensagem</div>
+                  <div className="mensagem-destaque-label">{c.pendente_grupo ? 'Fila da Recepção' : 'Nova mensagem'}</div>
                   <div className="mensagem-destaque-nome">{c.nome}</div>
                   <div className="mensagem-destaque-texto">{c.ultima_mensagem}</div>
                 </div>

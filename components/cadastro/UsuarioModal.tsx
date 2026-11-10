@@ -129,7 +129,7 @@ export default function UsuarioModal({ open, usuario, usuarioIdAtual, onClose, o
     resolver: zodResolver(usuarioUpdateSchema),
     defaultValues: {
       nome: '', email: '', senha: '', perfil: 'operador',
-      trocar_senha: true, ativo: true, empresas_ids: [], profissional_id: null,
+      trocar_senha: true, ativo: true, ind_recepcionista: false, empresas_ids: [], profissional_id: null,
     },
   })
 
@@ -153,6 +153,7 @@ export default function UsuarioModal({ open, usuario, usuarioIdAtual, onClose, o
         perfil:          usuario.perfil,
         trocar_senha:    usuario.trocar_senha,
         ativo:           usuario.ativo,
+        ind_recepcionista: usuario.ind_recepcionista,
         empresas_ids:    usuario.empresas.map(e => e.id),
         profissional_id: usuario.profissional_id,
       })
@@ -160,7 +161,7 @@ export default function UsuarioModal({ open, usuario, usuarioIdAtual, onClose, o
         ? { id: usuario.profissional_id, nome: usuario.profissional_nome }
         : null)
     } else {
-      reset({ nome: '', email: '', senha: '', perfil: 'operador', trocar_senha: true, ativo: true, empresas_ids: [], profissional_id: null })
+      reset({ nome: '', email: '', senha: '', perfil: 'operador', trocar_senha: true, ativo: true, ind_recepcionista: false, empresas_ids: [], profissional_id: null })
       setProfissional(null)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -381,6 +382,16 @@ export default function UsuarioModal({ open, usuario, usuarioIdAtual, onClose, o
             )}
 
             {/* Opções */}
+            <div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--texto-secundario)', cursor: 'pointer' }}>
+                <input type="checkbox" {...register('ind_recepcionista')} />
+                Recepcionista — recebe mensagens enviadas ao grupo "Recepção"
+              </label>
+              <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginTop: 4, marginLeft: 24 }}>
+                Mensagem endereçada à Recepção aparece pra todas as recepcionistas da empresa; quem responder primeiro assume a conversa.
+              </div>
+            </div>
+
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 4, borderTop: '0.5px solid var(--borda-suave)' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--texto-secundario)', cursor: 'pointer' }}>
                 <input type="checkbox" {...register('trocar_senha')} />

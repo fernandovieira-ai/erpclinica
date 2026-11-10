@@ -86,10 +86,10 @@ export async function POST(req: NextRequest) {
     await client.query('BEGIN')
 
     const { rows } = await client.query(
-      `INSERT INTO tab_usuario (nome, email, senha_hash, perfil, trocar_senha, ativo, profissional_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO tab_usuario (nome, email, senha_hash, perfil, trocar_senha, ativo, profissional_id, ind_recepcionista)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id`,
-      [d.nome.toUpperCase(), d.email, senhaHash, d.perfil, d.trocar_senha, d.ativo, d.profissional_id || null],
+      [d.nome.toUpperCase(), d.email, senhaHash, d.perfil, d.trocar_senha, d.ativo, d.profissional_id || null, d.ind_recepcionista],
     )
     const usuarioId = rows[0].id
 

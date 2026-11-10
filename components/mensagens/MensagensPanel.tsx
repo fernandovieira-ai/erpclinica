@@ -1,8 +1,10 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Send, X, Plus, Check, CheckCheck, Trash2 } from 'lucide-react'
+import { ArrowLeft, Send, X, Plus, Check, CheckCheck, Trash2, Users } from 'lucide-react'
+import { toast } from 'sonner'
 import type { Conversa, Mensagem, UsuarioChat } from '@/types/mensagem.types'
+import { DESTINATARIO_GRUPO_RECEPCAO } from '@/lib/validators/mensagem.schema'
 import AvatarUsuario from './AvatarUsuario'
 
 interface Props {
@@ -114,10 +116,16 @@ export default function MensagensPanel({ open, onClose, conversas, tick, meuUsua
     setSelecionado({ id, nome })
     setNovaConversa(false)
     setMensagens([])
-    const res = await fetch(`/api/mensagens/conversas/${id}`)
-    if (res.ok) {
-      const json = await res.json()
-      if (selecionadoIdRef.current === id) setMensagens(json.dados ?? [])
+    try {
+      const res = await fetch(`/api/mensagens/conversas/${id}`)
+      if (res.ok) {
+        const json = await res.json()
+        if (selecionadoIdRef.current === id) setMensagens(json.dados ?? [])
+      } else {
+        toast.error('Não foi possível carregar a conversa. Tente novamente.')
+      }
+    } catch {
+      toast.error('Falha de conexão ao carregar a conversa.')
     }
     onRefetchConversas()
   }
@@ -133,8 +141,13 @@ export default function MensagensPanel({ open, onClose, conversas, tick, meuUsua
     setNovaConversa(true)
     setSelecionado(null)
     if (usuariosDisponiveis.length === 0) {
-      const res = await fetch('/api/mensagens/usuarios')
-      if (res.ok) setUsuarios((await res.json()).dados ?? [])
+      try {
+        const res = await fetch('/api/mensagens/usuarios')
+        if (res.ok) setUsuarios((await res.json()).dados ?? [])
+        else toast.error('Não foi possível carregar a lista de usuários.')
+      } catch {
+        toast.error('Falha de conexão ao carregar a lista de usuários.')
+      }
     }
   }
 
@@ -158,9 +171,12 @@ export default function MensagensPanel({ open, onClose, conversas, tick, meuUsua
         onRefetchConversas()
       } else {
         setTexto(t) // falha no envio — devolve o texto digitado em vez de descartar
+        const json = await res.json().catch(() => null)
+        toast.error(json?.erro ?? 'Não foi possível enviar a mensagem. Tente novamente.')
       }
     } catch {
       setTexto(t) // rede caiu antes de completar — mesma recuperação
+      toast.error('Falha de conexão ao enviar a mensagem.')
     } finally {
       setEnviando(false)
     }
@@ -174,7 +190,21 @@ export default function MensagensPanel({ open, onClose, conversas, tick, meuUsua
     const id = selecionado.id
     fetch(`/api/mensagens/conversas/${id}`)
       .then(res => (res.ok ? res.json() : null))
-      .then(json => { if (json && selecionadoIdRef.current === id) setMensagens(json.dados ?? []) })
+      .then(json => {
+        if (!json || selecionadoIdRef.current !== id) return
+        const novasMensagens = json.dados ?? []
+        // Fila do grupo Recepção: se eu estava acompanhando minha própria mensagem
+        // pendente e ela esvaziou, foi assumida por uma recepcionista — a conversa
+        // "virou" uma conversa normal com quem assumiu. Sem redirect automático (não
+        // sabemos quem foi sem mais uma consulta), volta pra lista em vez de deixar
+        // a tela em branco; a pessoa vê a nova conversa já com a resposta na lista.
+        if (id === DESTINATARIO_GRUPO_RECEPCAO && novasMensagens.length === 0 && mensagens.length > 0) {
+          setSelecionado(null)
+          setMensagens([])
+          return
+        }
+        setMensagens(novasMensagens)
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tick])
 
@@ -198,7 +228,11 @@ export default function MensagensPanel({ open, onClose, conversas, tick, meuUsua
       if (res.ok) {
         setMensagens(prev => prev.filter(m => m.id !== paraExcluir))
         onRefetchConversas()
+      } else {
+        toast.error('Não foi possível excluir a mensagem.')
       }
+    } catch {
+      toast.error('Falha de conexão ao excluir a mensagem.')
     } finally {
       setExcluindo(false)
       setParaExcluir(null)
@@ -216,7 +250,11 @@ export default function MensagensPanel({ open, onClose, conversas, tick, meuUsua
           setMensagens([])
         }
         onRefetchConversas()
+      } else {
+        toast.error('Não foi possível excluir a conversa.')
       }
+    } catch {
+      toast.error('Falha de conexão ao excluir a conversa.')
     } finally {
       setExcluindo(false)
       setConversaParaExcluir(null)
@@ -302,7 +340,18 @@ export default function MensagensPanel({ open, onClose, conversas, tick, meuUsua
                 >
                   <AvatarUsuario nome={c.nome} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--texto-principal)' }}>{c.nome}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--texto-principal)' }}>{c.nome}</div>
+                      {c.pendente_grupo && (
+                        <span title={c.usuario_id === DESTINATARIO_GRUPO_RECEPCAO ? 'Aguardando atendimento' : 'Pendente na fila da Recepção'} style={{
+                          display: 'flex', alignItems: 'center', gap: 2, fontSize: 10, fontWeight: 700,
+                          color: 'var(--cor-aviso)', backgroundColor: 'var(--cor-aviso-bg)',
+                          borderRadius: 999, padding: '1px 6px', flexShrink: 0,
+                        }}>
+                          <Users size={9} /> {c.usuario_id === DESTINATARIO_GRUPO_RECEPCAO ? 'Aguardando' : 'Fila'}
+                        </span>
+                      )}
+                    </div>
                     <div style={{
                       fontSize: 12, color: 'var(--texto-terciario)', whiteSpace: 'nowrap',
                       overflow: 'hidden', textOverflow: 'ellipsis',
@@ -341,21 +390,36 @@ export default function MensagensPanel({ open, onClose, conversas, tick, meuUsua
               Nenhum outro usuário disponível nesta empresa.
             </div>
           )}
-          {usuariosDisponiveis.map(u => (
-            <button
-              key={u.id}
-              onClick={() => abrirConversa(u.id, u.nome)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 10, width: '100%',
-                padding: '10px 12px', background: 'none', border: 'none',
-                borderBottom: '0.5px solid var(--borda-suave)', cursor: 'pointer', textAlign: 'left',
-              }}
-            >
-              <AvatarUsuario nome={u.nome} />
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--texto-principal)' }}>{u.nome}</div>
-              <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginLeft: 'auto' }}>{u.perfil}</div>
-            </button>
-          ))}
+          {usuariosDisponiveis.map(u => {
+            const grupo = u.id === DESTINATARIO_GRUPO_RECEPCAO
+            return (
+              <button
+                key={u.id}
+                onClick={() => abrirConversa(u.id, u.nome)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+                  padding: '10px 12px', border: 'none',
+                  borderBottom: grupo ? '0.5px solid var(--cor-info-bg)' : '0.5px solid var(--borda-suave)',
+                  cursor: 'pointer', textAlign: 'left',
+                  background: grupo ? 'var(--cor-info-bg)' : 'none',
+                }}
+              >
+                {grupo
+                  ? (
+                    <div style={{
+                      width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+                      backgroundColor: 'var(--cor-info)', color: '#fff',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <Users size={15} />
+                    </div>
+                  )
+                  : <AvatarUsuario nome={u.nome} />}
+                <div style={{ fontSize: 13, fontWeight: 600, color: grupo ? 'var(--cor-info)' : 'var(--texto-principal)' }}>{u.nome}</div>
+                {!grupo && <div style={{ fontSize: 11, color: 'var(--texto-terciario)', marginLeft: 'auto' }}>{u.perfil}</div>}
+              </button>
+            )
+          })}
         </div>
       )}
 

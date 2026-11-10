@@ -12,6 +12,10 @@ export interface Conversa {
   ultima_mensagem_em:     string | null
   ultima_mensagem_de_mim: boolean
   nao_lidas:              number
+  // true = mensagem endereçada ao grupo "Recepção" ainda sem ninguém ter assumido.
+  // Visível a TODAS as recepcionistas simultaneamente (fila compartilhada) até a
+  // primeira resposta; pra quem enviou, é a própria mensagem aguardando atendimento.
+  pendente_grupo:        boolean
 }
 
 export interface Mensagem {

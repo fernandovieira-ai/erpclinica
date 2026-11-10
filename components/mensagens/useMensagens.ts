@@ -32,9 +32,13 @@ export function useMensagens() {
 
       if (!primeiraCargaRef.current) {
         const chegouAlgo = novas.some(c => {
-          if (c.ultima_mensagem_de_mim || c.nao_lidas === 0) return false
+          if (c.ultima_mensagem_de_mim) return false
           const antes = anteriores.find(a => a.usuario_id === c.usuario_id)
-          return !antes || c.nao_lidas > antes.nao_lidas
+          if (c.nao_lidas > 0) return !antes || c.nao_lidas > antes.nao_lidas
+          // mensagem nova na fila do grupo Recepção (nao_lidas não se aplica a ela,
+          // é pendente pra todas as recepcionistas, não "não lida" de alguém específico)
+          if (c.pendente_grupo) return !antes || !antes.pendente_grupo
+          return false
         })
         if (chegouAlgo) {
           setPulsando(true)
@@ -73,7 +77,10 @@ export function useMensagens() {
     return () => es.close()
   }, [refetchConversas])
 
-  const totalNaoLidas = conversas.reduce((acc, c) => acc + c.nao_lidas, 0)
+  const totalNaoLidas = conversas.reduce(
+    (acc, c) => acc + c.nao_lidas + (c.pendente_grupo && !c.ultima_mensagem_de_mim ? 1 : 0),
+    0,
+  )
 
   return { conversas, totalNaoLidas, tick, pulsando, refetchConversas }
 }

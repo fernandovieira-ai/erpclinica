@@ -34,7 +34,10 @@ export function MensagensProvider({ meuUsuarioId, children }: { meuUsuarioId: nu
     if (id != null && nome != null) setPedidoAbrir({ id, nome, ts: Date.now() })
   }
 
-  const conversasNaoLidas = conversas.filter(c => c.nao_lidas > 0)
+  // Mensagem pendente do grupo Recepção conta como alerta igual uma não lida normal
+  // (pra qualquer recepcionista, menos pra quem mandou pro grupo vendo sua própria
+  // mensagem aguardando resposta).
+  const conversasNaoLidas = conversas.filter(c => c.nao_lidas > 0 || (c.pendente_grupo && !c.ultima_mensagem_de_mim))
 
   return (
     <MensagensContext.Provider

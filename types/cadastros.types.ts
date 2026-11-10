@@ -745,6 +745,7 @@ export interface Usuario {
   email:             string
   perfil:            'admin' | 'financeiro' | 'operador'
   trocar_senha:      boolean
+  ind_recepcionista: boolean
   ultimo_acesso:     string | null
   ativo:             boolean
   created_at:        string

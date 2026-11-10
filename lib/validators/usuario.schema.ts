@@ -6,6 +6,7 @@ const usuarioBase = {
   perfil:       z.enum(['admin', 'financeiro', 'operador']),
   trocar_senha: z.boolean().default(false),
   ativo:        z.boolean().default(true),
+  ind_recepcionista: z.boolean().default(false),
   empresas_ids: z.array(z.number()).min(1, 'Selecione ao menos uma empresa'),
   profissional_id: z.number().nullable().optional(),
 }

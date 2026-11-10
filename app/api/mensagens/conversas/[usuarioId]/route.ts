@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
+import { DESTINATARIO_GRUPO_RECEPCAO } from '@/lib/validators/mensagem.schema'
 
 // GET /api/mensagens/conversas/:usuarioId — histórico da conversa com esse usuário.
 // Também marca como lidas as mensagens recebidas dele (efeito colateral do GET:
 // abrir a conversa é o gesto de "ler" — mesmo padrão de uma caixa de entrada).
+//
+// usuarioId pode ser o sentinel do grupo Recepção: nesse caso é o histórico das
+// MINHAS próprias mensagens enviadas ao grupo, ainda sem resposta (só eu vejo).
+// Caso contrário, se eu for recepcionista, o histórico também inclui mensagens
+// desse remetente endereçadas ao grupo e ainda não assumidas por ninguém — abrir
+// a conversa aqui NÃO assume a fila (ver padroes.md); só responder assume.
 export async function GET(req: NextRequest, { params }: { params: { usuarioId: string } }) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
@@ -14,17 +21,33 @@ export async function GET(req: NextRequest, { params }: { params: { usuarioId: s
 
   const db = getDb(session.database_name)
 
+  if (outroId === DESTINATARIO_GRUPO_RECEPCAO) {
+    const { rows } = await db.query(
+      `SELECT id, remetente_id, destinatario_id, texto, lida_em, created_at
+       FROM tab_mensagem
+       WHERE empresa_id = $1 AND remetente_id = $2 AND destinatario_id IS NULL AND NOT oculta_remetente
+       ORDER BY created_at ASC
+       LIMIT 200`,
+      [session.empresa_id_ativa, session.usuario_id],
+    )
+    return NextResponse.json({ dados: rows })
+  }
+
+  const { rows: meRows } = await db.query(`SELECT ind_recepcionista FROM tab_usuario WHERE id = $1`, [session.usuario_id])
+  const souRecepcionista = meRows[0]?.ind_recepcionista === true
+
   const { rows } = await db.query(
     `SELECT id, remetente_id, destinatario_id, texto, lida_em, created_at
      FROM tab_mensagem
      WHERE empresa_id = $1
        AND (
          (remetente_id = $2 AND destinatario_id = $3 AND NOT oculta_remetente) OR
-         (remetente_id = $3 AND destinatario_id = $2 AND NOT oculta_destinatario)
+         (remetente_id = $3 AND destinatario_id = $2 AND NOT oculta_destinatario) OR
+         ($4 AND remetente_id = $3 AND destinatario_id IS NULL)
        )
      ORDER BY created_at ASC
      LIMIT 200`,
-    [session.empresa_id_ativa, session.usuario_id, outroId],
+    [session.empresa_id_ativa, session.usuario_id, outroId, souRecepcionista],
   )
 
   await db.query(
@@ -49,6 +72,17 @@ export async function DELETE(req: NextRequest, { params }: { params: { usuarioId
   if (!outroId) return NextResponse.json({ erro: 'Usuário inválido' }, { status: 400 })
 
   const db = getDb(session.database_name)
+
+  // Minhas próprias mensagens pendentes pro grupo não têm destinatario_id (NULL),
+  // então não batem no WHERE genérico abaixo — tratadas aqui, só oculta_remetente.
+  if (outroId === DESTINATARIO_GRUPO_RECEPCAO) {
+    await db.query(
+      `UPDATE tab_mensagem SET oculta_remetente = true
+       WHERE empresa_id = $1 AND remetente_id = $2 AND destinatario_id IS NULL`,
+      [session.empresa_id_ativa, session.usuario_id],
+    )
+    return NextResponse.json({ ok: true })
+  }
 
   await db.query(
     `UPDATE tab_mensagem

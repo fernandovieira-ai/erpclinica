@@ -19,7 +19,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const db = getDb(session.database_name)
   const { rows } = await db.query(
-    `SELECT u.id, u.nome, u.email, u.perfil, u.trocar_senha, u.ultimo_acesso, u.ativo,
+    `SELECT u.id, u.nome, u.email, u.perfil, u.trocar_senha, u.ind_recepcionista, u.ultimo_acesso, u.ativo,
             u.created_at, u.updated_at, u.profissional_id, prof.nome AS profissional_nome,
             COALESCE(
               json_agg(json_build_object('id', e.id, 'razao_social', e.razao_social) ORDER BY e.razao_social)
@@ -80,23 +80,23 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     await client.query('BEGIN')
 
     const { rows: antesRows } = await client.query(
-      `SELECT nome, email, perfil, trocar_senha, ativo, profissional_id FROM tab_usuario WHERE id = $1 FOR UPDATE`,
+      `SELECT nome, email, perfil, trocar_senha, ind_recepcionista, ativo, profissional_id FROM tab_usuario WHERE id = $1 FOR UPDATE`,
       [id],
     )
 
     if (d.senha) {
       const senhaHash = await bcrypt.hash(d.senha, 10)
       const result = await client.query(
-        `UPDATE tab_usuario SET nome=$1, email=$2, senha_hash=$3, perfil=$4, trocar_senha=$5, ativo=$6, profissional_id=$7, updated_at=NOW()
-         WHERE id=$8`,
-        [d.nome.toUpperCase(), d.email, senhaHash, d.perfil, d.trocar_senha, d.ativo, d.profissional_id || null, id],
+        `UPDATE tab_usuario SET nome=$1, email=$2, senha_hash=$3, perfil=$4, trocar_senha=$5, ativo=$6, profissional_id=$7, ind_recepcionista=$8, updated_at=NOW()
+         WHERE id=$9`,
+        [d.nome.toUpperCase(), d.email, senhaHash, d.perfil, d.trocar_senha, d.ativo, d.profissional_id || null, d.ind_recepcionista, id],
       )
       if (result.rowCount === 0) throw Object.assign(new Error('not_found'), { code: 'NOT_FOUND' })
     } else {
       const result = await client.query(
-        `UPDATE tab_usuario SET nome=$1, email=$2, perfil=$3, trocar_senha=$4, ativo=$5, profissional_id=$6, updated_at=NOW()
-         WHERE id=$7`,
-        [d.nome.toUpperCase(), d.email, d.perfil, d.trocar_senha, d.ativo, d.profissional_id || null, id],
+        `UPDATE tab_usuario SET nome=$1, email=$2, perfil=$3, trocar_senha=$4, ativo=$5, profissional_id=$6, ind_recepcionista=$7, updated_at=NOW()
+         WHERE id=$8`,
+        [d.nome.toUpperCase(), d.email, d.perfil, d.trocar_senha, d.ativo, d.profissional_id || null, d.ind_recepcionista, id],
       )
       if (result.rowCount === 0) throw Object.assign(new Error('not_found'), { code: 'NOT_FOUND' })
     }
@@ -118,7 +118,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       registroId: id,
       acao: 'UPDATE',
       dadosAntes: antesRows[0] ?? null,
-      dadosDepois: { nome: d.nome.toUpperCase(), email: d.email, perfil: d.perfil, trocar_senha: d.trocar_senha, ativo: d.ativo, profissional_id: d.profissional_id || null },
+      dadosDepois: { nome: d.nome.toUpperCase(), email: d.email, perfil: d.perfil, trocar_senha: d.trocar_senha, ind_recepcionista: d.ind_recepcionista, ativo: d.ativo, profissional_id: d.profissional_id || null },
     })
     return NextResponse.json({ ok: true })
   } catch (err) {

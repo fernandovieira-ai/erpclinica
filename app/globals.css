@@ -386,6 +386,15 @@
   }
   .badge-pulse { animation: badgePulse 0.6s ease-in-out 3; }
 
+  /* Card de mensagem nova piscando em vermelho (mesma janela de ~2.2s do badge-pulse,
+     acionado pelo mesmo estado "pulsando" de useMensagens.ts) — chama mais atenção
+     que só o ponto pulsando ao lado do botão "Mensagens". */
+  @keyframes destaquePisca {
+    0%, 100%  { background-color: var(--bg-card); border-left-color: var(--cor-erro); }
+    50%       { background-color: var(--cor-erro-bg); border-left-color: var(--cor-erro); }
+  }
+  .mensagem-destaque-pulse { animation: destaquePisca 0.6s ease-in-out 3; }
+
   @keyframes toastIn {
     from { opacity: 0; transform: translateX(16px); }
     to   { opacity: 1; transform: translateX(0); }

@@ -43,11 +43,18 @@ export async function GET(req: NextRequest) {
           // início): além de pegar o pool atual, atualiza o lastUsedAt do tenant
           // em lib/db/index.ts, evitando que o evictIdlePools feche esse pool por
           // "ociosidade" enquanto esta conexão fica aberta por horas.
+          // fila_recepcao muda tanto quando chega mensagem nova pro grupo Recepcao quanto
+          // quando a ultima pendente e assumida por alguem - sinal pra recepcionistas
+          // reconsultarem a fila, e pro proprio remetente ver a resposta chegar.
+          // Comentario fica FORA da template string: a conexao com o banco e LATIN1 e
+          // qualquer caractere fora do Latin-1 (acento em comentario SQL incluso) quebra
+          // a query inteira (ver padroes.md secao sobre encoding).
           const { rows } = await getDb(session.database_name).query(
             `SELECT
                (SELECT COALESCE(MAX(id), 0) FROM tab_mensagem WHERE empresa_id = $1 AND destinatario_id = $2) AS recebidas,
                (SELECT COUNT(*) FROM tab_mensagem WHERE empresa_id = $1 AND destinatario_id = $2 AND lida_em IS NULL AND NOT oculta_destinatario) AS nao_lidas,
-               (SELECT COALESCE(EXTRACT(EPOCH FROM MAX(lida_em)), 0) FROM tab_mensagem WHERE empresa_id = $1 AND remetente_id = $2) AS vistas`,
+               (SELECT COALESCE(EXTRACT(EPOCH FROM MAX(lida_em)), 0) FROM tab_mensagem WHERE empresa_id = $1 AND remetente_id = $2) AS vistas,
+               (SELECT COALESCE(MAX(id), 0) FROM tab_mensagem WHERE empresa_id = $1 AND destinatario_id IS NULL) AS fila_recepcao`,
             [session.empresa_id_ativa, session.usuario_id],
           )
           falhasConsecutivas = 0
