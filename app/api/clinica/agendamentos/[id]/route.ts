@@ -126,6 +126,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
         `SELECT id FROM tab_agendamento
          WHERE profissional_id = $1 AND empresa_id = $2 AND id <> $3
            AND status NOT IN ('CANCELADO','FALTOU')
+           AND eh_encaixe = false AND avulso = false
            AND (data_hora_inicio, data_hora_fim) OVERLAPS ($4::timestamptz, $5::timestamptz)`,
         [d.profissional_id, session.empresa_id_ativa, params.id, d.data_hora_inicio, d.data_hora_fim],
       )
