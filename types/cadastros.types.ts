@@ -39,6 +39,7 @@ export interface Pessoa {
   ind_profissional:  boolean
   eh_clinica:        boolean
   ind_solicitante:   boolean
+  categoria_id:      number | null
   logradouro:        string | null
   numero:            string | null
   complemento:       string | null

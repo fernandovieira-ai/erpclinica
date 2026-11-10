@@ -51,6 +51,9 @@ export const pessoaSchema = z.object({
   eh_clinica:         z.boolean().default(false),
   ind_solicitante:    z.boolean().default(false),
 
+  // Categoria (convênio padrão do paciente — tab_categoria)
+  categoria_id:       z.number().int().optional().nullable(),
+
   // Endereço
   cep:                z.string().max(9).optional().nullable(),
   logradouro:         z.string().max(255).optional().nullable(),

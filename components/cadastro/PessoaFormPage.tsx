@@ -556,6 +556,16 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsu
       .catch(() => {})
   }, [embutido])
 
+  // ── Categorias (convênio padrão do paciente) ─────────────
+  const [categorias, setCategorias] = useState<{ id: number; descricao: string }[]>([])
+
+  useEffect(() => {
+    fetch('/api/clinica/categorias?ativo=true&limit=100')
+      .then(r => r.json())
+      .then(d => setCategorias(d.dados ?? []))
+      .catch(() => {})
+  }, [])
+
   // ── Agenda do profissional ───────────────────────────────
   const [agenda,            setAgenda]            = useState<AgendaDia[]>([])
   const [pausas,            setPausas]            = useState<AgendaPausa[]>([])
@@ -821,7 +831,7 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsu
       ind_cliente: false, ind_fornecedor: false,
       ind_banco: false, ind_transportador: false,
       ind_paciente: papelInicial === 'paciente', ind_profissional: papelInicial === 'profissional',
-      eh_clinica: false, ind_solicitante: false,
+      eh_clinica: false, ind_solicitante: false, categoria_id: null,
       limite_credito: 0, cod_tipo_cobranca: null, contribuinte_icms: false, optante_simples: false,
     },
   })
@@ -870,6 +880,7 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsu
       ind_profissional:  pessoa.ind_profissional,
       eh_clinica:        pessoa.eh_clinica ?? false,
       ind_solicitante:   pessoa.ind_solicitante ?? false,
+      categoria_id:      pessoa.categoria_id ?? null,
       cep:               pessoa.cep ?? '',
       logradouro:        pessoa.logradouro ?? '',
       numero:            pessoa.numero ?? '',
@@ -1214,7 +1225,7 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsu
                 </fieldset>
 
                 <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <FormRow label="Nome:">
+                  <FormRow label="Nome:" labelWidth={60}>
                     <Input {...register('nome')}
                       style={errors.nome ? { border: '1px solid var(--cor-erro)' } : undefined} />
                   </FormRow>
@@ -1273,6 +1284,7 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsu
                         ),
                       }}
                       b={{ label: 'RG:', node: <Input {...register('rg_ie')} /> }}
+                      labelWidth={60}
                     />
                   )}
                 </div>
@@ -1297,14 +1309,14 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsu
 
               {/* Endereço — mesmo recuo da caixa Natureza, pra alinhar com Nome/CPF */}
               <div style={{ paddingLeft: 74, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <FormRow label="CEP:">
-                  <Input {...register('cep')} style={{ width: 90, fontFamily: 'var(--fonte-mono)' }} placeholder="00000-000" />
+                <FormRow label="CEP:" labelWidth={60}>
+                  <Input {...register('cep')} style={{ width: 70, fontFamily: 'var(--fonte-mono)' }} placeholder="00000-000" />
                   <button
                     type="button"
                     onClick={buscarCep}
                     disabled={buscandoCep}
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 3, padding: '3px 8px',
+                      display: 'flex', alignItems: 'center', gap: 2, padding: '3px 5px',
                       background: 'none', border: '1px solid var(--borda-media)', borderRadius: 3,
                       fontSize: 11, cursor: buscandoCep ? 'not-allowed' : 'pointer',
                       color: buscandoCep ? 'var(--texto-terciario)' : 'var(--texto-secundario)',
@@ -1313,19 +1325,30 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsu
                   >
                     <Search size={11} /> {buscandoCep ? 'Buscando...' : 'Buscar'}
                   </button>
+                  <label style={{ fontSize: 12, color: 'var(--texto-secundario)', whiteSpace: 'nowrap' }}>Cat.:</label>
+                  <Select
+                    value={watch('categoria_id') ?? ''}
+                    onChange={e => setValue('categoria_id', e.target.value ? Number(e.target.value) : null)}
+                    style={{ flex: 1, minWidth: 90 }}
+                  >
+                    <option value="">— Nenhuma —</option>
+                    {categorias.map(c => (
+                      <option key={c.id} value={c.id}>{c.descricao.toUpperCase()}</option>
+                    ))}
+                  </Select>
                 </FormRow>
-                <FormRow label="Logradouro:">
+                <FormRow label="Logradouro:" labelWidth={60}>
                   <Input {...register('logradouro')} />
                 </FormRow>
-                <FormRow label="Número:">
+                <FormRow label="Número:" labelWidth={60}>
                   <Input {...register('numero')} style={{ width: 70 }} />
                   <label style={{ fontSize: 12, color: 'var(--texto-secundario)', whiteSpace: 'nowrap' }}>Compl.:</label>
                   <Input {...register('complemento')} />
                 </FormRow>
-                <FormRow label="Bairro:">
+                <FormRow label="Bairro:" labelWidth={60}>
                   <Input {...register('bairro')} />
                 </FormRow>
-                <FormRow label="UF:">
+                <FormRow label="UF:" labelWidth={60}>
                   <Select {...register('uf')} style={{ width: 70 }}>
                     <option value="">—</option>
                     {UFS.map(u => <option key={u.sigla} value={u.sigla}>{u.sigla}</option>)}
@@ -1367,7 +1390,7 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsu
                       </div>
                     ),
                   }}
-                  labelWidth={78}
+                  labelWidth={100}
                   b={{
                     label: 'Cor/Raça:',
                     node: (
@@ -1406,7 +1429,7 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsu
                       </Select>
                     ),
                   }}
-                  labelWidth={92}
+                  labelWidth={100}
                 />
                 <FormRowDupla
                   a={{ label: 'Naturalidade:', node: <Input {...register('naturalidade')} placeholder="Cidade de nascimento" /> }}
@@ -1465,12 +1488,14 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsu
                       onChange={e => setValue('celular', maskCelular(e.target.value), { shouldValidate: false })} />
                   ),
                 }}
+                labelWidth={100}
               />
               <FormRowDupla
                 a={{ label: 'WhatsApp:', node: <Input {...register('whatsapp')} placeholder="(  )      -    " style={{ fontFamily: 'var(--fonte-mono)' }} /> }}
                 b={{ label: 'E-mail:', node: <Input type="email" {...register('email')} /> }}
+                labelWidth={100}
               />
-              <FormRow label="E-mail NF-e:">
+              <FormRow label="E-mail NF-e:" labelWidth={100}>
                 <Input type="email" {...register('email_nfe')} />
               </FormRow>
             </div>
