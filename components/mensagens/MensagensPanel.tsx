@@ -307,20 +307,33 @@ export default function MensagensPanel({ open, onClose, conversas, tick, meuUsua
       {/* Lista de conversas */}
       {!selecionado && !novaConversa && (
         <>
-          {/* Linha de ação primária, no padrão btn-primary do resto do sistema —
-              em vez de um ícone "+" pequeno no header, pra ficar mais claro/visível. */}
-          <button
-            onClick={abrirNovaConversa}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8, width: '100%', flexShrink: 0,
-              padding: '10px 12px', border: 'none', cursor: 'pointer', textAlign: 'left',
-              backgroundColor: 'var(--cor-primaria)', color: '#fff',
-              borderBottom: '0.5px solid var(--borda-suave)',
-            }}
-          >
-            <Plus size={16} />
-            <span style={{ fontSize: 13, fontWeight: 600 }}>Nova mensagem</span>
-          </button>
+          {/* Linha de ação primária, no padrão btn-primary do resto do sistema — em vez de
+              um ícone "+" pequeno no header, pra ficar mais claro/visível. "Recepção" fica
+              fixo do lado, sem precisar abrir "Nova conversa" pra achar o grupo. */}
+          <div style={{ display: 'flex', flexShrink: 0, borderBottom: '0.5px solid var(--borda-suave)' }}>
+            <button
+              onClick={abrirNovaConversa}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, flex: 1,
+                padding: '10px 12px', border: 'none', cursor: 'pointer',
+                backgroundColor: 'var(--cor-primaria)', color: '#fff',
+              }}
+            >
+              <Plus size={16} />
+              <span style={{ fontSize: 13, fontWeight: 600 }}>Nova mensagem</span>
+            </button>
+            <button
+              onClick={() => abrirConversa(DESTINATARIO_GRUPO_RECEPCAO, 'Recepção')}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, flex: 1,
+                padding: '10px 12px', border: 'none', cursor: 'pointer',
+                backgroundColor: 'var(--cor-info)', color: '#fff',
+              }}
+            >
+              <Users size={16} />
+              <span style={{ fontSize: 13, fontWeight: 600 }}>Recepção</span>
+            </button>
+          </div>
 
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {conversas.length === 0 && (

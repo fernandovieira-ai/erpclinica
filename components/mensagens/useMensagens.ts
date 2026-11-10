@@ -1,54 +1,24 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { Conversa } from '@/types/mensagem.types'
+import { tocarAlertaMensagem } from './somAlerta'
 
-const DURACAO_PULSO_MS = 2200
+const INTERVALO_SOM_MS = 4000
 
 // Mantém a lista de conversas e escuta o SSE de /api/mensagens/stream.
 // `tick` incrementa a cada evento 'update' — o painel de thread aberta usa
 // isso como gatilho pra refazer o fetch da conversa ativa (novas mensagens
 // chegando ou confirmação de leitura do outro lado).
-// Compara a lista nova com a anterior pra detectar mensagem recebida (nao_lidas
-// subiu) e fazer o indicador pulsar por alguns segundos — sem alertar no
-// carregamento inicial da página (só em mudanças depois disso). O destaque da
-// mensagem em si não precisa de temporizador: ela fica visível na lista até o
-// usuário abrir a conversa (nao_lidas volta a 0 e ela some sozinha da lista).
 export function useMensagens() {
   const [conversas, setConversas] = useState<Conversa[]>([])
   const [tick, setTick]           = useState(0)
-  const [pulsando, setPulsando]   = useState(false)
-
-  const conversasRef = useRef<Conversa[]>([])
-  const primeiraCargaRef = useRef(true)
-  const pulsoTimerRef = useRef<ReturnType<typeof setTimeout>>()
 
   const refetchConversas = useCallback(async () => {
     try {
       const res = await fetch('/api/mensagens/conversas')
       if (!res.ok) return
       const novas: Conversa[] = (await res.json()).dados ?? []
-      const anteriores = conversasRef.current
-
-      if (!primeiraCargaRef.current) {
-        const chegouAlgo = novas.some(c => {
-          if (c.ultima_mensagem_de_mim) return false
-          const antes = anteriores.find(a => a.usuario_id === c.usuario_id)
-          if (c.nao_lidas > 0) return !antes || c.nao_lidas > antes.nao_lidas
-          // mensagem nova na fila do grupo Recepção (nao_lidas não se aplica a ela,
-          // é pendente pra todas as recepcionistas, não "não lida" de alguém específico)
-          if (c.pendente_grupo) return !antes || !antes.pendente_grupo
-          return false
-        })
-        if (chegouAlgo) {
-          setPulsando(true)
-          clearTimeout(pulsoTimerRef.current)
-          pulsoTimerRef.current = setTimeout(() => setPulsando(false), DURACAO_PULSO_MS)
-        }
-      }
-
-      primeiraCargaRef.current = false
-      conversasRef.current = novas
       setConversas(novas)
     } catch {
       // tentativa seguinte do SSE cobre uma falha pontual
@@ -81,6 +51,21 @@ export function useMensagens() {
     (acc, c) => acc + c.nao_lidas + (c.pendente_grupo && !c.ultima_mensagem_de_mim ? 1 : 0),
     0,
   )
+  // Reflete o estado atual (não um evento pontual): enquanto houver algo pendente
+  // o indicador visual (CSS infinite) e o som continuam, e param sozinhos assim que
+  // totalNaoLidas volta a 0 (mensagem lida / fila assumida por alguém) — "toca até
+  // alguém atender", não só um aviso de 2s na chegada.
+  const pulsando = totalNaoLidas > 0
+  // Som é só pra fila da Recepção (precisa de alguém assumir, senão ninguém atende) —
+  // mensagem individual de outro usuário só mostra o visual (card + ponto), sem som.
+  const temFilaPendente = conversas.some(c => c.pendente_grupo && !c.ultima_mensagem_de_mim)
+
+  useEffect(() => {
+    if (!temFilaPendente) return
+    tocarAlertaMensagem()
+    const id = setInterval(tocarAlertaMensagem, INTERVALO_SOM_MS)
+    return () => clearInterval(id)
+  }, [temFilaPendente])
 
   return { conversas, totalNaoLidas, tick, pulsando, refetchConversas }
 }

@@ -44,9 +44,13 @@ export async function GET(req: NextRequest) {
        UNION ALL SELECT * FROM fila_recepcao
      ),
      ultima AS (
+       -- pendente_grupo DESC primeiro: se essa pessoa tem mensagem de fila ainda não
+       -- atendida, isso aparece MESMO que exista uma conversa normal mais recente com
+       -- ela (os dois podem coexistir - um não substitui o outro) - sem essa prioridade,
+       -- uma troca casual posterior "enterrava" a pendência da fila na lista.
        SELECT DISTINCT ON (outro_id) outro_id, texto, created_at, remetente_id, pendente_grupo
        FROM tudo
-       ORDER BY outro_id, created_at DESC
+       ORDER BY outro_id, pendente_grupo DESC, created_at DESC
      ),
      nao_lidas AS (
        SELECT remetente_id AS outro_id, COUNT(*) AS qtd
