@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 import { X, Search, User, UserPlus, AlertTriangle, Stethoscope } from 'lucide-react'
 import { format } from 'date-fns'
@@ -8,10 +8,11 @@ import type { AgendamentoListItem, AgendamentoTipo, CategoriaListItem, Profissio
 import { maskCelular } from '@/lib/utils'
 
 interface Paciente {
-  id:       number
-  nome:     string
-  cpf_cnpj: string | null
-  celular:  string | null
+  id:            number
+  nome:          string
+  cpf_cnpj:      string | null
+  celular:       string | null
+  categoria_id?: number | null
 }
 
 interface PacienteDuplicado {
@@ -92,6 +93,10 @@ export default function LancamentoAvulsoModal({ open, onClose, onCriado, dataPad
 
   const [pacientes,     setPacientes]     = useState<Paciente[]>([])
   const [pacienteSel,   setPacienteSel]   = useState<Paciente | null>(null)
+  // true assim que o usuário mexe manualmente no select de Categoria — a partir daí,
+  // trocar de paciente não sobrescreve mais a escolha dele com a categoria padrão do
+  // próximo paciente selecionado.
+  const categoriaManualRef = useRef(false)
   const [buscaPaciente, setBuscaPaciente] = useState('')
   const [loadingPac,    setLoadingPac]    = useState(false)
 
@@ -139,6 +144,7 @@ export default function LancamentoAvulsoModal({ open, onClose, onCriado, dataPad
 
   useEffect(() => {
     if (!open) return
+    categoriaManualRef.current = false
     setForm({ profissional_id: 0, tipo_id: null, categoria_id: null, data: dataPadrao, hora: '' })
     setBuscaPaciente('')
     setPacienteSel(null)
@@ -173,6 +179,13 @@ export default function LancamentoAvulsoModal({ open, onClose, onCriado, dataPad
     setBuscaPaciente(p.nome)
     setPacientes([])
     setShowCadRapido(false)
+    // Categoria padrão do paciente (cadastro) já vem sugerida aqui — só preenche/atualiza
+    // enquanto o usuário não tiver escolhido outra categoria manualmente na tela (ver
+    // categoriaManualRef); se ele trocar de paciente antes de mexer na categoria, a
+    // sugestão troca junto para a do novo paciente.
+    if (!categoriaManualRef.current) {
+      setForm(f => ({ ...f, categoria_id: p.categoria_id ?? null }))
+    }
   }
 
   function limparPaciente() {
@@ -180,6 +193,7 @@ export default function LancamentoAvulsoModal({ open, onClose, onCriado, dataPad
     setBuscaPaciente('')
     setPacientes([])
     setShowCadRapido(false)
+    categoriaManualRef.current = false
   }
 
   function abrirCadRapido() {
@@ -587,7 +601,10 @@ export default function LancamentoAvulsoModal({ open, onClose, onCriado, dataPad
                 <Label required>Categoria</Label>
                 <select
                   value={form.categoria_id ?? 0}
-                  onChange={e => setForm(f => ({ ...f, categoria_id: Number(e.target.value) || null }))}
+                  onChange={e => {
+                    categoriaManualRef.current = true
+                    setForm(f => ({ ...f, categoria_id: Number(e.target.value) || null }))
+                  }}
                   style={{ padding: '5px 6px', fontSize: 12, backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3 }}
                 >
                   <option value={0}>Selecione...</option>

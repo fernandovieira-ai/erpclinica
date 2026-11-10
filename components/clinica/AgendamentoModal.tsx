@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 import { X, Search, User, Stethoscope, Phone, Smartphone, MapPin, Mail, UserPlus, ChevronRight, CheckCircle2, Undo2, AlertTriangle, CalendarClock, Zap } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
@@ -11,14 +11,15 @@ import FichaPacienteModal from '@/components/clinica/FichaPacienteModal'
 import { maskCelular } from '@/lib/utils'
 
 interface Paciente {
-  id:        number
-  nome:      string
-  cpf_cnpj:  string | null
-  celular:   string | null
-  telefone:  string | null
-  cidade:    string | null
-  uf:        string | null
-  email:     string | null
+  id:           number
+  nome:         string
+  cpf_cnpj:     string | null
+  celular:      string | null
+  telefone:     string | null
+  cidade:       string | null
+  uf:           string | null
+  email:        string | null
+  categoria_id?: number | null
 }
 
 interface PacienteDuplicado {
@@ -206,6 +207,10 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
   const [categorias,    setCategorias]    = useState<CategoriaListItem[]>([])
   const [pacientes,     setPacientes]     = useState<Paciente[]>([])
   const [pacienteSel,   setPacienteSel]   = useState<Paciente | null>(null)
+  // true assim que o usuário mexe manualmente no select de Categoria — a partir daí,
+  // trocar de paciente não sobrescreve mais a escolha dele com a categoria padrão do
+  // próximo paciente selecionado.
+  const categoriaManualRef = useRef(false)
   const [buscaPaciente, setBuscaPaciente] = useState('')
   const [loadingPac,    setLoadingPac]    = useState(false)
   const [loadingSlot,   setLoadingSlot]   = useState(false)
@@ -320,6 +325,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
   // Popular form ao editar ou ao clicar em slot
   useEffect(() => {
     if (!open) return
+    categoriaManualRef.current = false
 
     if (agendamento) {
       const ini = parseISO(agendamento.data_hora_inicio)
@@ -440,7 +446,15 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
   }, [buscaPaciente, buscarPacientes, form.paciente_id])
 
   function selecionarPaciente(p: Paciente) {
-    setForm(f => ({ ...f, paciente_id: p.id }))
+    // Categoria padrão do paciente (cadastro) já vem sugerida aqui — só preenche/atualiza
+    // enquanto o usuário não tiver escolhido outra categoria manualmente na tela (ver
+    // categoriaManualRef); se ele trocar de paciente antes de mexer na categoria, a
+    // sugestão troca junto para a do novo paciente.
+    setForm(f => ({
+      ...f,
+      paciente_id: p.id,
+      categoria_id: categoriaManualRef.current ? f.categoria_id : (p.categoria_id ?? null),
+    }))
     setBuscaPaciente(p.nome)
     setPacienteSel(p)
     setPacientes([])
@@ -452,6 +466,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
     setPacienteSel(null)
     setPacientes([])
     setShowCadRapido(false)
+    categoriaManualRef.current = false
   }
 
   function abrirCadRapido() {
@@ -1421,7 +1436,10 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
             <Label required>Categoria</Label>
             <select
               value={form.categoria_id ?? ''}
-              onChange={e => setForm(f => ({ ...f, categoria_id: e.target.value ? Number(e.target.value) : null }))}
+              onChange={e => {
+                categoriaManualRef.current = true
+                setForm(f => ({ ...f, categoria_id: e.target.value ? Number(e.target.value) : null }))
+              }}
               style={{ padding: '5px 6px', fontSize: 12, backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3 }}
             >
               <option value="">Selecione a categoria...</option>
