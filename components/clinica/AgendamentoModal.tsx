@@ -640,6 +640,43 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
     }
   }
 
+  // Edição manual da Hora início: desloca a Hora fim mantendo a duração do
+  // tipo de atendimento selecionado (ou a duração já configurada, se não houver tipo).
+  function handleHoraInicio(novaHoraInicio: string) {
+    const tipo = tipos.find(t => t.id === form.tipo_id)
+    let duracao = tipo?.duracao_min ?? 0
+
+    if (!duracao && form.hora_inicio && form.hora_fim) {
+      const [h1, m1] = form.hora_inicio.split(':').map(Number)
+      const [h2, m2] = form.hora_fim.split(':').map(Number)
+      duracao = (h2 * 60 + m2) - (h1 * 60 + m1)
+    }
+    if (!duracao || duracao <= 0) duracao = 30
+
+    const [h, m]   = novaHoraInicio.split(':').map(Number)
+    const totalFim = h * 60 + m + duracao
+    const horaFim  = `${String(Math.floor(totalFim / 60) % 24).padStart(2, '0')}:${String(totalFim % 60).padStart(2, '0')}`
+
+    setForm(f => ({ ...f, hora_inicio: novaHoraInicio, hora_fim: horaFim }))
+  }
+
+  // Edição manual da Hora fim: aceita, mas avisa se a duração resultante
+  // ficar diferente da configurada para o tipo de atendimento selecionado.
+  function handleHoraFim(novaHoraFim: string) {
+    setForm(f => ({ ...f, hora_fim: novaHoraFim }))
+
+    const tipo = tipos.find(t => t.id === form.tipo_id)
+    if (!tipo || !form.hora_inicio || !novaHoraFim) return
+
+    const [h1, m1] = form.hora_inicio.split(':').map(Number)
+    const [h2, m2] = novaHoraFim.split(':').map(Number)
+    const duracao  = (h2 * 60 + m2) - (h1 * 60 + m1)
+
+    if (duracao !== tipo.duracao_min) {
+      toast.warning(`Duração de ${duracao}min diferente da configurada para "${tipo.descricao}" (${tipo.duracao_min}min).`)
+    }
+  }
+
   async function handleSalvar() {
     if (!form.paciente_id)     { toast.error('Selecione o paciente'); return }
     if (!form.profissional_id) { toast.error('Selecione o profissional'); return }
@@ -1313,7 +1350,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                       type="time"
                       value={form.hora_inicio}
                       disabled={loadingSlot}
-                      onChange={e => setForm(f => ({ ...f, hora_inicio: e.target.value }))}
+                      onChange={e => handleHoraInicio(e.target.value)}
                       style={{
                         padding: '5px 6px', fontSize: 12,
                         backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)',
@@ -1329,7 +1366,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                       type="time"
                       value={form.hora_fim}
                       disabled={loadingSlot}
-                      onChange={e => setForm(f => ({ ...f, hora_fim: e.target.value }))}
+                      onChange={e => handleHoraFim(e.target.value)}
                       style={{ padding: '5px 6px', fontSize: 12, backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3, width: 90, opacity: loadingSlot ? 0.5 : 1 }}
                     />
                   </Field>
