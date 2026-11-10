@@ -961,6 +961,14 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsu
     finally  { setBuscandoCnpj(false) }
   }
 
+  function copiarCpfCnpj() {
+    const digitado = (getValues('cpf_cnpj') ?? '').replace(/\D/g, '')
+    if (!digitado) return
+    navigator.clipboard.writeText(digitado)
+      .then(() => toast.success(pj ? 'CNPJ copiado' : 'CPF copiado'))
+      .catch(() => toast.error('Não foi possível copiar'))
+  }
+
   async function verificarCpfDuplicado() {
     const digitado = (watch('cpf_cnpj') ?? '').replace(/\D/g, '')
     if (digitado.length !== 11 && digitado.length !== 14) return
@@ -1248,6 +1256,7 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsu
                           cpfCnpjField.onBlur(e)
                           verificarCpfDuplicado()
                         }}
+                        onDoubleClick={copiarCpfCnpj}
                       />
                       <button type="button" onClick={buscarCnpj} disabled={buscandoCnpj}
                         title="Buscar dados na Receita Federal"
@@ -1280,6 +1289,7 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsu
                               cpfCnpjField.onBlur(e)
                               verificarCpfDuplicado()
                             }}
+                            onDoubleClick={copiarCpfCnpj}
                           />
                         ),
                       }}
@@ -1368,6 +1378,14 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsu
                     node: (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', minWidth: 0, rowGap: 1 }}>
                         <Input type="date" {...register('data_nascimento')}
+                          onDoubleClick={() => {
+                            const dn = getValues('data_nascimento')
+                            if (!dn) return
+                            const [ano, mes, dia] = dn.split('-')
+                            navigator.clipboard.writeText(`${dia}/${mes}/${ano}`)
+                              .then(() => toast.success('Data de nascimento copiada'))
+                              .catch(() => toast.error('Não foi possível copiar'))
+                          }}
                           style={{ width: 0, flex: '1 1 108px', minWidth: 108, fontFamily: 'var(--fonte-mono)' }} />
                         {(() => {
                           const dn = watch('data_nascimento')
