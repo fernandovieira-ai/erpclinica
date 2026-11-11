@@ -198,6 +198,94 @@ function ConfirmarEncaixeModal({
   )
 }
 
+// Confirmação de "encaixe → horário fixo" ao escolher um horário no picker aberto
+// dentro de um encaixe — mesmo padrão do ConfirmarEncaixeModal acima, só muda a direção.
+function ConfirmarHorarioFixoModal({
+  open, data, hora, onCancelar, onConfirmar,
+}: {
+  open: boolean
+  data: string
+  hora: string
+  onCancelar: () => void
+  onConfirmar: () => void
+}) {
+  if (!open) return null
+  const dataFmt = data ? format(parseISO(data), 'dd/MM/yyyy') : ''
+  return (
+    <div
+      onClick={onCancelar}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1200,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          backgroundColor: 'var(--bg-card)', borderRadius: 12,
+          width: '100%', maxWidth: 400,
+          padding: '30px 26px 22px',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+          textAlign: 'center',
+        }}
+      >
+        <div style={{
+          width: 54, height: 54, borderRadius: '50%', margin: '0 auto 16px',
+          background: 'var(--cor-primaria-light, #DBEAFE)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <CalendarClock size={26} style={{ color: 'var(--cor-primaria)' }} />
+        </div>
+
+        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--texto-principal)', marginBottom: 8 }}>
+          Agendar horário fixo?
+        </div>
+        <div style={{ fontSize: 12.5, color: 'var(--texto-secundario)', lineHeight: 1.55, marginBottom: 24 }}>
+          O encaixe deixa de aguardar por período e passa a ter horário marcado
+          — <strong style={{ color: 'var(--texto-principal)' }}>{dataFmt} às {hora}</strong>.
+          Clique em &ldquo;Salvar alterações&rdquo; depois pra confirmar.
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <button
+            type="button"
+            onClick={onConfirmar}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              padding: '10px 16px', borderRadius: 8,
+              background: 'var(--cor-primaria)',
+              color: '#fff', border: 'none',
+              fontSize: 13.5, fontWeight: 700, cursor: 'pointer',
+              letterSpacing: '0.02em',
+              transition: 'opacity 0.15s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.opacity = '0.88' }}
+            onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
+          >
+            <CalendarClock size={15} />
+            Sim, agendar horário fixo
+          </button>
+          <button
+            type="button"
+            onClick={onCancelar}
+            style={{
+              padding: '9px 16px', borderRadius: 8,
+              background: 'none', border: '1px solid var(--borda-media)',
+              color: 'var(--texto-secundario)',
+              fontSize: 12.5, fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function AgendamentoModal({ open, onClose, onSaved, agendamento, dataHoraInicio, profissionalPre, encaixeInicial, profissionaisIniciais }: Props) {
   const isEdit    = !!agendamento
   const jaFoiPago = isEdit && agendamento?.status_recebimento === 'PAGO'
@@ -226,6 +314,9 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
   const [horarioPickerOpen, setHorarioPickerOpen] = useState(false)
   const [fichaPacienteOpen, setFichaPacienteOpen] = useState(false)
   const [confirmEncaixeAberto, setConfirmEncaixeAberto] = useState(false)
+  // Horário escolhido no picker aberto dentro de um encaixe, aguardando confirmação
+  // (ConfirmarHorarioFixoModal) antes de virar de fato um agendamento com hora marcada.
+  const [horarioFixoPendente, setHorarioFixoPendente] = useState<{ data: string; hora: string; horaFim: string } | null>(null)
   // Resolução de cadastro duplicado (aba Ficha > "Usar este cadastro"): guarda o id do
   // cadastro antigo (errado, normalmente sem CPF) pra excluir ao salvar — ver handleSalvar
   // e PUT /api/clinica/agendamentos/[id] (excluir_paciente_anterior_id).
@@ -419,6 +510,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
     setDuplicados([])
     setConfirmarNaoDuplicado(false)
     setConfirmEncaixeAberto(false)
+    setHorarioFixoPendente(null)
     // Sem isso, resolver um cadastro duplicado, fechar sem salvar e depois abrir/salvar OUTRO
     // agendamento mandaria excluir_paciente_anterior_id de uma sessão anterior — apagando um
     // paciente sem relação com o agendamento atual.
@@ -624,7 +716,21 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
     const totalFim = h * 60 + m + duracao
     const horaFim  = `${String(Math.floor(totalFim / 60) % 24).padStart(2, '0')}:${String(totalFim % 60).padStart(2, '0')}`
 
+    // Escolher um horário concreto dentro de um encaixe sempre vira agendamento normal
+    // (encaixe é "sem hora fixa" por definição) — mas pede confirmação antes, no mesmo
+    // padrão do ConfirmarEncaixeModal (nunca aplica uma mudança de modo sem avisar).
+    if (form.eh_encaixe) {
+      setHorarioFixoPendente({ data, hora, horaFim })
+      return
+    }
     setForm(f => ({ ...f, data, hora_inicio: hora, hora_fim: horaFim }))
+  }
+
+  function confirmarHorarioFixo() {
+    if (!horarioFixoPendente) return
+    const { data, hora, horaFim } = horarioFixoPendente
+    setForm(f => ({ ...f, data, hora_inicio: hora, hora_fim: horaFim, eh_encaixe: false, periodo: '' }))
+    setHorarioFixoPendente(null)
   }
 
   function handleTipo(tipoId: number | null) {
@@ -1269,18 +1375,6 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                 explícita (nunca o caminho padrão). Sem hora exata — só período (manhã/tarde),
                 mostrado numa lista própria no final da agenda do dia — ver
                 novos/68_agendamento_encaixe.sql e novos/69_agendamento_encaixe_periodo.sql */}
-            {/* Indicador fixo — não é um toggle: "Novo agendamento" e "Encaixar paciente" são
-                duas ações separadas (botões distintos na sidebar), sem opção de alternar aqui
-                dentro, pra não ter risco de alguém ligar encaixe sem querer num lançamento normal */}
-            {form.eh_encaixe && (
-              <div style={{
-                marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6,
-                fontSize: 11.5, fontWeight: 600, color: '#F59E0B', width: 'fit-content',
-              }}>
-                <Zap size={12} /> Encaixe — sem horário fixo, ignora disponibilidade do profissional
-              </div>
-            )}
-
             <div style={{ display: 'grid', gridTemplateColumns: form.eh_encaixe ? '1fr auto auto' : '1fr auto auto auto', gap: 8, alignItems: 'end' }}>
               <Field>
                 <Label required>Profissional</Label>
@@ -1374,7 +1468,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
               )}
             </div>
 
-            {!form.eh_encaixe && (form.profissional_id > 0 || (isEdit && !jaFoiPago && !agendamento?.avulso)) && (
+            {(form.eh_encaixe || form.profissional_id > 0 || (isEdit && !jaFoiPago && !agendamento?.avulso)) && (
               <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {form.profissional_id > 0 && (
                   <button
@@ -1390,7 +1484,20 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                     <CalendarClock size={12} /> Ver horários disponíveis do profissional
                   </button>
                 )}
-                {isEdit && !jaFoiPago && !agendamento?.avulso && (
+                {form.eh_encaixe && (
+                  <div
+                    title="Ignora disponibilidade do profissional"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 5,
+                      padding: '4px 10px', fontSize: 11, fontWeight: 600,
+                      border: '1px dashed #F59E0B', borderRadius: 5,
+                      color: '#F59E0B', whiteSpace: 'nowrap',
+                    }}
+                  >
+                    <Zap size={12} /> Encaixe — sem horário fixo
+                  </div>
+                )}
+                {!form.eh_encaixe && isEdit && !jaFoiPago && !agendamento?.avulso && (
                   <button
                     type="button"
                     onClick={() => setConfirmEncaixeAberto(true)}
@@ -1579,6 +1686,14 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
       horaAtual={form.hora_inicio || '--:--'}
       onCancelar={() => setConfirmEncaixeAberto(false)}
       onConfirmar={confirmarTransformarEmEncaixe}
+    />
+
+    <ConfirmarHorarioFixoModal
+      open={!!horarioFixoPendente}
+      data={horarioFixoPendente?.data ?? ''}
+      hora={horarioFixoPendente?.hora ?? ''}
+      onCancelar={() => setHorarioFixoPendente(null)}
+      onConfirmar={confirmarHorarioFixo}
     />
 
     <NovoHorarioModal
