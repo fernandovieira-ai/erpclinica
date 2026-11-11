@@ -97,6 +97,8 @@ export type AgendamentoListItem = Pick<
   movimento_caixa_id?: number | null
   movimento_banco_id?: number | null
   batch_agendamento_id?: number | null
+  forma_pagamento?: string | null
+  forma_pagamento_tipo?: string | null
 }
 
 export interface AgendamentoListResponse {

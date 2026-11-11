@@ -30,6 +30,16 @@ const STATUS_RECEBIMENTO: Record<string, { label: string; cor: string }> = {
   PENDENTE:  { label: 'Pendente',  cor: '#EF9F27' },
 }
 
+// Cor por tipo de condição de pagamento — mesma paleta de cores semânticas já usada nos
+// outros badges desta tela, só pra diferenciar a forma de pagamento visualmente na lista.
+const FORMA_PAGAMENTO_COR: Record<string, string> = {
+  dinheiro: '#1D9E75',
+  pix:      '#0EA5A4',
+  debito:   '#378ADD',
+  credito:  '#7C3AED',
+  a_prazo:  '#EF9F27',
+}
+
 function fmtValor(v: number | null | undefined) {
   if (v == null) return '—'
   return Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -504,6 +514,27 @@ export default function RecebimentosPage() {
                         <span style={{ fontWeight: 600, color: 'var(--cor-primaria)', flexShrink: 0 }}>
                           {fmtValor(ag.total_recebimento ?? ag.tipo_valor)}
                         </span>
+
+                        {/* Forma de pagamento — só existe quando já foi pago (vem do
+                            condicao_pagamento_id gravado no recebimento) */}
+                        {ag.status_recebimento === 'PAGO' && ag.forma_pagamento && (
+                          <span style={{
+                            fontSize: 10,
+                            fontWeight: 600,
+                            color: FORMA_PAGAMENTO_COR[ag.forma_pagamento_tipo ?? ''] ?? 'var(--texto-secundario)',
+                            background: (FORMA_PAGAMENTO_COR[ag.forma_pagamento_tipo ?? ''] ?? '#888888') + '20',
+                            padding: '2px 6px',
+                            borderRadius: 3,
+                            flexShrink: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 3,
+                            whiteSpace: 'nowrap',
+                          }}>
+                            <CreditCard size={9} />
+                            {ag.forma_pagamento}
+                          </span>
+                        )}
 
                         {/* Badge status agendamento */}
                         <span style={{

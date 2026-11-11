@@ -35,4 +35,5 @@ export const AGENDAMENTO_LISTA_JOINS = `
 // Agendamento recém-criado ainda não tem recebimento
 export const AGENDAMENTO_LISTA_SEM_RECEBIMENTO = `,
        NULL::INT AS recebimento_id, NULL::VARCHAR AS status_recebimento, NULL::NUMERIC AS total_recebimento,
-       NULL::INT AS movimento_caixa_id, NULL::INT AS movimento_banco_id, NULL::INT AS batch_agendamento_id`
+       NULL::INT AS movimento_caixa_id, NULL::INT AS movimento_banco_id, NULL::INT AS batch_agendamento_id,
+       NULL::VARCHAR AS forma_pagamento, NULL::VARCHAR AS forma_pagamento_tipo`

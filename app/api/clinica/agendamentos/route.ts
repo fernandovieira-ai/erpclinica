@@ -93,16 +93,19 @@ export async function GET(req: NextRequest) {
   }
 
   const selectRecebimento = temTabelaRecebimento
-    ? `, rc.id AS recebimento_id, rc.status_recebimento, rc.total_recebimento, rc.movimento_caixa_id, rc.movimento_banco_id, rc.batch_agendamento_id`
-    : `, NULL::INT AS recebimento_id, NULL::VARCHAR AS status_recebimento, NULL::NUMERIC AS total_recebimento, NULL::INT AS movimento_caixa_id, NULL::INT AS movimento_banco_id, NULL::INT AS batch_agendamento_id`
+    ? `, rc.id AS recebimento_id, rc.status_recebimento, rc.total_recebimento, rc.movimento_caixa_id, rc.movimento_banco_id, rc.batch_agendamento_id, cp.descricao AS forma_pagamento, cp.tipo_pagamento AS forma_pagamento_tipo`
+    : `, NULL::INT AS recebimento_id, NULL::VARCHAR AS status_recebimento, NULL::NUMERIC AS total_recebimento, NULL::INT AS movimento_caixa_id, NULL::INT AS movimento_banco_id, NULL::INT AS batch_agendamento_id, NULL::VARCHAR AS forma_pagamento, NULL::VARCHAR AS forma_pagamento_tipo`
 
-  // Usa subconsulta para evitar múltiplas linhas com LEFT JOIN filtrado
+  // Usa subconsulta para evitar múltiplas linhas com LEFT JOIN filtrado. condicao_pagamento_id
+  // de tab_recebimento_consulta é só a 1ª forma do lote (ver padroes.md) — suficiente pra
+  // mostrar a forma de pagamento na listagem, que é o caso comum (forma única).
   const joinRecebimento = temTabelaRecebimento
     ? `LEFT JOIN (
-        SELECT agendamento_id, id, status_recebimento, total_recebimento, movimento_caixa_id, movimento_banco_id, batch_agendamento_id
+        SELECT agendamento_id, id, status_recebimento, total_recebimento, movimento_caixa_id, movimento_banco_id, batch_agendamento_id, condicao_pagamento_id
         FROM tab_recebimento_consulta
         WHERE status_recebimento = 'PAGO'
-      ) rc ON rc.agendamento_id = a.id`
+      ) rc ON rc.agendamento_id = a.id
+      LEFT JOIN tab_condicao_pagamento cp ON cp.id = rc.condicao_pagamento_id`
     : ''
 
   const { rows } = await db.query(
