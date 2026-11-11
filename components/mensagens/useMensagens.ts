@@ -56,16 +56,14 @@ export function useMensagens() {
   // totalNaoLidas volta a 0 (mensagem lida / fila assumida por alguém) — "toca até
   // alguém atender", não só um aviso de 2s na chegada.
   const pulsando = totalNaoLidas > 0
-  // Som é só pra fila da Recepção (precisa de alguém assumir, senão ninguém atende) —
-  // mensagem individual de outro usuário só mostra o visual (card + ponto), sem som.
-  const temFilaPendente = conversas.some(c => c.pendente_grupo && !c.ultima_mensagem_de_mim)
-
+  // Som toca pra qualquer mensagem não lida (individual ou fila da Recepção) —
+  // mesmo alerta de piscar + apitar até alguém abrir a conversa.
   useEffect(() => {
-    if (!temFilaPendente) return
+    if (!pulsando) return
     tocarAlertaMensagem()
     const id = setInterval(tocarAlertaMensagem, INTERVALO_SOM_MS)
     return () => clearInterval(id)
-  }, [temFilaPendente])
+  }, [pulsando])
 
   return { conversas, totalNaoLidas, tick, pulsando, refetchConversas }
 }
