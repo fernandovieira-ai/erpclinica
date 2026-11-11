@@ -2191,7 +2191,7 @@ export default function AgendamentoPage() {
             {/* Filtro profissional */}
             <select
               className="input-field"
-              style={{ width: 180, fontSize: 12 }}
+              style={{ width: 280, fontSize: 12 }}
               value={profFiltro}
               onChange={e => setProfFiltro(Number(e.target.value))}
             >
