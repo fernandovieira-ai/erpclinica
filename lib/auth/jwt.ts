@@ -4,7 +4,7 @@ import type { Session, AdminSession, SelectToken, PasswordResetToken } from '@/t
 export type Payload = Session | AdminSession | SelectToken | PasswordResetToken
 
 const secret  = new TextEncoder().encode(process.env.JWT_SECRET!)
-const expires = process.env.JWT_EXPIRES_IN ?? '8h'
+const expires = process.env.JWT_EXPIRES_IN ?? '12h'
 
 export async function signToken(payload: Payload, expiresIn?: string): Promise<string> {
   return new SignJWT(payload as unknown as JWTPayload)

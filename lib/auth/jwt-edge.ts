@@ -11,6 +11,33 @@ function base64urlDecode(str: string): string {
   return atob(padded)
 }
 
+// Reemite um JWT já validado com um novo prazo de expiração — usado pelo
+// middleware pra renovar a sessão a cada requisição (sliding expiration),
+// sem precisar da dependência `jose` (evitada aqui de propósito).
+export async function signTokenEdge(payload: Record<string, unknown>, expiresInSeconds: number): Promise<string> {
+  const secret = process.env.JWT_SECRET!
+  const key    = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  )
+
+  const now    = Math.floor(Date.now() / 1000)
+  const header = { alg: 'HS256', typ: 'JWT' }
+  const body   = { ...payload, iat: now, exp: now + expiresInSeconds }
+
+  const headerB64  = base64url(new TextEncoder().encode(JSON.stringify(header)).buffer as ArrayBuffer)
+  const payloadB64 = base64url(new TextEncoder().encode(JSON.stringify(body)).buffer as ArrayBuffer)
+  const signingInput = `${headerB64}.${payloadB64}`
+
+  const sig     = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(signingInput))
+  const sigB64  = base64url(sig)
+
+  return `${signingInput}.${sigB64}`
+}
+
 export async function verifyTokenEdge(token: string): Promise<Record<string, unknown> | null> {
   try {
     const parts = token.split('.')
