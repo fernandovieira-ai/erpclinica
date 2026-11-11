@@ -30,69 +30,77 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const MAX_DIAS = 60
 
   try {
-    const { rows: agenda } = await db.query<{
-      dia_semana: number; hora_inicio: string; hora_fim: string; intervalo_min: number; ativo: boolean
-    }>(
-      `SELECT dia_semana,
-              SUBSTRING(hora_inicio::text, 1, 5) AS hora_inicio,
-              SUBSTRING(hora_fim::text,    1, 5) AS hora_fim,
-              intervalo_min, ativo
-       FROM tab_agenda_profissional
-       WHERE profissional_id = $1 AND empresa_id = $2`,
-      [profissionalId, session.empresa_id_ativa],
-    )
+    const dataFim = format(addDays(new Date(`${dataInicio}T12:00:00`), MAX_DIAS), 'yyyy-MM-dd')
+
+    // As 5 consultas são independentes entre si (nenhuma usa o resultado de outra) — rodar em
+    // paralelo em vez de sequencial é o que mais pesa na demora de abrir essa tela, já que o
+    // banco é remoto (cada ida e volta soma na espera total se forem uma atrás da outra).
+    const [agendaRes, pausasRes, excecoesRes, bloqueiosRes, agendamentosRes] = await Promise.all([
+      db.query<{
+        dia_semana: number; hora_inicio: string; hora_fim: string; intervalo_min: number; ativo: boolean
+      }>(
+        `SELECT dia_semana,
+                SUBSTRING(hora_inicio::text, 1, 5) AS hora_inicio,
+                SUBSTRING(hora_fim::text,    1, 5) AS hora_fim,
+                intervalo_min, ativo
+         FROM tab_agenda_profissional
+         WHERE profissional_id = $1 AND empresa_id = $2`,
+        [profissionalId, session.empresa_id_ativa],
+      ),
+      db.query<{
+        dia_semana: number; hora_inicio: string; hora_fim: string
+      }>(
+        `SELECT dia_semana,
+                SUBSTRING(hora_inicio::text, 1, 5) AS hora_inicio,
+                SUBSTRING(hora_fim::text,    1, 5) AS hora_fim
+         FROM tab_agenda_profissional_pausa
+         WHERE profissional_id = $1 AND empresa_id = $2`,
+        [profissionalId, session.empresa_id_ativa],
+      ),
+      db.query<{
+        data: string; nao_atende: boolean
+        hora_inicio: string | null; hora_fim: string | null; intervalo_min: number | null
+      }>(
+        `SELECT TO_CHAR(data, 'YYYY-MM-DD')            AS data,
+                nao_atende,
+                SUBSTRING(hora_inicio::text, 1, 5)     AS hora_inicio,
+                SUBSTRING(hora_fim::text,    1, 5)     AS hora_fim,
+                intervalo_min
+         FROM tab_agenda_profissional_excecao
+         WHERE profissional_id = $1 AND empresa_id = $2 AND data BETWEEN $3 AND $4`,
+        [profissionalId, session.empresa_id_ativa, dataInicio, dataFim],
+      ),
+      db.query<{ data: string; hora_inicio: string; hora_fim: string }>(
+        `SELECT TO_CHAR(data, 'YYYY-MM-DD')        AS data,
+                SUBSTRING(hora_inicio::text, 1, 5) AS hora_inicio,
+                SUBSTRING(hora_fim::text,    1, 5) AS hora_fim
+         FROM tab_agenda_profissional_bloqueio
+         WHERE profissional_id = $1 AND empresa_id = $2 AND data BETWEEN $3 AND $4`,
+        [profissionalId, session.empresa_id_ativa, dataInicio, dataFim],
+      ),
+      db.query<{
+        data: string; hora_ini: string; hora_fim: string
+      }>(
+        `SELECT TO_CHAR(data_hora_inicio, 'YYYY-MM-DD') AS data,
+                TO_CHAR(data_hora_inicio, 'HH24:MI')    AS hora_ini,
+                TO_CHAR(data_hora_fim,    'HH24:MI')    AS hora_fim
+         FROM tab_agendamento
+         WHERE profissional_id = $1 AND empresa_id = $2
+           AND status NOT IN ('CANCELADO', 'FALTOU')
+           AND DATE(data_hora_inicio) BETWEEN $3 AND $4`,
+        [profissionalId, session.empresa_id_ativa, dataInicio, dataFim],
+      ),
+    ])
+
+    const agenda       = agendaRes.rows
+    const pausas       = pausasRes.rows
+    const excecoes     = excecoesRes.rows
+    const bloqueios    = bloqueiosRes.rows
+    const agendamentos = agendamentosRes.rows
 
     if (agenda.filter(a => a.ativo).length === 0) {
       return NextResponse.json({ erro: 'Profissional sem agenda ativa cadastrada' }, { status: 404 })
     }
-
-    const { rows: pausas } = await db.query<{
-      dia_semana: number; hora_inicio: string; hora_fim: string
-    }>(
-      `SELECT dia_semana,
-              SUBSTRING(hora_inicio::text, 1, 5) AS hora_inicio,
-              SUBSTRING(hora_fim::text,    1, 5) AS hora_fim
-       FROM tab_agenda_profissional_pausa
-       WHERE profissional_id = $1 AND empresa_id = $2`,
-      [profissionalId, session.empresa_id_ativa],
-    )
-
-    const dataFim = format(addDays(new Date(`${dataInicio}T12:00:00`), MAX_DIAS), 'yyyy-MM-dd')
-    const { rows: excecoes } = await db.query<{
-      data: string; nao_atende: boolean
-      hora_inicio: string | null; hora_fim: string | null; intervalo_min: number | null
-    }>(
-      `SELECT TO_CHAR(data, 'YYYY-MM-DD')            AS data,
-              nao_atende,
-              SUBSTRING(hora_inicio::text, 1, 5)     AS hora_inicio,
-              SUBSTRING(hora_fim::text,    1, 5)     AS hora_fim,
-              intervalo_min
-       FROM tab_agenda_profissional_excecao
-       WHERE profissional_id = $1 AND empresa_id = $2 AND data BETWEEN $3 AND $4`,
-      [profissionalId, session.empresa_id_ativa, dataInicio, dataFim],
-    )
-
-    const { rows: bloqueios } = await db.query<{ data: string; hora_inicio: string; hora_fim: string }>(
-      `SELECT TO_CHAR(data, 'YYYY-MM-DD')        AS data,
-              SUBSTRING(hora_inicio::text, 1, 5) AS hora_inicio,
-              SUBSTRING(hora_fim::text,    1, 5) AS hora_fim
-       FROM tab_agenda_profissional_bloqueio
-       WHERE profissional_id = $1 AND empresa_id = $2 AND data BETWEEN $3 AND $4`,
-      [profissionalId, session.empresa_id_ativa, dataInicio, dataFim],
-    )
-
-    const { rows: agendamentos } = await db.query<{
-      data: string; hora_ini: string; hora_fim: string
-    }>(
-      `SELECT TO_CHAR(data_hora_inicio, 'YYYY-MM-DD') AS data,
-              TO_CHAR(data_hora_inicio, 'HH24:MI')    AS hora_ini,
-              TO_CHAR(data_hora_fim,    'HH24:MI')    AS hora_fim
-       FROM tab_agendamento
-       WHERE profissional_id = $1 AND empresa_id = $2
-         AND status NOT IN ('CANCELADO', 'FALTOU')
-         AND DATE(data_hora_inicio) BETWEEN $3 AND $4`,
-      [profissionalId, session.empresa_id_ativa, dataInicio, dataFim],
-    )
 
     function addMin(hhmm: string, min: number): string {
       const [h, m] = hhmm.split(':').map(Number)
