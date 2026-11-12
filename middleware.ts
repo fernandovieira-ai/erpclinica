@@ -13,6 +13,21 @@ const SESSION_COOKIE_OPTS = {
   path:     '/',
 }
 
+// Teto de sanidade pra qualquer campo string do payload da sessão (nome, email...).
+// Renovar a sessão a cada requisição é exatamente o mecanismo que fez o bug de
+// encoding do jwt-edge (corrigido em d7a9dd1) virar bola de neve: um payload já
+// corrompido era re-assinado a cada request, dobrando de tamanho até estourar
+// colunas VARCHAR(100) como created_by. Essa trava é defesa em profundidade —
+// se QUALQUER bug futuro inflar um campo da sessão, a renovação para aqui em vez
+// de realimentar o problema; a sessão expira no prazo normal e força um relogin
+// (que busca os dados de novo, limpos, do banco).
+const TAMANHO_MAX_CAMPO_SESSAO = 200
+function payloadSessaoValido(payload: Record<string, unknown>): boolean {
+  return Object.values(payload).every(
+    (v) => typeof v !== 'string' || v.length <= TAMANHO_MAX_CAMPO_SESSAO,
+  )
+}
+
 // Renova a sessão a cada requisição (sliding expiration): sem isso o cookie
 // expira num prazo fixo de 8h contado do login, derrubando o atendente no
 // meio do uso (ex.: quando o AtualizadorVersao força um reload após deploy
@@ -22,7 +37,7 @@ async function renovarSessao(req: NextRequest, res: NextResponse) {
   const token = req.cookies.get('session')?.value
   if (!token) return
   const payload = await verifyTokenEdge(token)
-  if (!payload || !('empresa_id_ativa' in payload)) return
+  if (!payload || !('empresa_id_ativa' in payload) || !payloadSessaoValido(payload)) return
   const novoToken = await signTokenEdge(payload, SESSION_MAXAGE)
   res.cookies.set('session', novoToken, { ...SESSION_COOKIE_OPTS, maxAge: SESSION_MAXAGE })
 }
