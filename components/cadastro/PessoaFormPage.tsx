@@ -53,6 +53,11 @@ interface Props {
   // aviso de duplicidade) — sem isso, router.push tirava o usuário do agendamento que estava
   // editando (fechava o modal junto, perdendo o contexto).
   onConsultarCadastroExistente?: (pessoa: { id: number; nome: string }) => void
+  // Só em uso embutido: avisa quem abriu o modal que o cadastro foi salvo, pra recarregar
+  // a lista que o trouxe (ex.: agenda/sala de espera) — fora de uso embutido o próprio
+  // router.refresh() já resolve isso (página server-rendered), mas um modal client-side
+  // não reage a ele.
+  onSaved?: () => void
 }
 
 const UFS: { sigla: string; nome: string }[] = [
@@ -532,7 +537,7 @@ function mascaraCpfCnpj(valor: string, pj: boolean): string {
 const ABAS_PESSOA = ['Principal', 'Financeiro', 'Fiscal / Obs', 'Agenda', 'Atendimentos', 'Consultas'] as const
 type AbaPessoa = typeof ABAS_PESSOA[number]
 
-export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsultarCadastroExistente }: Props) {
+export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsultarCadastroExistente, onSaved }: Props) {
   const router  = useRouter()
   const [saving,       setSaving]      = useState(false)
   const [deleting,     setDeleting]    = useState(false)
@@ -1038,7 +1043,10 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsu
       toast.success(pessoa ? 'Pessoa atualizada!' : 'Pessoa cadastrada!')
       if (!pessoa && json?.id) router.push(`/cadastro/pessoas/${json.id}${papelInicial ? `?papel=${papelInicial}` : ''}`)
       else if (!pessoa) router.push(listaHref)
-      else router.refresh()
+      else {
+        router.refresh()
+        onSaved?.()
+      }
     } catch {
       toast.error('Erro de comunicação com o servidor. Tente novamente.')
     } finally { setSaving(false) }
@@ -1320,7 +1328,7 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsu
               {/* Endereço — mesmo recuo da caixa Natureza, pra alinhar com Nome/CPF */}
               <div style={{ paddingLeft: 74, display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <FormRow label="CEP:" labelWidth={60}>
-                  <Input {...register('cep')} style={{ width: 70, fontFamily: 'var(--fonte-mono)' }} placeholder="00000-000" />
+                  <Input {...register('cep')} style={{ width: 90, fontFamily: 'var(--fonte-mono)' }} placeholder="00000-000" />
                   <button
                     type="button"
                     onClick={buscarCep}
@@ -1339,7 +1347,7 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsu
                   <Select
                     value={watch('categoria_id') ?? ''}
                     onChange={e => setValue('categoria_id', e.target.value ? Number(e.target.value) : null)}
-                    style={{ flex: 1, minWidth: 90 }}
+                    style={{ flex: 1, minWidth: 60 }}
                   >
                     <option value="">— Nenhuma —</option>
                     {categorias.map(c => (
