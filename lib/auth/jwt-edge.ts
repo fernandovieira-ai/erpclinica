@@ -6,9 +6,22 @@ function base64url(buf: ArrayBuffer) {
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
 }
 
-function base64urlDecode(str: string): string {
+// Devolve os bytes crus do base64url — NUNCA tratar o retorno de atob() como
+// string de texto: atob() produz uma "binary string" (1 char = 1 byte), e
+// passar isso direto pro JSON.parse quebra qualquer caractere acentuado
+// (UTF-8 multibyte) em caracteres soltos. Decodificar sempre via TextDecoder
+// a partir destes bytes. BUG HISTÓRICO (corrigido aqui): verifyTokenEdge
+// fazia JSON.parse(atob(...)) direto — cada requisição no middleware (que
+// renova a sessão a cada request) re-assinava o payload já corrompido,
+// DOBRANDO o tamanho de qualquer campo com acento (ex.: "nome") a cada
+// requisição. Em poucas navegações isso estourava colunas VARCHAR(100)
+// como created_by (ver fix(auth): trunca nome da sessao).
+function base64urlDecode(str: string): Uint8Array {
   const padded = str.replace(/-/g, '+').replace(/_/g, '/').padEnd(str.length + (4 - str.length % 4) % 4, '=')
-  return atob(padded)
+  const binary = atob(padded)
+  const bytes  = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return bytes
 }
 
 // Reemite um JWT já validado com um novo prazo de expiração — usado pelo
@@ -53,11 +66,11 @@ export async function verifyTokenEdge(token: string): Promise<Record<string, unk
     )
 
     const data      = new TextEncoder().encode(`${parts[0]}.${parts[1]}`)
-    const sigBytes  = Uint8Array.from(base64urlDecode(parts[2]), c => c.charCodeAt(0))
-    const valid     = await crypto.subtle.verify('HMAC', key, sigBytes, data)
+    const sigBytes  = base64urlDecode(parts[2])
+    const valid     = await crypto.subtle.verify('HMAC', key, sigBytes as BufferSource, data)
     if (!valid) return null
 
-    const payload = JSON.parse(base64urlDecode(parts[1])) as Record<string, unknown>
+    const payload = JSON.parse(new TextDecoder().decode(base64urlDecode(parts[1]))) as Record<string, unknown>
 
     // Verifica expiração
     if (payload.exp && typeof payload.exp === 'number' && payload.exp < Date.now() / 1000) {
