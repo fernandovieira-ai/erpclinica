@@ -26,6 +26,12 @@ export async function getSession(req: NextRequest): Promise<Session | null> {
   if (!token) return null
   const payload = await verifyToken(token)
   if (!payload || !isSession(payload)) return null
+  // Defesa contra sessão antiga com `nome` corrompido/maior que o limite das colunas
+  // created_by (VARCHAR(100)) — sem isso, qualquer INSERT/UPDATE que grave created_by
+  // quebra com "value too long for type character varying(100)" até o usuário relogar.
+  if (payload.nome && payload.nome.length > 100) {
+    return { ...payload, nome: payload.nome.slice(0, 100) }
+  }
   return payload
 }
 
