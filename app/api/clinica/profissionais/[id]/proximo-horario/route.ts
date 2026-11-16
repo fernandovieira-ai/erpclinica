@@ -17,13 +17,21 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const db = getDb(session.database_name)
   const sp = req.nextUrl.searchParams
-  const dataInicio     = sp.get('data_inicio')    || format(new Date(), 'yyyy-MM-dd')
   const duracaoParam   = Number(sp.get('duracao_min') || 0) // 0 = usar intervalo_min da grade
   const horaInicioMinParam = sp.get('hora_inicio_min') || null  // HH:MM ou null
 
   const MAX_DIAS = 60
 
   try {
+    // Data/hora atuais vêm do banco (sessão em America/Sao_Paulo) e não do relógio do
+    // processo Node: em produção (Railway) o container roda em UTC, e usar new Date()
+    // aqui adiantava "agora" em 3h, fazendo o profissional parecer indisponível pelo
+    // resto do dia e pulando pro próximo dia em que ele atende.
+    const { rows: [{ hoje: dataHoje, agora: horaAgora }] } = await db.query<{ hoje: string; agora: string }>(
+      `SELECT TO_CHAR(NOW(), 'YYYY-MM-DD') AS hoje, TO_CHAR(NOW(), 'HH24:MI') AS agora`,
+    )
+    const dataInicio = sp.get('data_inicio') || dataHoje
+
     // Grade semanal do profissional
     const { rows: agenda } = await db.query<{
       dia_semana: number; hora_inicio: string; hora_fim: string; intervalo_min: number; ativo: boolean
@@ -117,10 +125,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     }
 
     // ── Iteração por dia ────────────────────────────────────────────────────────
-    const agora     = new Date()
-    const dataHoje  = format(agora, 'yyyy-MM-dd')
-    const horaAgora = format(agora, 'HH:mm')
-
     const [yy, mm, dd] = dataInicio.split('-').map(Number)
     let current = new Date(yy, mm - 1, dd)
 

@@ -19,7 +19,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const db = getDb(session.database_name)
   const sp = req.nextUrl.searchParams
-  const dataInicio      = sp.get('data_inicio') || format(new Date(), 'yyyy-MM-dd')
   const duracaoMin      = Number(sp.get('duracao_min') || 0)
   const diasComVagaAlvo = Math.min(Number(sp.get('dias_com_vaga') || 10), 30)
 
@@ -30,6 +29,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const MAX_DIAS = 60
 
   try {
+    // Data/hora atuais vêm do banco (sessão em America/Sao_Paulo) e não do relógio do
+    // processo Node: em produção (Railway) o container roda em UTC, e usar new Date()
+    // aqui adiantava "agora" em 3h, fazendo o profissional parecer indisponível pelo
+    // resto do dia (mesmo bug de /proximo-horario).
+    const { rows: [{ hoje: dataHoje, agora: horaAgora }] } = await db.query<{ hoje: string; agora: string }>(
+      `SELECT TO_CHAR(NOW(), 'YYYY-MM-DD') AS hoje, TO_CHAR(NOW(), 'HH24:MI') AS agora`,
+    )
+    const dataInicio = sp.get('data_inicio') || dataHoje
     const dataFim = format(addDays(new Date(`${dataInicio}T12:00:00`), MAX_DIAS), 'yyyy-MM-dd')
 
     // As 5 consultas são independentes entre si (nenhuma usa o resultado de outra) — rodar em
@@ -121,10 +128,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     function slotBloqueado(data: string, ini: string, fim: string): boolean {
       return bloqueios.some(b => b.data === data && ini < b.hora_fim && fim > b.hora_inicio)
     }
-
-    const agora     = new Date()
-    const dataHoje  = format(agora, 'yyyy-MM-dd')
-    const horaAgora = format(agora, 'HH:mm')
 
     const [yy, mm, dd] = dataInicio.split('-').map(Number)
     let current = new Date(yy, mm - 1, dd)
