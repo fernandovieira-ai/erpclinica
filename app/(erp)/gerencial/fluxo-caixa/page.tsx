@@ -33,6 +33,10 @@ function fmtData(d: string) {
   return d.slice(0, 10).split('-').reverse().join('/')
 }
 
+function hojeISO() {
+  return new Date().toISOString().slice(0, 10)
+}
+
 function StatCard({
   label, valor, sub, icon, cor, corBg,
 }: { label: string; valor: string; sub?: string; icon: React.ReactNode; cor: string; corBg: string }) {
@@ -55,14 +59,20 @@ function StatCard({
 }
 
 export default function FluxoCaixaPage() {
-  const [periodo, setPeriodo] = useState(30)
+  const [periodo, setPeriodo]       = useState<number | null>(30)
+  const [personalizado, setPersonalizado] = useState(false)
+  const [inicioInput, setInicioInput] = useState('')
+  const [fimInput, setFimInput]       = useState(hojeISO())
   const [dados, setDados]     = useState<FluxoCaixaResponse | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const carregar = useCallback(async (p: number) => {
+  const carregar = useCallback(async (params: { periodo?: number; inicio?: string; fim?: string }) => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/gerencial/fluxo-caixa?periodo=${p}`)
+      const qs = params.inicio && params.fim
+        ? `inicio=${params.inicio}&fim=${params.fim}`
+        : `periodo=${params.periodo ?? 30}`
+      const res = await fetch(`/api/gerencial/fluxo-caixa?${qs}`)
       if (!res.ok) return
       setDados(await res.json())
     } finally {
@@ -70,7 +80,23 @@ export default function FluxoCaixaPage() {
     }
   }, [])
 
-  useEffect(() => { carregar(periodo) }, [carregar, periodo])
+  useEffect(() => {
+    if (!personalizado && periodo) carregar({ periodo })
+  }, [carregar, periodo, personalizado])
+
+  const aplicarPersonalizado = () => {
+    if (!inicioInput || !fimInput || inicioInput > fimInput) return
+    carregar({ inicio: inicioInput, fim: fimInput })
+  }
+
+  const selecionarPreset = (p: number) => {
+    setPersonalizado(false)
+    setPeriodo(p)
+  }
+
+  const periodoLabel = dados
+    ? (personalizado ? `${fmtData(dados.inicio)} a ${fmtData(dados.fim)}` : `últimos ${dados.periodoDias}d`)
+    : ''
 
   return (
     <>
@@ -81,23 +107,78 @@ export default function FluxoCaixaPage() {
             Visão consolidada de caixa e contas bancárias
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 4, background: 'var(--bg-page)', padding: 3, borderRadius: 8 }}>
-          {PERIODOS.map(p => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 4, background: 'var(--bg-page)', padding: 3, borderRadius: 8 }}>
+            {PERIODOS.map(p => (
+              <button
+                key={p.valor}
+                onClick={() => selecionarPreset(p.valor)}
+                style={{
+                  padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                  fontSize: 12, fontWeight: 600,
+                  background: !personalizado && periodo === p.valor ? 'var(--bg-card)' : 'transparent',
+                  color: !personalizado && periodo === p.valor ? 'var(--cor-primaria)' : 'var(--texto-secundario)',
+                  boxShadow: !personalizado && periodo === p.valor ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                  transition: 'all 0.15s',
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
             <button
-              key={p.valor}
-              onClick={() => setPeriodo(p.valor)}
+              onClick={() => setPersonalizado(true)}
               style={{
                 padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
                 fontSize: 12, fontWeight: 600,
-                background: periodo === p.valor ? 'var(--bg-card)' : 'transparent',
-                color: periodo === p.valor ? 'var(--cor-primaria)' : 'var(--texto-secundario)',
-                boxShadow: periodo === p.valor ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                background: personalizado ? 'var(--bg-card)' : 'transparent',
+                color: personalizado ? 'var(--cor-primaria)' : 'var(--texto-secundario)',
+                boxShadow: personalizado ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
                 transition: 'all 0.15s',
               }}
             >
-              {p.label}
+              Personalizado
             </button>
-          ))}
+          </div>
+
+          {personalizado && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input
+                type="date"
+                value={inicioInput}
+                max={fimInput || undefined}
+                onChange={e => setInicioInput(e.target.value)}
+                style={{
+                  fontSize: 12, padding: '5px 8px', borderRadius: 6,
+                  border: '1px solid var(--borda-suave)', background: 'var(--bg-card)',
+                  color: 'var(--texto-principal)',
+                }}
+              />
+              <span style={{ fontSize: 12, color: 'var(--texto-terciario)' }}>até</span>
+              <input
+                type="date"
+                value={fimInput}
+                min={inicioInput || undefined}
+                onChange={e => setFimInput(e.target.value)}
+                style={{
+                  fontSize: 12, padding: '5px 8px', borderRadius: 6,
+                  border: '1px solid var(--borda-suave)', background: 'var(--bg-card)',
+                  color: 'var(--texto-principal)',
+                }}
+              />
+              <button
+                onClick={aplicarPersonalizado}
+                disabled={!inicioInput || !fimInput || inicioInput > fimInput}
+                style={{
+                  padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                  fontSize: 12, fontWeight: 600,
+                  background: 'var(--cor-primaria)', color: '#fff',
+                  opacity: (!inicioInput || !fimInput || inicioInput > fimInput) ? 0.5 : 1,
+                }}
+              >
+                Aplicar
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -164,7 +245,7 @@ export default function FluxoCaixaPage() {
               <StatCard
                 label="Entradas Hoje"
                 valor={fmtValor(dados.kpis.entradasHoje)}
-                sub={`${fmtValor(dados.kpis.entradasPeriodo)} nos últimos ${dados.periodoDias}d`}
+                sub={`${fmtValor(dados.kpis.entradasPeriodo)} ${personalizado ? 'no período' : `nos últimos ${dados.periodoDias}d`}`}
                 icon={<TrendingUp size={18} style={{ color: 'var(--cor-primaria)' }} />}
                 cor="var(--cor-primaria)"
                 corBg="var(--cor-primaria-light)"
@@ -172,7 +253,7 @@ export default function FluxoCaixaPage() {
               <StatCard
                 label="Saídas Hoje"
                 valor={fmtValor(dados.kpis.saidasHoje)}
-                sub={`${fmtValor(dados.kpis.saidasPeriodo)} nos últimos ${dados.periodoDias}d`}
+                sub={`${fmtValor(dados.kpis.saidasPeriodo)} ${personalizado ? 'no período' : `nos últimos ${dados.periodoDias}d`}`}
                 icon={<TrendingDown size={18} style={{ color: 'var(--cor-erro)' }} />}
                 cor="var(--cor-erro)"
                 corBg="var(--cor-erro-bg)"
@@ -235,7 +316,7 @@ export default function FluxoCaixaPage() {
                     <ListTree size={15} style={{ color: 'var(--cor-primaria)' }} />
                     <span className="card-title">Composição por Origem</span>
                   </div>
-                  <span style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>últimos {dados.periodoDias}d</span>
+                  <span style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>{periodoLabel}</span>
                 </div>
                 <div style={{ padding: '10px 16px 16px' }}>
                   {dados.origem.length === 0 && (

@@ -20,18 +20,46 @@ function diffDiasUTC(a: string, b: string): number {
   return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86_400_000)
 }
 
+const DATA_RE = /^\d{4}-\d{2}-\d{2}$/
+
+function somaDiasUTC(data: string, dias: number): string {
+  const [y, m, d] = data.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d + dias)).toISOString().slice(0, 10)
+}
+
 // GET /api/gerencial/fluxo-caixa?periodo=30
+// GET /api/gerencial/fluxo-caixa?inicio=2026-09-01&fim=2026-09-30  (período personalizado)
 export async function GET(req: NextRequest) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
 
-  const periodoDias = Math.min(180, Math.max(7, Number(req.nextUrl.searchParams.get('periodo')) || 30))
-  const empresaId   = session.empresa_id_ativa
-  const db          = getDb(session.database_name)
+  const empresaId = session.empresa_id_ativa
+  const db        = getDb(session.database_name)
+
+  const { rows: hojeRow } = await db.query(`SELECT TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD') AS hoje`)
+  const hoje = hojeRow[0].hoje as string
+
+  const inicioParam = req.nextUrl.searchParams.get('inicio')
+  const fimParam     = req.nextUrl.searchParams.get('fim')
+
+  let inicio: string
+  let fim: string
+
+  if (inicioParam && fimParam && DATA_RE.test(inicioParam) && DATA_RE.test(fimParam) && inicioParam <= fimParam) {
+    fim    = fimParam > hoje ? hoje : fimParam
+    inicio = inicioParam > fim ? fim : inicioParam
+    // Limita a janela a 400 dias pra não gerar consultas desproporcionais
+    if (diffDiasUTC(inicio, fim) > 400) inicio = somaDiasUTC(fim, -400)
+  } else {
+    const periodoDias = Math.min(180, Math.max(7, Number(req.nextUrl.searchParams.get('periodo')) || 30))
+    fim    = hoje
+    inicio = somaDiasUTC(hoje, -(periodoDias - 1))
+  }
+
+  const periodoDias = diffDiasUTC(inicio, fim) + 1
 
   try {
     const [
-      { rows: hojeRow },
       { rows: saldoCaixaRow },
       { rows: saldoBancoRow },
       { rows: hojeMovRows },
@@ -42,9 +70,8 @@ export async function GET(req: NextRequest) {
       { rows: origemRows },
       { rows: projecaoRows },
       { rows: movRows },
+      { rows: ajusteRows },
     ] = await Promise.all([
-      db.query(`SELECT TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD') AS hoje`),
-
       db.query(
         `SELECT COALESCE(SUM(CASE WHEN tipo='E' THEN valor ELSE -valor END),0) AS saldo
          FROM tab_movimento_caixa WHERE empresa_id=$1`,
@@ -73,11 +100,11 @@ export async function GET(req: NextRequest) {
 
       db.query(
         `SELECT tipo, SUM(valor) AS total FROM (
-           SELECT tipo, valor FROM tab_movimento_caixa WHERE empresa_id=$1 AND data_movimento >= CURRENT_DATE - $2::int AND data_movimento <= CURRENT_DATE
+           SELECT tipo, valor FROM tab_movimento_caixa WHERE empresa_id=$1 AND data_movimento >= $2::date AND data_movimento <= $3::date
            UNION ALL
-           SELECT tipo, valor FROM tab_movimento_banco WHERE empresa_id=$1 AND data_movimento >= CURRENT_DATE - $2::int AND data_movimento <= CURRENT_DATE
+           SELECT tipo, valor FROM tab_movimento_banco WHERE empresa_id=$1 AND data_movimento >= $2::date AND data_movimento <= $3::date
          ) x GROUP BY tipo`,
-        [empresaId, periodoDias - 1],
+        [empresaId, inicio, fim],
       ),
 
       db.query(
@@ -110,22 +137,22 @@ export async function GET(req: NextRequest) {
 
       db.query(
         `SELECT TO_CHAR(data_movimento,'YYYY-MM-DD') AS data_movimento, tipo, SUM(valor) AS valor FROM (
-           SELECT data_movimento, tipo, valor FROM tab_movimento_caixa WHERE empresa_id=$1 AND data_movimento >= CURRENT_DATE - $2::int AND data_movimento <= CURRENT_DATE
+           SELECT data_movimento, tipo, valor FROM tab_movimento_caixa WHERE empresa_id=$1 AND data_movimento >= $2::date AND data_movimento <= $3::date
            UNION ALL
-           SELECT data_movimento, tipo, valor FROM tab_movimento_banco WHERE empresa_id=$1 AND data_movimento >= CURRENT_DATE - $2::int AND data_movimento <= CURRENT_DATE
+           SELECT data_movimento, tipo, valor FROM tab_movimento_banco WHERE empresa_id=$1 AND data_movimento >= $2::date AND data_movimento <= $3::date
          ) x GROUP BY data_movimento, tipo ORDER BY data_movimento`,
-        [empresaId, periodoDias - 1],
+        [empresaId, inicio, fim],
       ),
 
       db.query(
         `SELECT origem, tipo, SUM(valor) AS total FROM (
            SELECT ${ORIGEM_CASE('')} AS origem, tipo, valor, titulo_pagar_id, titulo_receber_id, despesa_id, receita_id, origem_modulo
-           FROM tab_movimento_caixa WHERE empresa_id=$1 AND data_movimento >= CURRENT_DATE - $2::int AND data_movimento <= CURRENT_DATE
+           FROM tab_movimento_caixa WHERE empresa_id=$1 AND data_movimento >= $2::date AND data_movimento <= $3::date
            UNION ALL
            SELECT ${ORIGEM_CASE('')} AS origem, tipo, valor, titulo_pagar_id, titulo_receber_id, despesa_id, receita_id, origem_modulo
-           FROM tab_movimento_banco WHERE empresa_id=$1 AND data_movimento >= CURRENT_DATE - $2::int AND data_movimento <= CURRENT_DATE
+           FROM tab_movimento_banco WHERE empresa_id=$1 AND data_movimento >= $2::date AND data_movimento <= $3::date
          ) x GROUP BY origem, tipo`,
-        [empresaId, periodoDias - 1],
+        [empresaId, inicio, fim],
       ),
 
       db.query(
@@ -158,9 +185,19 @@ export async function GET(req: NextRequest) {
          ORDER BY data_movimento DESC, id DESC LIMIT 20`,
         [empresaId],
       ),
-    ])
 
-    const hoje = hojeRow[0].hoje as string
+      // Movimentos entre o fim do período selecionado e hoje — usado pra "descontar"
+      // do saldo atual real e achar o saldo que a empresa tinha no fim do período
+      // (quando o período selecionado é passado, não termina hoje).
+      db.query(
+        `SELECT COALESCE(SUM(CASE WHEN tipo='E' THEN valor ELSE -valor END),0) AS delta FROM (
+           SELECT tipo, valor FROM tab_movimento_caixa WHERE empresa_id=$1 AND data_movimento > $2::date AND data_movimento <= $3::date
+           UNION ALL
+           SELECT tipo, valor FROM tab_movimento_banco WHERE empresa_id=$1 AND data_movimento > $2::date AND data_movimento <= $3::date
+         ) x`,
+        [empresaId, fim, hoje],
+      ),
+    ])
 
     const somaPorTipo = (rows: { tipo: string; total: string }[]) => {
       const m: Record<string, number> = { E: 0, S: 0 }
@@ -196,13 +233,12 @@ export async function GET(req: NextRequest) {
       nCartaoAtrasado:        Number(cartaoRow[0].n_atrasado),
     }
 
-    // Série diária: preenche todos os dias do período e calcula saldo acumulado
-    // andando de trás para frente a partir do saldo atual (hoje = saldoTotal real)
-    const [Y, M, D] = hoje.split('-').map(Number)
+    // Série diária: preenche todos os dias do período (inicio..fim) e calcula saldo
+    // acumulado andando de trás para frente. A âncora é o saldo real no fim do
+    // período: saldoTotal (saldo real de hoje) descontado do que movimentou entre
+    // o fim do período e hoje — se o período selecionado termina hoje, o desconto é zero.
     const dias: string[] = []
-    for (let i = periodoDias - 1; i >= 0; i--) {
-      dias.push(new Date(Date.UTC(Y, M - 1, D - i)).toISOString().slice(0, 10))
-    }
+    for (let i = 0; i < periodoDias; i++) dias.push(somaDiasUTC(inicio, i))
 
     const porDia: Record<string, { entradas: number; saidas: number }> = {}
     for (const d of dias) porDia[d] = { entradas: 0, saidas: 0 }
@@ -212,8 +248,10 @@ export async function GET(req: NextRequest) {
       else porDia[r.data_movimento].saidas = Number(r.valor)
     }
 
+    const saldoNoFim = saldoTotal - Number(ajusteRows[0].delta)
+
     const saldoPorDia: Record<string, number> = {}
-    let acumulado = saldoTotal
+    let acumulado = saldoNoFim
     for (let i = dias.length - 1; i >= 0; i--) {
       const d = dias[i]
       saldoPorDia[d] = acumulado
@@ -261,6 +299,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       periodoDias,
+      inicio,
+      fim,
       hoje,
       kpis,
       serie,
