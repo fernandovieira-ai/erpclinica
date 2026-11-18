@@ -46,6 +46,20 @@ function fmtData(d: string) {
   return d.slice(0, 10).split('-').reverse().join('/')
 }
 
+// Normaliza acentos pra busca não depender de digitar com acentuação igual ao
+// cadastro (ex.: paciente cadastrado "JOSÉ" é encontrado buscando "jose").
+// Separa a forma decomposta (NFD: letra base + marca de acento combinante,
+// faixa Unicode 0x0300-0x036F) e descarta as marcas, mantendo só a letra base.
+function normalizarBusca(texto: string): string {
+  return Array.from(texto.normalize('NFD'))
+    .filter(ch => {
+      const code = ch.codePointAt(0) ?? 0
+      return code < 0x0300 || code > 0x036f
+    })
+    .join('')
+    .toLowerCase()
+}
+
 function SkeletonBar({ width, height = 22 }: { width: number; height?: number }) {
   return <div className="skeleton-bar" style={{ width, height, marginTop: 2 }} />
 }
@@ -159,12 +173,12 @@ export default function RelatorioReceitasPage() {
 
   const itensFiltrados = useMemo(() => {
     if (!dados) return []
-    const termo = busca.trim().toLowerCase()
+    const termo = normalizarBusca(busca.trim())
     return dados.itens.filter((i) => {
       if (profissionalId && i.executante_id !== profissionalId) return false
       if (tipoIds.size > 0 && (i.tipo_id == null || !tipoIds.has(i.tipo_id))) return false
       if (termo) {
-        const alvo = `${i.paciente_nome ?? ''} ${i.procedimento ?? ''}`.toLowerCase()
+        const alvo = normalizarBusca(`${i.paciente_nome ?? ''} ${i.procedimento ?? ''}`)
         if (!alvo.includes(termo)) return false
       }
       return true
