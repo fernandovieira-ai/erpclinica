@@ -378,6 +378,15 @@
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   .spin { animation: spin 1s linear infinite; }
 
+  /* --- Skeleton (placeholder enquanto carrega, pra não "pular" o layout quando o dado chega) --- */
+
+  @keyframes skeletonPulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+  .skeleton-bar {
+    background: var(--borda);
+    border-radius: 4px;
+    animation: skeletonPulse 1.2s ease-in-out infinite;
+  }
+
   /* --- Badge de notificação (mensagens) --- */
 
   @keyframes badgePulse {

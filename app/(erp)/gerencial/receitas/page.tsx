@@ -46,11 +46,15 @@ function fmtData(d: string) {
   return d.slice(0, 10).split('-').reverse().join('/')
 }
 
-function CardResumo({ titulo, valor }: { titulo: string; valor: string }) {
+function SkeletonBar({ width, height = 22 }: { width: number; height?: number }) {
+  return <div className="skeleton-bar" style={{ width, height, marginTop: 2 }} />
+}
+
+function CardResumo({ titulo, valor }: { titulo: string; valor: string | null }) {
   return (
     <div className="card" style={{ padding: '12px 16px', flex: '1 1 160px' }}>
       <div style={{ fontSize: 11, color: 'var(--texto-terciario)' }}>{titulo}</div>
-      <div style={{ fontSize: 22, fontWeight: 700, marginTop: 2 }}>{valor}</div>
+      {valor === null ? <SkeletonBar width={70} /> : <div style={{ fontSize: 22, fontWeight: 700, marginTop: 2 }}>{valor}</div>}
     </div>
   )
 }
@@ -79,7 +83,7 @@ export default function RelatorioReceitasPage() {
   const [tipoDropdownAberto, setTipoDropdownAberto] = useState(false)
   const tipoDropdownRef = useRef<HTMLDivElement>(null)
   const [dados, setDados]             = useState<RespostaRelatorio | null>(null)
-  const [loading, setLoading]         = useState(false)
+  const [loading, setLoading]         = useState(true)
   const [imprimindo, setImprimindo]   = useState(false)
   const [exportando, setExportando]   = useState(false)
 
@@ -376,29 +380,38 @@ export default function RelatorioReceitasPage() {
           )}
         </div>
 
-        {/* Resumo */}
-        {dados && (
-          <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
-            <CardResumo titulo="Atendimentos" valor={String(resumoFiltrado.qtd_atendimentos)} />
-            <CardResumo titulo="Valor bruto" valor={fmtValor(resumoFiltrado.valor_bruto)} />
-            <CardResumo titulo="Taxas de cartão" valor={fmtValor(resumoFiltrado.valor_taxas)} />
-            <CardResumo titulo="Valor líquido" valor={fmtValor(resumoFiltrado.valor_liquido)} />
-            <CardResumo titulo="Repasse profissionais" valor={fmtValor(resumoFiltrado.valor_profissional)} />
-            <CardResumo titulo="Valor clínica" valor={fmtValor(resumoFiltrado.valor_clinica)} />
-          </div>
-        )}
+        {/* Resumo — sempre reserva o espaço (skeleton até o primeiro "dados" chegar), pra não empurrar
+            a tabela pra baixo de repente quando o fetch termina */}
+        <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+          <CardResumo titulo="Atendimentos" valor={dados ? String(resumoFiltrado.qtd_atendimentos) : null} />
+          <CardResumo titulo="Valor bruto" valor={dados ? fmtValor(resumoFiltrado.valor_bruto) : null} />
+          <CardResumo titulo="Taxas de cartão" valor={dados ? fmtValor(resumoFiltrado.valor_taxas) : null} />
+          <CardResumo titulo="Valor líquido" valor={dados ? fmtValor(resumoFiltrado.valor_liquido) : null} />
+          <CardResumo titulo="Repasse profissionais" valor={dados ? fmtValor(resumoFiltrado.valor_profissional) : null} />
+          <CardResumo titulo="Valor clínica" valor={dados ? fmtValor(resumoFiltrado.valor_clinica) : null} />
+        </div>
 
-        {/* Resumo por forma de pagamento */}
-        {dados && porFormaFiltrado.length > 0 && (
+        {/* Resumo por forma de pagamento — some de verdade só quando já temos dados e não há nenhuma
+            forma (ausência real de informação); enquanto ainda não chegou o primeiro "dados", mostra
+            skeleton no lugar, pelo mesmo motivo acima */}
+        {(!dados || porFormaFiltrado.length > 0) && (
           <div className="card" style={{ padding: 12, marginBottom: 16 }}>
             <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: 'var(--texto-secundario)' }}>Por forma de pagamento</div>
-            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-              {porFormaFiltrado.map((f) => (
-                <div key={f.forma_pagamento} style={{ fontSize: 12 }}>
-                  <strong>{f.forma_pagamento}</strong>: {f.qtd} · {fmtValor(f.valor_bruto)}
-                </div>
-              ))}
-            </div>
+            {!dados ? (
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                <SkeletonBar width={120} height={16} />
+                <SkeletonBar width={100} height={16} />
+                <SkeletonBar width={110} height={16} />
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                {porFormaFiltrado.map((f) => (
+                  <div key={f.forma_pagamento} style={{ fontSize: 12 }}>
+                    <strong>{f.forma_pagamento}</strong>: {f.qtd} · {fmtValor(f.valor_bruto)}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
