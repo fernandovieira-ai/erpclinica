@@ -9,7 +9,7 @@ import { ptBR } from 'date-fns/locale'
 import { toast } from 'sonner'
 import {
   DollarSign, Calendar, User, Stethoscope, CreditCard,
-  ChevronLeft, ChevronRight, RefreshCw, Undo2, Plus, Trash2,
+  ChevronLeft, ChevronRight, RefreshCw, Undo2, Plus, Trash2, Search, X,
 } from 'lucide-react'
 import type { AgendamentoListItem } from '@/types/clinica.types'
 import RecebimentoModal from '@/components/clinica/RecebimentoModal'
@@ -80,6 +80,7 @@ export default function RecebimentosPage() {
   const [modalOpen, setModalOpen]       = useState(false)
   const [agendamentosSel, setAgendamentosSel] = useState<AgendamentoListItem[]>([])
   const [filtroStatus, setFiltroStatus] = useState<string>('')
+  const [buscaPaciente, setBuscaPaciente] = useState('')
   const [avulsoModalOpen, setAvulsoModalOpen] = useState(false)
 
   const periodoUnico = dataInicio === dataFim
@@ -207,9 +208,18 @@ export default function RecebimentosPage() {
     }
   }
 
-  const agFiltrados = filtroStatus
-    ? agendamentos.filter(ag => ag.status === filtroStatus)
-    : agendamentos
+  // Filtro de status e busca por paciente aplicados em memória sobre o período já
+  // carregado — mesmo padrão de Receitas (app/(erp)/gerencial/receitas/page.tsx):
+  // evita ida ao servidor a cada tecla digitada.
+  const termoBusca = buscaPaciente.trim().toLowerCase()
+  const agFiltrados = agendamentos.filter(ag => {
+    if (filtroStatus && ag.status !== filtroStatus) return false
+    if (termoBusca) {
+      const alvo = `${ag.paciente_nome ?? ''} ${ag.paciente_celular ?? ''}`.toLowerCase()
+      if (!alvo.includes(termoBusca)) return false
+    }
+    return true
+  })
 
   // Agrupa por paciente preservando a ordem do primeiro atendimento do dia
   const grupos = useMemo(() => {
@@ -319,6 +329,32 @@ export default function RecebimentosPage() {
                 onChange={e => setDataFim(e.target.value)}
                 style={{ fontSize: 12, width: 140 }}
               />
+            </div>
+
+            {/* Busca por paciente (nome ou celular) */}
+            <div style={{ position: 'relative' }}>
+              <Search size={13} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-terciario)' }} />
+              <input
+                type="text"
+                placeholder="Buscar paciente..."
+                value={buscaPaciente}
+                onChange={e => setBuscaPaciente(e.target.value)}
+                className="input-field"
+                style={{ fontSize: 12, width: 200, paddingLeft: 28, paddingRight: buscaPaciente ? 26 : undefined }}
+              />
+              {buscaPaciente && (
+                <button
+                  onClick={() => setBuscaPaciente('')}
+                  title="Limpar busca"
+                  style={{
+                    position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', cursor: 'pointer', padding: 2,
+                    display: 'flex', color: 'var(--texto-terciario)',
+                  }}
+                >
+                  <X size={13} />
+                </button>
+              )}
             </div>
 
             {/* Filtro status */}
