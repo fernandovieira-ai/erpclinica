@@ -72,6 +72,33 @@ function rangeDoPreset(preset: PresetPeriodo): { inicio: Date; fim: Date } {
 
 const fmtISO = (d: Date) => format(d, 'yyyy-MM-dd')
 
+// Normaliza acentos pra busca não depender de digitar com acentuação igual ao
+// cadastro (ex.: paciente cadastrado "JOSÉ" é encontrado buscando "jose").
+// Separa a forma decomposta (NFD: letra base + marca de acento combinante,
+// faixa Unicode 0x0300-0x036F) e descarta as marcas, mantendo só a letra base.
+function normalizarBusca(texto: string): string {
+  return Array.from(texto.normalize('NFD'))
+    .filter(ch => {
+      const code = ch.codePointAt(0) ?? 0
+      return code < 0x0300 || code > 0x036f
+    })
+    .join('')
+    .toLowerCase()
+}
+
+// Chave do lote de pagamento de um atendimento — recebimentos de um mesmo paciente
+// em dias diferentes caem em lotes distintos (movimento/título diferente) e por isso
+// precisam ser estornados separadamente.
+function keyLote(ag: AgendamentoListItem) {
+  return ag.movimento_caixa_id
+    ? `caixa-${ag.movimento_caixa_id}`
+    : ag.movimento_banco_id
+      ? `banco-${ag.movimento_banco_id}`
+      : ag.batch_agendamento_id
+        ? `batch-${ag.batch_agendamento_id}`
+        : `rec-${ag.recebimento_id}`
+}
+
 export default function RecebimentosPage() {
   const [agendamentos, setAgendamentos] = useState<AgendamentoListItem[]>([])
   const [loading, setLoading]           = useState(false)
@@ -211,11 +238,11 @@ export default function RecebimentosPage() {
   // Filtro de status e busca por paciente aplicados em memória sobre o período já
   // carregado — mesmo padrão de Receitas (app/(erp)/gerencial/receitas/page.tsx):
   // evita ida ao servidor a cada tecla digitada.
-  const termoBusca = buscaPaciente.trim().toLowerCase()
+  const termoBusca = normalizarBusca(buscaPaciente.trim())
   const agFiltrados = agendamentos.filter(ag => {
     if (filtroStatus && ag.status !== filtroStatus) return false
     if (termoBusca) {
-      const alvo = `${ag.paciente_nome ?? ''} ${ag.paciente_celular ?? ''}`.toLowerCase()
+      const alvo = normalizarBusca(`${ag.paciente_nome ?? ''} ${ag.paciente_celular ?? ''}`)
       if (!alvo.includes(termoBusca)) return false
     }
     return true
@@ -426,20 +453,17 @@ export default function RecebimentosPage() {
               const totalGrupo = grupo.reduce((sum, ag) =>
                 sum + (ag.status_recebimento === 'PAGO' ? Number(ag.total_recebimento ?? 0) : 0), 0)
 
-              // Agrupa os PAGO por lote (movimento ou título A Prazo)
+              // Agrupa os PAGO por lote (movimento ou título A Prazo) — cada lote é um
+              // recebimento independente (pode ter sido pago em dias diferentes), então
+              // o estorno precisa agir por lote, não em todos os recebimentos do paciente
+              // de uma vez (ver botão "Estornar" por linha, abaixo).
               const movimentosEstorno = new Map<string, AgendamentoListItem[]>()
               for (const ag of grupo.filter(a => a.status_recebimento === 'PAGO')) {
-                const key = ag.movimento_caixa_id
-                  ? `caixa-${ag.movimento_caixa_id}`
-                  : ag.movimento_banco_id
-                    ? `banco-${ag.movimento_banco_id}`
-                    : ag.batch_agendamento_id
-                      ? `batch-${ag.batch_agendamento_id}`
-                      : `rec-${ag.recebimento_id}`
+                const key = keyLote(ag)
                 if (!movimentosEstorno.has(key)) movimentosEstorno.set(key, [])
                 movimentosEstorno.get(key)!.push(ag)
               }
-              const lotesPagos = Array.from(movimentosEstorno.values())
+              const loteRenderizado = new Set<string>()
 
               return (
                 <div key={paciente.paciente_id} className="card" style={{ overflow: 'hidden', padding: 0 }}>
@@ -467,27 +491,6 @@ export default function RecebimentosPage() {
                       <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--cor-primaria)' }}>
                         {fmtValor(totalGrupo)}
                       </span>
-                      {lotesPagos.length > 0 && (
-                        <button
-                          onClick={() => estornarTudo(grupo.filter(a => a.status_recebimento === 'PAGO'))}
-                          style={{
-                            padding: '5px 12px',
-                            background: '#E24B4A',
-                            color: '#fff',
-                            border: 'none',
-                            borderRadius: 5,
-                            cursor: 'pointer',
-                            fontSize: 12,
-                            fontWeight: 600,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 5,
-                          }}
-                        >
-                          <Undo2 size={13} />
-                          Estornar
-                        </button>
-                      )}
                       {pendentes.length > 0 && (
                         <button
                           onClick={() => abrirRecebimento(pendentes)}
@@ -516,6 +519,18 @@ export default function RecebimentosPage() {
                   {grupo.map((ag, idx) => {
                     const statusInfo = STATUS_LABEL[ag.status] ?? { label: ag.status, cor: '#999' }
                     const recInfo    = ag.status_recebimento ? STATUS_RECEBIMENTO[ag.status_recebimento] : null
+
+                    // Botão de estorno aparece uma única vez por lote (na primeira linha
+                    // dele) — um clique estorna só os atendimentos pagos juntos nesse lote,
+                    // nunca os outros lotes do mesmo paciente pagos em dias diferentes.
+                    let lote: AgendamentoListItem[] | null = null
+                    if (ag.status_recebimento === 'PAGO') {
+                      const key = keyLote(ag)
+                      if (!loteRenderizado.has(key)) {
+                        loteRenderizado.add(key)
+                        lote = movimentosEstorno.get(key) ?? [ag]
+                      }
+                    }
 
                     return (
                       <div
@@ -609,6 +624,33 @@ export default function RecebimentosPage() {
                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--cor-erro)', padding: 2, display: 'flex', flexShrink: 0 }}
                           >
                             <Trash2 size={13} />
+                          </button>
+                        )}
+
+                        {/* Estornar este lote — só na primeira linha de cada lote pago
+                            (um clique reverte só esse lote, não os demais do paciente) */}
+                        {lote && (
+                          <button
+                            onClick={() => estornarTudo(lote!)}
+                            title={lote.length > 1 ? `Estornar este recebimento (${lote.length} atendimentos)` : 'Estornar este recebimento'}
+                            style={{
+                              padding: '4px 10px',
+                              background: '#E24B4A',
+                              color: '#fff',
+                              border: 'none',
+                              borderRadius: 5,
+                              cursor: 'pointer',
+                              fontSize: 11,
+                              fontWeight: 600,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              flexShrink: 0,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <Undo2 size={12} />
+                            Estornar
                           </button>
                         )}
 
