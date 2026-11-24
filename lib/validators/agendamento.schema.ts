@@ -12,8 +12,10 @@ export const agendamentoSchema = z.object({
   observacao:       z.string().optional().nullable(),
   categoria_id: z.number().int().positive().optional().nullable(),
   // Encaixe: furar conflito de horário + disponibilidade do profissional de forma explícita
-  // e auditável — ver novos/68_agendamento_encaixe.sql. Sem hora exata, só período (manhã/tarde)
-  // — ver novos/69_agendamento_encaixe_periodo.sql. Motivo é opcional (decisão do usuário).
+  // e auditável — ver novos/68_agendamento_encaixe.sql. Tem hora início/fim normais (§50.2);
+  // motivo é opcional (decisão do usuário). `periodo` (manhã/tarde) foi descontinuado — ver
+  // novos/69_agendamento_encaixe_periodo.sql — mas o campo continua aceito/opcional só pra não
+  // quebrar leitura de registros antigos que ainda têm o valor salvo.
   eh_encaixe:       z.boolean().default(false),
   encaixe_motivo:   z.string().max(255).optional().nullable(),
   periodo:          z.enum(['MANHA', 'TARDE']).optional().nullable(),
@@ -26,10 +28,7 @@ export const agendamentoSchema = z.object({
   // o cadastro antigo (normalmente criado sem CPF pelo cadastro rápido) ao salvar. Só remove
   // se não houver outros vínculos (recebimento, prontuário, outro agendamento) — ver PUT.
   excluir_paciente_anterior_id: z.number().int().positive().optional().nullable(),
-}).refine(
-  d => !d.eh_encaixe || !!d.periodo,
-  { message: 'Selecione o período do encaixe (manhã ou tarde)', path: ['periodo'] },
-)
+})
 
 export type AgendamentoInput = z.infer<typeof agendamentoSchema>
 

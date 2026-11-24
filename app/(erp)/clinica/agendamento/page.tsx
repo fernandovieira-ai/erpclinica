@@ -986,12 +986,13 @@ export default function AgendamentoPage() {
     const agsHoje = agendamentos.filter(ag =>
       isSameDay(parseISO(ag.data_hora_inicio), selectedDay)
     )
-    // Encaixe não ocupa slot da grade (não tem horário exato, só período) — fica numa lista
-    // separada no final do dia. Ver novos/69_agendamento_encaixe_periodo.sql
+    // Encaixe ignora conflito/disponibilidade do profissional (pode ter a mesma hora de outro
+    // agendamento) — por isso fica fora da grade, numa lista própria, pra não competir
+    // visualmente com os agendamentos normais. Ver novos/68_agendamento_encaixe.sql
     const agsHojeGrade    = agsHoje.filter(ag => !ag.eh_encaixe)
     const agsHojeEncaixes = agsHoje
       .filter(ag => ag.eh_encaixe)
-      .sort((a, b) => (a.periodo !== b.periodo ? (a.periodo === 'TARDE' ? 1 : -1) : a.id - b.id))
+      .sort((a, b) => a.data_hora_inicio.localeCompare(b.data_hora_inicio))
     // Faz o parseISO uma vez por agendamento (não a cada slot da grade) — o resto da
     // lógica abaixo (filter por início exato / some por sobreposição) continua igual.
     const agsHojeGradeParsed = agsHojeGrade.map(ag => ({
@@ -1356,8 +1357,9 @@ export default function AgendamentoPage() {
           )
         })}
 
-        {/* Encaixes do dia — sem horário fixo, só período (manhã/tarde). Fica no final da
-            agenda, fora da grade de horários. Ver novos/69_agendamento_encaixe_periodo.sql */}
+        {/* Encaixes do dia — têm hora início/fim normais (§50.2), mas ignoram conflito/
+            disponibilidade do profissional, por isso ficam fora da grade, numa lista própria
+            no final da agenda. Ver novos/68_agendamento_encaixe.sql */}
         {agsHojeEncaixes.length > 0 && (
           <div style={{ borderTop: '2px solid var(--borda-media)', marginTop: 4 }}>
             <div style={{ padding: '12px 16px 6px', display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -1376,6 +1378,8 @@ export default function AgendamentoPage() {
             <div style={{ padding: '2px 16px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
               {agsHojeEncaixes.map(ag => {
                 const tipoColor = ag.tipo_cor ?? '#F59E0B'
+                const horaIni = format(parseISO(ag.data_hora_inicio), 'HH:mm')
+                const horaFim = format(parseISO(ag.data_hora_fim), 'HH:mm')
                 return (
                   <div
                     key={ag.id}
@@ -1394,12 +1398,12 @@ export default function AgendamentoPage() {
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#F59E0B0C' }}
                   >
                     <div style={{
-                      fontSize: 10.5, fontWeight: 700, color: '#F59E0B',
+                      fontSize: 11.5, fontWeight: 700, color: '#F59E0B',
                       background: '#F59E0B1E', borderRadius: 20,
-                      padding: '4px 0', width: 56, textAlign: 'center', flexShrink: 0,
-                      textTransform: 'uppercase', letterSpacing: '.03em',
+                      padding: '4px 2px', width: 56, textAlign: 'center', flexShrink: 0,
                     }}>
-                      {ag.periodo === 'TARDE' ? 'Tarde' : 'Manhã'}
+                      {horaIni}
+                      <div style={{ fontSize: 9.5, fontWeight: 600, opacity: 0.8 }}>{horaFim}</div>
                     </div>
 
                     <div style={{ flex: 1, minWidth: 0 }}>

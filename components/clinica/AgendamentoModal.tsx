@@ -154,9 +154,9 @@ function ConfirmarEncaixeModal({
           Transformar em encaixe?
         </div>
         <div style={{ fontSize: 12.5, color: 'var(--texto-secundario)', lineHeight: 1.55, marginBottom: 24 }}>
-          O horário fixo (<strong style={{ color: 'var(--texto-principal)' }}>{horaAtual}</strong>) será liberado
-          — o paciente passa a aguardar por período (manhã ou tarde), sem disputar vaga na grade
-          nem checar disponibilidade do profissional. Clique em &ldquo;Salvar alterações&rdquo; depois pra confirmar.
+          O horário (<strong style={{ color: 'var(--texto-principal)' }}>{horaAtual}</strong>) é mantido, mas o
+          agendamento passa a ignorar conflito de horário e disponibilidade do profissional — pode ocupar o mesmo
+          horário de outro atendimento. Clique em &ldquo;Salvar alterações&rdquo; depois pra confirmar.
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -240,10 +240,10 @@ function ConfirmarHorarioFixoModal({
         </div>
 
         <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--texto-principal)', marginBottom: 8 }}>
-          Agendar horário fixo?
+          Agendar horário disponível?
         </div>
         <div style={{ fontSize: 12.5, color: 'var(--texto-secundario)', lineHeight: 1.55, marginBottom: 24 }}>
-          O encaixe deixa de aguardar por período e passa a ter horário marcado
+          O encaixe deixa de ignorar conflito/disponibilidade e passa a ser um agendamento normal
           — <strong style={{ color: 'var(--texto-principal)' }}>{dataFmt} às {hora}</strong>.
           Clique em &ldquo;Salvar alterações&rdquo; depois pra confirmar.
         </div>
@@ -351,7 +351,6 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
     categoria_id:    null as number | null,
     eh_encaixe:      false,
     encaixe_motivo:  '',
-    periodo:         '' as '' | 'MANHA' | 'TARDE',
   })
 
   const buscarProximoHorario = useCallback(async (profissionalId: number, dataInicio?: string, horaInicioMin?: string) => {
@@ -434,7 +433,6 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
         categoria_id:    agendamento.categoria_id ?? null,
         eh_encaixe:      agendamento.eh_encaixe ?? false,
         encaixe_motivo:  agendamento.encaixe_motivo ?? '',
-        periodo:         agendamento.periodo ?? '',
       })
       setBuscaPaciente(agendamento.paciente_nome)
       setPacienteSel({ id: agendamento.paciente_id, nome: agendamento.paciente_nome, cpf_cnpj: null, celular: agendamento.paciente_celular ?? null, telefone: null, cidade: null, uf: null, email: null })
@@ -457,7 +455,6 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
           categoria_id:    null,
           eh_encaixe:      !!encaixeInicial,
           encaixe_motivo:  '',
-          periodo:         encaixeInicial ? 'MANHA' : '',
         })
         buscarProximoHorario(profissionalPre.id, dataStr, horaStr)
       } else if (dataHoraInicio) {
@@ -477,17 +474,17 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
           categoria_id:    null,
           eh_encaixe:      !!encaixeInicial,
           encaixe_motivo:  '',
-          periodo:         encaixeInicial ? 'MANHA' : '',
         })
       } else {
         // Botão "Novo agendamento" sem slot (ou "Encaixar Paciente"): inicializa vazio.
         // No modo encaixe não busca o próximo horário livre — o ponto é escolher um horário
-        // já ocupado de propósito.
+        // já ocupado de propósito. Data já vem com o dia de hoje por padrão (encaixe é sempre
+        // pra "agora", recepção não costuma encaixar pra outro dia).
         setForm({
           paciente_id:     0,
           profissional_id: profissionalPre?.id ?? 0,
           tipo_id:         null,
-          data:            '',
+          data:            encaixeInicial ? format(new Date(), 'yyyy-MM-dd') : '',
           hora_inicio:     '',
           hora_fim:        '',
           status:          'AGENDADO',
@@ -496,7 +493,6 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
           categoria_id:    null,
           eh_encaixe:      !!encaixeInicial,
           encaixe_motivo:  '',
-          periodo:         encaixeInicial ? 'MANHA' : '',
         })
         if (profissionalPre?.id && !encaixeInicial) {
           buscarProximoHorario(profissionalPre.id)
@@ -716,8 +712,9 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
     const totalFim = h * 60 + m + duracao
     const horaFim  = `${String(Math.floor(totalFim / 60) % 24).padStart(2, '0')}:${String(totalFim % 60).padStart(2, '0')}`
 
-    // Escolher um horário concreto dentro de um encaixe sempre vira agendamento normal
-    // (encaixe é "sem hora fixa" por definição) — mas pede confirmação antes, no mesmo
+    // Escolher um horário concreto no picker de "horários disponíveis" dentro de um encaixe
+    // sempre vira agendamento normal — se o horário está nessa lista é porque está livre, então
+    // não há mais motivo pra ignorar conflito/disponibilidade. Pede confirmação antes, no mesmo
     // padrão do ConfirmarEncaixeModal (nunca aplica uma mudança de modo sem avisar).
     if (form.eh_encaixe) {
       setHorarioFixoPendente({ data, hora, horaFim })
@@ -729,7 +726,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
   function confirmarHorarioFixo() {
     if (!horarioFixoPendente) return
     const { data, hora, horaFim } = horarioFixoPendente
-    setForm(f => ({ ...f, data, hora_inicio: hora, hora_fim: horaFim, eh_encaixe: false, periodo: '' }))
+    setForm(f => ({ ...f, data, hora_inicio: hora, hora_fim: horaFim, eh_encaixe: false }))
     setHorarioFixoPendente(null)
   }
 
@@ -787,26 +784,12 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
     if (!form.paciente_id)     { toast.error('Selecione o paciente'); return }
     if (!form.profissional_id) { toast.error('Selecione o profissional'); return }
     if (!form.data)            { toast.error('Informe a data'); return }
-    if (form.eh_encaixe) {
-      if (!form.periodo) { toast.error('Selecione o período (manhã ou tarde)'); return }
-    } else if (!form.hora_inicio || !form.hora_fim) {
-      toast.error('Informe os horários'); return
-    }
+    if (!form.hora_inicio || !form.hora_fim) { toast.error('Informe os horários'); return }
     if (!form.tipo_id)         { toast.error('Selecione o tipo de atendimento'); return }
     if (!form.categoria_id)    { toast.error('Selecione a categoria'); return }
 
-    // Encaixe não tem hora exata — usa uma âncora técnica (manhã=08:00, tarde=13:00) + duração
-    // do tipo só pra preencher data_hora_inicio/fim (NOT NULL no banco); a tela nunca mostra
-    // essa hora pro encaixe, só o período — ver novos/69_agendamento_encaixe_periodo.sql
-    const horaIni = form.eh_encaixe ? (form.periodo === 'TARDE' ? '13:00' : '08:00') : form.hora_inicio
-    const duracaoEncaixe = tipos.find(t => t.id === form.tipo_id)?.duracao_min || 30
-    const horaFim = form.eh_encaixe
-      ? (() => {
-          const [h, m] = horaIni.split(':').map(Number)
-          const total  = h * 60 + m + duracaoEncaixe
-          return `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
-        })()
-      : form.hora_fim
+    const horaIni = form.hora_inicio
+    const horaFim = form.hora_fim
 
     const ini = `${form.data}T${horaIni}:00`
     const fim = `${form.data}T${horaFim}:00`
@@ -820,16 +803,6 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
     if (!isEdit) {
       if (dataHoraIni < agora && !permiteRetroativo) {
         toast.error('Não é possível agendar em data e horário que já passou')
-        return
-      }
-    } else if (form.eh_encaixe) {
-      // Encaixe não tem hora real — horaIni é só a âncora técnica (08:00/13:00, ver comentário
-      // acima). Comparar timestamp completo contra "agora" bloquearia incorretamente uma
-      // conversão/edição legítima no mesmo dia (ex.: agendamento original às 15h convertido pra
-      // encaixe de TARDE às 14h30 teria âncora 13:00 < agora e seria barrado, mesmo o horário
-      // real ainda não tendo passado). Só a DATA importa aqui.
-      if (form.data < format(agora, 'yyyy-MM-dd') && !permiteRetroativo) {
-        toast.error('Não é possível reagendar para uma data que já passou')
         return
       }
     } else {
@@ -866,7 +839,6 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
           categoria_id:     form.categoria_id,
           eh_encaixe:       form.eh_encaixe,
           encaixe_motivo:   form.eh_encaixe && form.encaixe_motivo.trim() ? form.encaixe_motivo.trim() : null,
-          periodo:          form.eh_encaixe ? form.periodo || null : null,
           excluir_paciente_anterior_id: pacienteParaExcluirAposSalvar?.id ?? null,
         }),
       })
@@ -898,27 +870,17 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
     }
   }
 
-  // Converte um agendamento já existente (com horário fixo) em encaixe — pro caso do paciente
-  // precisar mudar de horário e não haver vaga livre: em vez de excluir e recriar o cadastro,
-  // libera o horário fixo e passa a disputar só período (manhã/tarde), igual ao fluxo de
-  // "Encaixar Paciente". Ação explícita com confirmação num modal próprio (padrão do sistema —
-  // ver ConfirmarEncaixeModal abaixo, mesmo espírito de não ter um checkbox/toggle silencioso,
-  // §50 do padroes.md); só muda o estado local do form, a gravação em si continua dependendo
-  // de "Salvar alterações".
+  // Converte um agendamento já existente em encaixe — pro caso do paciente precisar manter
+  // ou mudar de horário sem vaga livre na agenda: em vez de excluir e recriar o cadastro, marca
+  // o agendamento pra ignorar conflito/disponibilidade do profissional a partir daqui (§50.2 —
+  // o horário em si, fixo ou recém-editado pelo usuário, é mantido como está no form). Ação
+  // explícita com confirmação num modal próprio (padrão do sistema — ver ConfirmarEncaixeModal
+  // abaixo, mesmo espírito de não ter um checkbox/toggle silencioso, §50 do padroes.md); só muda
+  // o estado local do form, a gravação em si continua dependendo de "Salvar alterações".
   function confirmarTransformarEmEncaixe() {
-    const horaAtual = form.hora_inicio ? Number(form.hora_inicio.split(':')[0]) : 12
-    setForm(f => ({
-      ...f,
-      eh_encaixe: true,
-      periodo: horaAtual < 12 ? 'MANHA' : 'TARDE',
-      // Limpa o horário fixo antigo — vira estado morto assim que eh_encaixe=true (handleSalvar
-      // usa a âncora técnica do período, não estes campos), mas deixá-lo obsoleto no form é
-      // uma armadilha pra quem ler/estender este código depois.
-      hora_inicio: '',
-      hora_fim:    '',
-    }))
+    setForm(f => ({ ...f, eh_encaixe: true }))
     setConfirmEncaixeAberto(false)
-    toast.info('Agendamento marcado como encaixe — confira o período e clique em "Salvar alterações" pra confirmar.')
+    toast.info('Agendamento marcado como encaixe — clique em "Salvar alterações" pra confirmar.')
   }
 
   async function handleExcluir() {
@@ -1372,10 +1334,12 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
 
             {/* ── Encaixe ───────────────────────────────────────────────
                 Furar conflito de horário + disponibilidade do profissional é sempre uma ação
-                explícita (nunca o caminho padrão). Sem hora exata — só período (manhã/tarde),
-                mostrado numa lista própria no final da agenda do dia — ver
-                novos/68_agendamento_encaixe.sql e novos/69_agendamento_encaixe_periodo.sql */}
-            <div style={{ display: 'grid', gridTemplateColumns: form.eh_encaixe ? '1fr auto auto' : '1fr auto auto auto', gap: 8, alignItems: 'end' }}>
+                explícita (nunca o caminho padrão). Tem hora início/fim normais como qualquer
+                agendamento (§50.2) — a diferença é só ignorar o conflito/disponibilidade e
+                aparecer numa lista própria no final da agenda do dia, fora da grade, pra não
+                competir visualmente com os agendamentos normais — ver
+                novos/68_agendamento_encaixe.sql */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: 8, alignItems: 'end' }}>
               <Field>
                 <Label required>Profissional</Label>
                 <select
@@ -1414,58 +1378,32 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                 />
               </Field>
 
-              {form.eh_encaixe ? (
-                <Field>
-                  <Label required>Período</Label>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    {(['MANHA', 'TARDE'] as const).map(p => (
-                      <button
-                        key={p}
-                        type="button"
-                        onClick={() => setForm(f => ({ ...f, periodo: p }))}
-                        style={{
-                          padding: '5px 12px', fontSize: 12, fontWeight: 600,
-                          borderRadius: 3, cursor: 'pointer',
-                          border: `1px solid ${form.periodo === p ? '#F59E0B' : 'var(--borda-media)'}`,
-                          background: form.periodo === p ? '#F59E0B' : 'var(--bg-input)',
-                          color: form.periodo === p ? '#fff' : 'var(--texto-principal)',
-                        }}
-                      >
-                        {p === 'MANHA' ? 'Manhã' : 'Tarde'}
-                      </button>
-                    ))}
-                  </div>
-                </Field>
-              ) : (
-                <>
-                  <Field>
-                    <Label required>Hora início</Label>
-                    <input
-                      type="time"
-                      value={form.hora_inicio}
-                      disabled={loadingSlot}
-                      onChange={e => handleHoraInicio(e.target.value)}
-                      style={{
-                        padding: '5px 6px', fontSize: 12,
-                        backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)',
-                        border: `1px solid ${horaInicioBloqueadaPorPassado ? 'var(--cor-erro)' : 'var(--borda-media)'}`,
-                        borderRadius: 3, width: 90, opacity: loadingSlot ? 0.5 : 1,
-                      }}
-                    />
-                  </Field>
+              <Field>
+                <Label required>Hora início</Label>
+                <input
+                  type="time"
+                  value={form.hora_inicio}
+                  disabled={loadingSlot}
+                  onChange={e => handleHoraInicio(e.target.value)}
+                  style={{
+                    padding: '5px 6px', fontSize: 12,
+                    backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)',
+                    border: `1px solid ${horaInicioBloqueadaPorPassado ? 'var(--cor-erro)' : 'var(--borda-media)'}`,
+                    borderRadius: 3, width: 90, opacity: loadingSlot ? 0.5 : 1,
+                  }}
+                />
+              </Field>
 
-                  <Field>
-                    <Label required>Hora fim</Label>
-                    <input
-                      type="time"
-                      value={form.hora_fim}
-                      disabled={loadingSlot}
-                      onChange={e => handleHoraFim(e.target.value)}
-                      style={{ padding: '5px 6px', fontSize: 12, backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3, width: 90, opacity: loadingSlot ? 0.5 : 1 }}
-                    />
-                  </Field>
-                </>
-              )}
+              <Field>
+                <Label required>Hora fim</Label>
+                <input
+                  type="time"
+                  value={form.hora_fim}
+                  disabled={loadingSlot}
+                  onChange={e => handleHoraFim(e.target.value)}
+                  style={{ padding: '5px 6px', fontSize: 12, backgroundColor: 'var(--bg-input)', color: 'var(--texto-principal)', border: '1px solid var(--borda-media)', borderRadius: 3, width: 90, opacity: loadingSlot ? 0.5 : 1 }}
+                />
+              </Field>
             </div>
 
             {(form.eh_encaixe || form.profissional_id > 0 || (isEdit && !jaFoiPago && !agendamento?.avulso)) && (
@@ -1494,7 +1432,7 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
                       color: '#F59E0B', whiteSpace: 'nowrap',
                     }}
                   >
-                    <Zap size={12} /> Encaixe — sem horário fixo
+                    <Zap size={12} /> Encaixe — ignora conflito/disponibilidade
                   </div>
                 )}
                 {!form.eh_encaixe && isEdit && !jaFoiPago && !agendamento?.avulso && (

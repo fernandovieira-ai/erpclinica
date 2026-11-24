@@ -159,9 +159,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ erro: MSG_TIPO_NAO_HABILITADO }, { status: 422 })
     }
 
-    // Encaixe: furo explícito e auditado (eh_encaixe + período obrigatório, validado no schema;
-    // motivo fica opcional) de conflito de horário e disponibilidade — ver
-    // novos/68_agendamento_encaixe.sql e novos/69_agendamento_encaixe_periodo.sql
+    // Encaixe: furo explícito e auditado (eh_encaixe=true; motivo fica opcional) de conflito
+    // de horário e disponibilidade — ver novos/68_agendamento_encaixe.sql
     // Avulso (novos/73_agendamento_avulso.sql — lançamento direto na tela de Recebimento)
     // também fura disponibilidade/conflito, igual ao encaixe: não disputa slot nenhum
     // porque nem aparece na agenda.

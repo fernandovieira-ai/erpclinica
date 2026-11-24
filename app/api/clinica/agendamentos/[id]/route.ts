@@ -100,9 +100,8 @@ export async function PUT(req: NextRequest, { params }: Params) {
     // o AgendamentoModal nunca manda `avulso` no PUT (só no POST do Lançamento Avulso), então
     // confiar em d.avulso aqui sempre bloquearia a edição de horário de um avulso já criado.
     const ehAvulso = !!antes?.avulso
-    // Encaixe: furo explícito e auditado (eh_encaixe + período obrigatório, validado no schema;
-    // motivo fica opcional) de disponibilidade e conflito de horário — ver
-    // novos/68_agendamento_encaixe.sql e novos/69_agendamento_encaixe_periodo.sql. Avulso
+    // Encaixe: furo explícito e auditado (eh_encaixe=true; motivo fica opcional) de
+    // disponibilidade e conflito de horário — ver novos/68_agendamento_encaixe.sql. Avulso
     // (novos/73_agendamento_avulso.sql) fura do mesmo jeito — não disputa slot nenhum.
     if (horarioMudou && !d.eh_encaixe && !ehAvulso) {
       const dataLocal = `($3::timestamptz)::date`
