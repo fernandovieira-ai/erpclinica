@@ -17,6 +17,7 @@ export interface ItemRelatorioReceita {
   tipo_id:                 number | null
   procedimento:            string | null
   forma_pagamento:         string | null
+  tipo_pagamento:          string | null   // 'credito' | 'debito' | null (demais formas de pagamento)
   qtd_parcelas:            number | null
   valor_taxa:              number
   valor_bruto:             number

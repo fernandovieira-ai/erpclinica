@@ -46,6 +46,15 @@ function fmtData(d: string) {
   return d.slice(0, 10).split('-').reverse().join('/')
 }
 
+const MESES_ABREV = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+// "D-Mon" (ex.: "1-Oct") — mesmo formato da coluna DATA na planilha de controle do cliente.
+function fmtDataCurta(d: string) {
+  if (!d) return ''
+  const [, mes, dia] = d.slice(0, 10).split('-').map(Number)
+  return `${dia}-${MESES_ABREV[mes - 1]}`
+}
+
 // Normaliza acentos pra busca não depender de digitar com acentuação igual ao
 // cadastro (ex.: paciente cadastrado "JOSÉ" é encontrado buscando "jose").
 // Separa a forma decomposta (NFD: letra base + marca de acento combinante,
@@ -247,30 +256,26 @@ export default function RelatorioReceitasPage() {
     setExportando(true)
     try {
       const XLSX = await import('xlsx')
-      const linhas = itensFiltrados.map((i) => ({
-        'Data':                       fmtData(i.data_recebimento),
-        'Paciente':                   i.paciente_nome ?? '',
-        'Procedimento':               i.procedimento ?? '',
-        'Executante':                 i.executante_nome ?? '',
-        'Solicitante':                i.solicitante_nome ?? '',
-        'Forma de Pagamento':         i.qtd_parcelas && i.qtd_parcelas > 1 ? `${i.forma_pagamento ?? ''} ${i.qtd_parcelas}x` : (i.forma_pagamento ?? ''),
-        'Taxa (R$)':                  i.valor_taxa,
-        'Valor Bruto (R$)':           i.valor_bruto,
-        'Repasse Profissional (R$)':  i.valor_profissional,
-        'Valor Clínica (R$)':         i.valor_clinica,
+      // Colunas na mesma ordem/formato da planilha de controle do cliente (aba "RECEITA <mês>"),
+      // só com os dados de entrada — taxa de maquininha/antecipação, valor líquido e os percentuais
+      // de médico/clínica (colunas I:M e O:Q naquela planilha) já são fórmula pronta lá, calculada
+      // a partir destas colunas (VLOOKUP na aba "Parcelas" + regra por procedimento/profissional em
+      // PROCEDIMENTO e MED EXECUTANTE). Por isso o export não recalcula isso aqui.
+      const linhas = itensFiltrados.map((i, idx) => ({
+        'ID':               idx + 1,
+        'NOME':             i.paciente_nome ?? '',
+        'DATA':             fmtDataCurta(i.data_recebimento),
+        'VALOR':            i.valor_bruto,
+        'MED EXECUTANTE':   i.executante_nome ?? '',
+        'MED SOLICITANTE':  i.solicitante_nome ?? '',
+        'FORMA DE PAG':     i.forma_pagamento ?? '',
+        'PARCELAS':         i.tipo_pagamento === 'credito' && i.qtd_parcelas ? `${i.qtd_parcelas}X` : '',
+        'PROCEDIMENTO':     i.procedimento ?? '',
       }))
-      linhas.push({
-        'Data': '', 'Paciente': '', 'Procedimento': '', 'Executante': '', 'Solicitante': '',
-        'Forma de Pagamento':        'TOTAL GERAL',
-        'Taxa (R$)':                 resumoFiltrado.valor_taxas,
-        'Valor Bruto (R$)':          resumoFiltrado.valor_bruto,
-        'Repasse Profissional (R$)': resumoFiltrado.valor_profissional,
-        'Valor Clínica (R$)':        resumoFiltrado.valor_clinica,
-      })
       const planilha = XLSX.utils.json_to_sheet(linhas)
       planilha['!cols'] = [
-        { wch: 11 }, { wch: 32 }, { wch: 26 }, { wch: 24 }, { wch: 24 },
-        { wch: 22 }, { wch: 12 }, { wch: 15 }, { wch: 18 }, { wch: 15 },
+        { wch: 6 }, { wch: 32 }, { wch: 10 }, { wch: 12 }, { wch: 24 },
+        { wch: 24 }, { wch: 14 }, { wch: 10 }, { wch: 26 },
       ]
       const livro = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(livro, planilha, 'Receitas')
