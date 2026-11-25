@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth/session'
+import { getSession, isAdmin } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 import { caminhoRelativoAnexo, salvarArquivo } from '@/lib/storage'
 
@@ -9,6 +9,7 @@ const TAMANHO_MAXIMO_BYTES = 15 * 1024 * 1024 // 15MB
 export async function GET(req: NextRequest) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (!isAdmin(session)) return NextResponse.json({ erro: 'Sem permissão' }, { status: 403 })
 
   const agendamentoId = req.nextUrl.searchParams.get('agendamento_id')
   const pacienteId    = req.nextUrl.searchParams.get('paciente_id')
@@ -41,6 +42,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (!isAdmin(session)) return NextResponse.json({ erro: 'Sem permissão' }, { status: 403 })
 
   const form = await req.formData().catch(() => null)
   if (!form) return NextResponse.json({ erro: 'Envie como multipart/form-data' }, { status: 400 })

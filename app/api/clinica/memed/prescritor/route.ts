@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth/session'
+import { getSession, isAdmin } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 import { obterOuCadastrarPrescritor, MemedApiError, splitNome, paraDataBr } from '@/lib/memed'
 
@@ -10,6 +10,7 @@ import { obterOuCadastrarPrescritor, MemedApiError, splitNome, paraDataBr } from
 export async function POST(req: NextRequest) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (!isAdmin(session)) return NextResponse.json({ erro: 'Sem permissão' }, { status: 403 })
 
   const body = await req.json().catch(() => null)
   const agendamentoId = Number(body?.agendamento_id)

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth/session'
+import { getSession, isAdmin } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 import { lerArquivo, removerArquivo } from '@/lib/storage'
 
@@ -13,6 +13,7 @@ function idInvalido(id: string): boolean {
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (!isAdmin(session)) return NextResponse.json({ erro: 'Sem permissão' }, { status: 403 })
   if (idInvalido(params.id)) return NextResponse.json({ erro: 'Anexo não encontrado' }, { status: 404 })
 
   const id = Number(params.id)
@@ -39,6 +40,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (!isAdmin(session)) return NextResponse.json({ erro: 'Sem permissão' }, { status: 403 })
   if (idInvalido(params.id)) return NextResponse.json({ erro: 'Anexo não encontrado' }, { status: 404 })
 
   const id = Number(params.id)

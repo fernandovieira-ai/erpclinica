@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth/session'
+import { getSession, isAdmin } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 import { receitaMedicaSchema } from '@/lib/validators/receita-medica.schema'
 
@@ -7,6 +7,7 @@ import { receitaMedicaSchema } from '@/lib/validators/receita-medica.schema'
 export async function GET(req: NextRequest) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (!isAdmin(session)) return NextResponse.json({ erro: 'Sem permissão' }, { status: 403 })
 
   const pacienteId    = req.nextUrl.searchParams.get('paciente_id')
   const agendamentoId = req.nextUrl.searchParams.get('agendamento_id')
@@ -33,6 +34,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (!isAdmin(session)) return NextResponse.json({ erro: 'Sem permissão' }, { status: 403 })
 
   const body = receitaMedicaSchema.safeParse(await req.json())
   if (!body.success) return NextResponse.json({ erro: body.error.flatten() }, { status: 400 })

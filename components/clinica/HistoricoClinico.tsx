@@ -386,6 +386,14 @@ const HistoricoClinico = forwardRef<HistoricoClinicoHandle, Props>(function Hist
   const [anexoAlvoId, setAnexoAlvoId] = useState<number | null>(null)
   const inputAnexoRef = useRef<HTMLInputElement>(null)
   const voaRef = useRef<VoaPluginHandle>(null)
+  // Prontuário e receita são dados clínicos sensíveis — só admin (perfil dos médicos
+  // neste projeto) pode ver/editar; financeiro/operador não. A API já bloqueia com 403,
+  // isso aqui só evita mostrar botões que vão falhar. Começa false (esconde) até
+  // confirmar o perfil, pra não dar flash de conteúdo restrito.
+  const [souAdmin, setSouAdmin] = useState(false)
+  useEffect(() => {
+    fetch('/api/auth/me').then(r => r.json()).then(d => setSouAdmin(d.perfil === 'admin')).catch(() => {})
+  }, [])
 
   // Cada endpoint é buscado independentemente — uma falha isolada (ex: 500 sem
   // corpo por permissão faltando numa tabela nova) não pode zerar o resto do
@@ -501,10 +509,10 @@ const HistoricoClinico = forwardRef<HistoricoClinicoHandle, Props>(function Hist
   // clicar em "Cancelar" na edição.
   const autoEditouRef = useRef(false)
   useEffect(() => {
-    if (!autoEditarAtual || autoEditouRef.current || loading || !agendamentoAtual) return
+    if (!autoEditarAtual || autoEditouRef.current || loading || !agendamentoAtual || !souAdmin) return
     autoEditouRef.current = true
     iniciarEdicao(agendamentoAtual)
-  }, [autoEditarAtual, loading, agendamentoAtual])
+  }, [autoEditarAtual, loading, agendamentoAtual, souAdmin])
 
   // Encerra de vez a gravação da Voa (desmonta o SDK) — diferente de só ocultar o
   // painel: usado quando o usuário clica em "Encerrar gravação" ou troca de consulta.
@@ -793,31 +801,35 @@ const HistoricoClinico = forwardRef<HistoricoClinicoHandle, Props>(function Hist
         const blocoDocumentos = () => (
           <>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-              <button
-                type="button"
-                onClick={() => setReceitaAtivaId(receitaAtivaId === ag.id ? null : ag.id)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
-                  background: 'none', border: `1px solid ${MEMED_COR}`, borderRadius: 4,
-                  cursor: 'pointer', color: MEMED_COR,
-                }}
-              >
-                <FileSignature size={12} /> Emitir Receita
-              </button>
+              {souAdmin && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setReceitaAtivaId(receitaAtivaId === ag.id ? null : ag.id)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 4,
+                      padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
+                      background: 'none', border: `1px solid ${MEMED_COR}`, borderRadius: 4,
+                      cursor: 'pointer', color: MEMED_COR,
+                    }}
+                  >
+                    <FileSignature size={12} /> Emitir Receita
+                  </button>
 
-              <button
-                type="button"
-                onClick={() => setReceitaSistemaId(ag.id)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
-                  background: 'none', border: '1px solid #1E7FC3', borderRadius: 4,
-                  cursor: 'pointer', color: '#1E7FC3',
-                }}
-              >
-                <FileText size={12} /> Emitir Receita Sistema
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => setReceitaSistemaId(ag.id)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 4,
+                      padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
+                      background: 'none', border: '1px solid #1E7FC3', borderRadius: 4,
+                      cursor: 'pointer', color: '#1E7FC3',
+                    }}
+                  >
+                    <FileText size={12} /> Emitir Receita Sistema
+                  </button>
+                </>
+              )}
 
               <button
                 type="button"
@@ -832,18 +844,20 @@ const HistoricoClinico = forwardRef<HistoricoClinicoHandle, Props>(function Hist
                 <ClipboardCheck size={12} /> Criar Atestado
               </button>
 
-              <button
-                type="button"
-                onClick={() => setReceituarioId(ag.id)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
-                  background: 'none', border: `1px solid ${RECEITUARIO_COR}`, borderRadius: 4,
-                  cursor: 'pointer', color: RECEITUARIO_COR,
-                }}
-              >
-                <FileWarning size={12} /> Receituário Especial
-              </button>
+              {souAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setReceituarioId(ag.id)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
+                    background: 'none', border: `1px solid ${RECEITUARIO_COR}`, borderRadius: 4,
+                    cursor: 'pointer', color: RECEITUARIO_COR,
+                  }}
+                >
+                  <FileWarning size={12} /> Receituário Especial
+                </button>
+              )}
 
               <button
                 type="button"
@@ -1269,24 +1283,28 @@ const HistoricoClinico = forwardRef<HistoricoClinicoHandle, Props>(function Hist
                           </div>
                         ) : (
                           <div style={{ fontSize: 12, color: 'var(--texto-terciario)', fontStyle: 'italic' }}>
-                            Prontuário ainda não preenchido para esta consulta.
+                            {souAdmin
+                              ? 'Prontuário ainda não preenchido para esta consulta.'
+                              : 'Prontuário visível apenas para administradores.'}
                           </div>
                         )}
 
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-                          <button
-                            type="button"
-                            onClick={() => iniciarEdicao(ag)}
-                            style={{
-                              display: 'flex', alignItems: 'center', gap: 4,
-                              padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
-                              background: 'none', border: '1px solid var(--borda-media)', borderRadius: 4,
-                              cursor: 'pointer', color: 'var(--cor-primaria)',
-                            }}
-                          >
-                            <Pencil size={12} /> {prontuario ? 'Editar prontuário' : 'Preencher prontuário'}
-                          </button>
-                        </div>
+                        {souAdmin && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                            <button
+                              type="button"
+                              onClick={() => iniciarEdicao(ag)}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: 4,
+                                padding: '5px 10px', fontSize: 11.5, fontWeight: 600,
+                                background: 'none', border: '1px solid var(--borda-media)', borderRadius: 4,
+                                cursor: 'pointer', color: 'var(--cor-primaria)',
+                              }}
+                            >
+                              <Pencil size={12} /> {prontuario ? 'Editar prontuário' : 'Preencher prontuário'}
+                            </button>
+                          </div>
+                        )}
 
                         {blocoDocumentos()}
                       </>

@@ -50,3 +50,10 @@ export function checkModulo(session: Session, modulo: string): boolean {
     : (MODULOS_PADRAO[session.perfil] ?? [])
   return lista.includes(modulo)
 }
+
+// Prontuário e receita são dados clínicos sensíveis — só o perfil admin (médicos
+// estão cadastrados como admin neste projeto) tem acesso, diferente de Agendamento
+// que continua liberado pra financeiro/operador (recepção/rotina operacional).
+export function isAdmin(session: Session): boolean {
+  return session.perfil === 'admin'
+}

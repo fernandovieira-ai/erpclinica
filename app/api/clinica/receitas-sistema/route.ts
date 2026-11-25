@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth/session'
+import { getSession, isAdmin } from '@/lib/auth/session'
 import { getDb } from '@/lib/db'
 
 // GET /api/clinica/receitas-sistema
@@ -15,7 +15,9 @@ export async function GET(req: NextRequest) {
   const pacId = req.nextUrl.searchParams.get('paciente_id')
   const dados = req.nextUrl.searchParams.get('dados') === 'true'
 
-  // Dados do prescritor + paciente para cabeçalho de impressão
+  // Dados do prescritor + paciente para cabeçalho de impressão — reaproveitado por
+  // Atestado e Solicitação de Exame (não são dados de receita em si), por isso fica
+  // fora da checagem de admin abaixo, que só vale pra listar/criar receita de fato.
   if (dados && agId) {
     const { rows } = await db.query(
       `SELECT prof.nome                                      AS profissional_nome,
@@ -54,6 +56,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ dados: rows[0] })
   }
 
+  if (!isAdmin(session)) return NextResponse.json({ erro: 'Sem permissão' }, { status: 403 })
+
   if (!agId && !pacId) {
     return NextResponse.json({ erro: 'Informe agendamento_id ou paciente_id' }, { status: 400 })
   }
@@ -88,6 +92,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await getSession(req)
   if (!session) return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 })
+  if (!isAdmin(session)) return NextResponse.json({ erro: 'Sem permissão' }, { status: 403 })
 
   const body = await req.json().catch(() => null)
   if (
