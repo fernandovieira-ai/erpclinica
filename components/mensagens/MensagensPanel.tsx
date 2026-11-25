@@ -20,8 +20,11 @@ interface Props {
   pedidoAbrir: { id: number; nome: string; ts: number } | null
 }
 
-function formatarHora(iso: string): string {
-  return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+// Data + hora (não só hora) pra dar controle de quando a mensagem foi enviada/lida
+// de fato — numa conversa que atravessa dias, só a hora não diz em qual dia foi.
+function formatarDataHora(iso: string): string {
+  const d = new Date(iso)
+  return `${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
 }
 
 // Confirmação estilizada em vez de window.confirm() (padrão do projeto — ver skill
@@ -455,7 +458,7 @@ export default function MensagensPanel({ open, onClose, conversas, tick, meuUsua
                       fontSize: 10, marginTop: 3, textAlign: 'right',
                       color: minha ? 'rgba(255,255,255,0.75)' : 'var(--texto-terciario)',
                     }}>
-                      {formatarHora(m.created_at)}
+                      {formatarDataHora(m.created_at)}
                     </div>
                     <button
                       className="msg-excluir-btn"
@@ -474,7 +477,7 @@ export default function MensagensPanel({ open, onClose, conversas, tick, meuUsua
                 fontSize: 11, color: 'var(--texto-terciario)', marginTop: -2,
               }}>
                 {ultimaMinhaMsg.lida_em
-                  ? <><CheckCheck size={12} color="var(--cor-primaria)" /> Visto às {formatarHora(ultimaMinhaMsg.lida_em)}</>
+                  ? <><CheckCheck size={12} color="var(--cor-primaria)" /> Visto em {formatarDataHora(ultimaMinhaMsg.lida_em)}</>
                   : <><Check size={12} /> Enviada</>}
               </div>
             )}
