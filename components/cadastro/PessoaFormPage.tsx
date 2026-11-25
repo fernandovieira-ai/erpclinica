@@ -1,6 +1,6 @@
 'use client'
 
-import { forwardRef, useEffect, useRef, useState, useCallback } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, useCallback } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
@@ -537,8 +537,21 @@ function mascaraCpfCnpj(valor: string, pj: boolean): string {
 const ABAS_PESSOA = ['Principal', 'Financeiro', 'Fiscal / Obs', 'Agenda', 'Atendimentos', 'Consultas'] as const
 type AbaPessoa = typeof ABAS_PESSOA[number]
 
-export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsultarCadastroExistente, onSaved }: Props) {
+export interface PessoaFormPageHandle {
+  // Há algo digitado no cadastro que ainda não foi salvo (react-hook-form isDirty).
+  // Usado por quem embute este formulário num modal (Consultar Paciente, Chegou?) pra
+  // confirmar antes de fechar sem salvar.
+  isDirty: () => boolean
+  // Dispara o mesmo "Salvar Cadastro" do botão, programaticamente. Resolve true só se
+  // o PATCH/POST foi bem-sucedido (ver savedOkRef em onSubmit) — false em erro de
+  // validação, cadastro duplicado ou falha de rede, pra quem chamou saber que não deve
+  // fechar o modal ainda.
+  salvar: () => Promise<boolean>
+}
+
+const PessoaFormPage = forwardRef<PessoaFormPageHandle, Props>(function PessoaFormPage({ pessoa, papelInicial, embutido, onConsultarCadastroExistente, onSaved }, ref) {
   const router  = useRouter()
+  const savedOkRef = useRef(false)
   const [saving,       setSaving]      = useState(false)
   const [deleting,     setDeleting]    = useState(false)
   const [excluding,    setExcluding]   = useState(false)
@@ -823,7 +836,7 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsu
     } catch { toast.error('Erro ao remover exceção') }
   }
 
-  const { register, handleSubmit, reset, watch, setValue, getValues, formState: { errors } } = useForm<PessoaInput>({
+  const { register, handleSubmit, reset, watch, setValue, getValues, formState: { errors, isDirty } } = useForm<PessoaInput>({
     resolver: zodResolver(pessoaSchema),
     defaultValues: {
       tipo_pessoa: 'F', cpf_cnpj: '', data_nascimento: '', cep: '',
@@ -999,6 +1012,7 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsu
 
   async function onSubmit(data: PessoaInput) {
     setSaving(true)
+    savedOkRef.current = false
     try {
       const payload = { ...data, cpf_cnpj: (data.cpf_cnpj ?? '').replace(/\D/g, '') || null }
       const url    = pessoa ? `/api/cadastro/pessoas/${pessoa.id}` : '/api/cadastro/pessoas'
@@ -1041,6 +1055,12 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsu
       }
 
       toast.success(pessoa ? 'Pessoa atualizada!' : 'Pessoa cadastrada!')
+      savedOkRef.current = true
+      // Reseta o baseline do react-hook-form pros valores que acabaram de ser salvos —
+      // sem isso, formState.isDirty continua true depois de um save bem-sucedido (RHF só
+      // zera isDirty com reset()), e quem embute este form num modal (Consultar Paciente,
+      // Chegou?) pergunta "salvar antes de fechar?" de novo mesmo sem nada pendente.
+      reset(data)
       if (!pessoa && json?.id) router.push(`/cadastro/pessoas/${json.id}${papelInicial ? `?papel=${papelInicial}` : ''}`)
       else if (!pessoa) router.push(listaHref)
       else {
@@ -1051,6 +1071,18 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsu
       toast.error('Erro de comunicação com o servidor. Tente novamente.')
     } finally { setSaving(false) }
   }
+
+  useImperativeHandle(ref, () => ({
+    isDirty: () => isDirty,
+    salvar: async () => {
+      // Zera aqui (não só no início de onSubmit): se a validação do RHF bloquear o
+      // submit, onSubmit nunca chega a rodar e savedOkRef ficaria com o valor `true`
+      // de um save anterior — quem chamou pensaria que salvou de novo sem ter salvo.
+      savedOkRef.current = false
+      await handleSubmit(onSubmit)()
+      return savedOkRef.current
+    },
+  }), [isDirty, handleSubmit, onSubmit])
 
   async function desativar() {
     if (!pessoa || !confirm(`Desativar "${pessoa.nome}"?`)) return
@@ -2438,4 +2470,8 @@ export default function PessoaFormPage({ pessoa, papelInicial, embutido, onConsu
     )}
     </>
   )
-}
+})
+
+PessoaFormPage.displayName = 'PessoaFormPage'
+
+export default PessoaFormPage

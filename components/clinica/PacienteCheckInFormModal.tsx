@@ -3,10 +3,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { X, DollarSign, CheckCircle2, MessageCircle, User } from 'lucide-react'
+import { X, DollarSign, CheckCircle2, MessageCircle, User, Save } from 'lucide-react'
 import RecebimentoModal from '@/components/clinica/RecebimentoModal'
 import HistoricoClinico, { type HistoricoClinicoHandle } from '@/components/clinica/HistoricoClinico'
-import PessoaFormPage from '@/components/cadastro/PessoaFormPage'
+import PessoaFormPage, { type PessoaFormPageHandle } from '@/components/cadastro/PessoaFormPage'
 import { toast } from 'sonner'
 import type { AgendamentoListItem } from '@/types/clinica.types'
 import type { Pessoa } from '@/types/cadastros.types'
@@ -145,6 +145,98 @@ function ConfirmarFinalizarModal({
   )
 }
 
+// Fechar a aba Cadastro com alterações não salvas perdia o que foi digitado sem avisar
+// (botões "Fechar" do header e do rodapé) — mesmo padrão estilizado do
+// ConfirmarFinalizarModal acima (skill modal-abertura-rapida-e-confirmacao-estilizada).
+function ConfirmarFecharSemSalvarModal({
+  open, salvando, onCancelar, onFecharSemSalvar, onSalvarEFechar,
+}: {
+  open: boolean
+  salvando: boolean
+  onCancelar: () => void
+  onFecharSemSalvar: () => void
+  onSalvarEFechar: () => void
+}) {
+  if (!open) return null
+  return (
+    <div
+      onClick={onCancelar}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1200,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          backgroundColor: 'var(--bg-card)', borderRadius: 12,
+          width: '100%', maxWidth: 380,
+          padding: '30px 26px 22px',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+          textAlign: 'center',
+        }}
+      >
+        <div style={{
+          width: 54, height: 54, borderRadius: '50%', margin: '0 auto 16px',
+          background: 'var(--cor-primaria-light)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Save size={24} style={{ color: 'var(--cor-primaria)' }} />
+        </div>
+
+        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--texto-principal)', marginBottom: 8 }}>
+          Salvar alterações na ficha?
+        </div>
+        <div style={{ fontSize: 12.5, color: 'var(--texto-secundario)', lineHeight: 1.55, marginBottom: 24 }}>
+          Há alterações no cadastro deste paciente que ainda não foram salvas.
+          Se fechar sem salvar, elas serão perdidas.
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <button
+            type="button"
+            disabled={salvando}
+            onClick={onSalvarEFechar}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              padding: '10px 16px', borderRadius: 8,
+              background: salvando ? '#15a073' : 'linear-gradient(135deg,#1D9E75,#15a073)',
+              color: '#fff', border: 'none',
+              fontSize: 13.5, fontWeight: 700, cursor: salvando ? 'not-allowed' : 'pointer',
+              opacity: salvando ? 0.75 : 1,
+              boxShadow: '0 2px 8px rgba(29,158,117,0.35)',
+              letterSpacing: '0.02em',
+              transition: 'opacity 0.15s',
+            }}
+            onMouseEnter={e => { if (!salvando) e.currentTarget.style.opacity = '0.88' }}
+            onMouseLeave={e => { if (!salvando) e.currentTarget.style.opacity = '1' }}
+          >
+            <Save size={15} />
+            {salvando ? 'Salvando...' : 'Salvar e fechar'}
+          </button>
+          <button
+            type="button"
+            disabled={salvando}
+            onClick={onFecharSemSalvar}
+            style={{
+              padding: '9px 16px', borderRadius: 8,
+              background: 'none', border: '1px solid var(--borda-media)',
+              color: 'var(--texto-secundario)',
+              fontSize: 12.5, fontWeight: 600,
+              cursor: salvando ? 'not-allowed' : 'pointer',
+              opacity: salvando ? 0.6 : 1,
+            }}
+          >
+            Fechar sem salvar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function PacienteCheckInFormModal({ open, paciente, agendamento, agendamentos, onClose, onSaved, ocultarRecebimento, ocultarFinalizar, ocultarCadastro }: Props) {
   const [recModalOpen, setRecModalOpen] = useState(false)
   const [pagosIds,     setPagosIds]     = useState<Set<number>>(new Set())
@@ -166,6 +258,12 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
   const historicoRef = useRef<HistoricoClinicoHandle>(null)
   const [confirmFinalizarAberto, setConfirmFinalizarAberto] = useState(false)
 
+  // Confirmação antes de fechar com a aba Cadastro tendo alterações não salvas —
+  // ver ConfirmarFecharSemSalvarModal acima.
+  const pessoaFormRef = useRef<PessoaFormPageHandle>(null)
+  const [confirmFecharCadastroAberto, setConfirmFecharCadastroAberto] = useState(false)
+  const [salvandoAoFecharCadastro,    setSalvandoAoFecharCadastro]    = useState(false)
+
   // Resolução de cadastro duplicado (CPF/CNPJ digitado na ficha já pertence a outra pessoa):
   // troca quem é exibido/editado aqui pro cadastro correto, sem navegar — ver
   // usarCadastroExistente. Começa nulo (mostra o `paciente` recebido por prop); só é
@@ -178,6 +276,8 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
       setPagosIds(new Set())
       setAba(ocultarCadastro ? 'Histórico Clínico' : 'Cadastro')
       setPacienteOverride(null)
+      setConfirmFecharCadastroAberto(false)
+      setSalvandoAoFecharCadastro(false)
     }
   }, [open, paciente, ocultarCadastro])
 
@@ -188,6 +288,31 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
   function fecharModal() {
     setAba(ocultarCadastro ? 'Histórico Clínico' : 'Cadastro')
     onClose()
+  }
+
+  // Botões "Fechar" do header e do rodapé da aba Cadastro: se houver alterações não
+  // salvas na ficha, confirma antes de descartá-las (em vez de simplesmente fechar).
+  function tentarFecharCadastro() {
+    if (!ocultarCadastro && pessoaFormRef.current?.isDirty()) {
+      setConfirmFecharCadastroAberto(true)
+      return
+    }
+    fecharModal()
+  }
+
+  async function salvarFichaEFechar() {
+    setSalvandoAoFecharCadastro(true)
+    const ok = await pessoaFormRef.current?.salvar()
+    setSalvandoAoFecharCadastro(false)
+    setConfirmFecharCadastroAberto(false)
+    if (ok) fecharModal()
+    // se não salvou (validação ou cadastro duplicado), deixa o modal aberto — o próprio
+    // PessoaFormPage já mostra o erro/aviso de duplicidade pro usuário corrigir.
+  }
+
+  function fecharFichaSemSalvar() {
+    setConfirmFecharCadastroAberto(false)
+    fecharModal()
   }
 
   // Resolução de cadastro duplicado (aviso "Pessoa já cadastrada" dentro da ficha, botão
@@ -437,7 +562,7 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
           {/* Close */}
           <button
             type="button"
-            onClick={aba === 'Histórico Clínico' ? fecharHistorico : fecharModal}
+            onClick={aba === 'Histórico Clínico' ? fecharHistorico : tentarFecharCadastro}
             style={{
               background: 'rgba(255,255,255,0.18)', border: 'none', cursor: 'pointer',
               padding: '6px 8px', borderRadius: 4, color: 'white',
@@ -487,6 +612,7 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
 
           <div style={{ flex: 1, overflow: 'hidden' }}>
             <PessoaFormPage
+              ref={pessoaFormRef}
               pessoa={pacienteExibido as Pessoa}
               embutido
               onConsultarCadastroExistente={usarCadastroExistente}
@@ -613,7 +739,7 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '10px 16px', flexShrink: 0 }}>
             <button
               type="button"
-              onClick={fecharModal}
+              onClick={tentarFecharCadastro}
               style={{
                 padding: '4px 14px', borderRadius: 3, border: '1px solid var(--borda-media)',
                 background: 'none', color: 'var(--texto-principal)',
@@ -717,6 +843,14 @@ export default function PacienteCheckInFormModal({ open, paciente, agendamento, 
           onCancelar={() => setConfirmFinalizarAberto(false)}
           onFecharSemFinalizar={fecharSemFinalizar}
           onFinalizar={confirmarFinalizarEFechar}
+        />
+
+        <ConfirmarFecharSemSalvarModal
+          open={confirmFecharCadastroAberto}
+          salvando={salvandoAoFecharCadastro}
+          onCancelar={() => setConfirmFecharCadastroAberto(false)}
+          onFecharSemSalvar={fecharFichaSemSalvar}
+          onSalvarEFechar={salvarFichaEFechar}
         />
       </div>
     </div>

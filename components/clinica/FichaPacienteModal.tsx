@@ -1,17 +1,17 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   X, Search, Loader2, User, Phone, MapPin, Mail, IdCard, Cake, ExternalLink,
-  CalendarClock, CalendarCheck2, History, AlertTriangle, Wallet,
+  CalendarClock, CalendarCheck2, History, AlertTriangle, Wallet, Save,
 } from 'lucide-react'
 import { format, parseISO, isToday, differenceInYears } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { AgendamentoListItem, Prontuario } from '@/types/clinica.types'
 import type { Pessoa } from '@/types/cadastros.types'
 import { maskCelular } from '@/lib/utils'
-import PessoaFormPage from '@/components/cadastro/PessoaFormPage'
+import PessoaFormPage, { type PessoaFormPageHandle } from '@/components/cadastro/PessoaFormPage'
 
 interface Paciente {
   id:              number
@@ -95,6 +95,100 @@ function StatCard({ label, valor, sub, cor }: { label: string; valor: string; su
   )
 }
 
+// Fechar a aba Ficha com alterações não salvas perdia o que foi digitado sem avisar
+// (botão "Consultar paciente" dentro do agendamento) — mesmo padrão estilizado do
+// ConfirmarFinalizarModal em PacienteCheckInFormModal.tsx (skill
+// modal-abertura-rapida-e-confirmacao-estilizada): overlay cancela sem decidir,
+// botão secundário descarta, botão primário salva antes de fechar.
+function ConfirmarFecharSemSalvarModal({
+  open, salvando, onCancelar, onFecharSemSalvar, onSalvarEFechar,
+}: {
+  open: boolean
+  salvando: boolean
+  onCancelar: () => void
+  onFecharSemSalvar: () => void
+  onSalvarEFechar: () => void
+}) {
+  if (!open) return null
+  return (
+    <div
+      onClick={onCancelar}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1200,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          backgroundColor: 'var(--bg-card)', borderRadius: 12,
+          width: '100%', maxWidth: 380,
+          padding: '30px 26px 22px',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+          textAlign: 'center',
+        }}
+      >
+        <div style={{
+          width: 54, height: 54, borderRadius: '50%', margin: '0 auto 16px',
+          background: 'var(--cor-primaria-light)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Save size={24} style={{ color: 'var(--cor-primaria)' }} />
+        </div>
+
+        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--texto-principal)', marginBottom: 8 }}>
+          Salvar alterações na ficha?
+        </div>
+        <div style={{ fontSize: 12.5, color: 'var(--texto-secundario)', lineHeight: 1.55, marginBottom: 24 }}>
+          Há alterações no cadastro deste paciente que ainda não foram salvas.
+          Se fechar sem salvar, elas serão perdidas.
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <button
+            type="button"
+            disabled={salvando}
+            onClick={onSalvarEFechar}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              padding: '10px 16px', borderRadius: 8,
+              background: salvando ? '#15a073' : 'linear-gradient(135deg,#1D9E75,#15a073)',
+              color: '#fff', border: 'none',
+              fontSize: 13.5, fontWeight: 700, cursor: salvando ? 'not-allowed' : 'pointer',
+              opacity: salvando ? 0.75 : 1,
+              boxShadow: '0 2px 8px rgba(29,158,117,0.35)',
+              letterSpacing: '0.02em',
+              transition: 'opacity 0.15s',
+            }}
+            onMouseEnter={e => { if (!salvando) e.currentTarget.style.opacity = '0.88' }}
+            onMouseLeave={e => { if (!salvando) e.currentTarget.style.opacity = '1' }}
+          >
+            <Save size={15} />
+            {salvando ? 'Salvando...' : 'Salvar e fechar'}
+          </button>
+          <button
+            type="button"
+            disabled={salvando}
+            onClick={onFecharSemSalvar}
+            style={{
+              padding: '9px 16px', borderRadius: 8,
+              background: 'none', border: '1px solid var(--borda-media)',
+              color: 'var(--texto-secundario)',
+              fontSize: 12.5, fontWeight: 600,
+              cursor: salvando ? 'not-allowed' : 'pointer',
+              opacity: salvando ? 0.6 : 1,
+            }}
+          >
+            Fechar sem salvar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, pacienteInicial, onPacienteTrocado }: Props) {
   const [busca,        setBusca]        = useState('')
   const [pacientes,    setPacientes]    = useState<Paciente[]>([])
@@ -111,6 +205,12 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
   const [pessoaCompleta,    setPessoaCompleta]    = useState<Pessoa | null>(null)
   const [loadingPessoa,     setLoadingPessoa]     = useState(false)
 
+  // Confirmação antes de fechar com a ficha (aba Ficha) tendo alterações não salvas —
+  // ver ConfirmarFecharSemSalvarModal acima.
+  const pessoaFormRef = useRef<PessoaFormPageHandle>(null)
+  const [confirmFecharAberto, setConfirmFecharAberto] = useState(false)
+  const [salvandoAoFechar,    setSalvandoAoFechar]    = useState(false)
+
   useEffect(() => {
     if (!open) {
       setBusca('')
@@ -121,8 +221,35 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
       setAbaModal('ficha')
       setPessoaCompleta(null)
       setAgendamentosDeId(null)
+      setConfirmFecharAberto(false)
+      setSalvandoAoFechar(false)
     }
   }, [open])
+
+  // Botão X do header: se a aba Ficha estiver com alterações não salvas, confirma antes
+  // de fechar (em vez de simplesmente descartar o que foi digitado).
+  function tentarFechar() {
+    if (abaModal === 'ficha' && pessoaFormRef.current?.isDirty()) {
+      setConfirmFecharAberto(true)
+      return
+    }
+    onClose()
+  }
+
+  async function salvarEFechar() {
+    setSalvandoAoFechar(true)
+    const ok = await pessoaFormRef.current?.salvar()
+    setSalvandoAoFechar(false)
+    setConfirmFecharAberto(false)
+    if (ok) onClose()
+    // se não salvou (validação ou cadastro duplicado), deixa a ficha aberta — o próprio
+    // PessoaFormPage já mostra o erro/aviso de duplicidade pro usuário corrigir.
+  }
+
+  function fecharSemSalvar() {
+    setConfirmFecharAberto(false)
+    onClose()
+  }
 
   useEffect(() => {
     if (open && pacienteInicial) selecionarPaciente(pacienteInicial)
@@ -328,7 +455,7 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
               </div>
             </div>
             <button
-              onClick={onClose}
+              onClick={tentarFechar}
               style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 5, width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff', flexShrink: 0 }}
             >
               <X size={14} />
@@ -424,6 +551,7 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
             )}
             {!loadingPessoa && pessoaCompleta && (
               <PessoaFormPage
+                ref={pessoaFormRef}
                 pessoa={pessoaCompleta}
                 embutido
                 // CPF/CNPJ digitado já pertence a outra pessoa: troca a ficha exibida pra
@@ -667,6 +795,14 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
           </div>
         )}
       </div>
+
+      <ConfirmarFecharSemSalvarModal
+        open={confirmFecharAberto}
+        salvando={salvandoAoFechar}
+        onCancelar={() => setConfirmFecharAberto(false)}
+        onFecharSemSalvar={fecharSemSalvar}
+        onSalvarEFechar={salvarEFechar}
+      />
     </div>
   )
 }
