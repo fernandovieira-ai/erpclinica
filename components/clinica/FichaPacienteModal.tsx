@@ -4,9 +4,7 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
   X, Search, Loader2, User, Phone, MapPin, Mail, IdCard, Cake, ExternalLink,
-  CalendarClock, CalendarCheck2, History, AlertTriangle, ChevronDown, ChevronUp,
-  Stethoscope, FileText, Users, Activity, ClipboardList, Scale, HeartPulse,
-  FlaskConical, Pill, ListChecks,
+  CalendarClock, CalendarCheck2, History, AlertTriangle, Wallet,
 } from 'lucide-react'
 import { format, parseISO, isToday, differenceInYears } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -75,29 +73,9 @@ function formatarCpf(cpf: string | null) {
   return cpf ?? null
 }
 
-// Campo somente-leitura do prontuário (rótulo + valor) — some se vazio
-function Campo({ icone: Icone, label, valor, destaque }: {
-  icone: React.ElementType; label: string; valor: string | null; destaque?: boolean
-}) {
-  if (!valor) return null
-  return (
-    <div style={{
-      display: 'flex', gap: 8, padding: '7px 9px',
-      backgroundColor: destaque ? 'var(--cor-primaria-light)' : 'var(--bg-input)',
-      borderRadius: 5, border: destaque ? '1px solid var(--cor-primaria)' : '1px solid transparent',
-    }}>
-      <Icone size={13} style={{ color: destaque ? 'var(--cor-primaria)' : 'var(--texto-terciario)', flexShrink: 0, marginTop: 1 }} />
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em',
-          color: destaque ? 'var(--cor-primaria)' : 'var(--texto-terciario)', marginBottom: 2 }}>
-          {label}
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--texto-principal)', whiteSpace: 'pre-wrap', lineHeight: 1.45 }}>
-          {valor}
-        </div>
-      </div>
-    </div>
-  )
+function formatarValor(v: number | null | undefined) {
+  if (v == null) return null
+  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
 function StatCard({ label, valor, sub, cor }: { label: string; valor: string; sub?: string; cor?: string }) {
@@ -125,7 +103,6 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
   const [agendamentos, setAgendamentos] = useState<AgendamentoListItem[]>([])
   const [prontuarios,  setProntuarios]  = useState<Record<number, Prontuario>>({})
   const [loadingAgendamentos, setLoadingAgendamentos] = useState(false)
-  const [abertoId,     setAbertoId]     = useState<number | null>(null)
   // id do paciente cujos agendamentos/prontuários já estão carregados em memória (cache simples por seleção)
   const [agendamentosDeId, setAgendamentosDeId] = useState<number | null>(null)
 
@@ -141,7 +118,6 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
       setPacienteSel(null)
       setAgendamentos([])
       setProntuarios({})
-      setAbertoId(null)
       setAbaModal('ficha')
       setPessoaCompleta(null)
       setAgendamentosDeId(null)
@@ -225,7 +201,6 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
     setPacienteSel(p)
     setBusca(p.nome)
     setPacientes([])
-    setAbertoId(null)
     setAgendamentos([])
     setProntuarios({})
     setAgendamentosDeId(null)
@@ -280,7 +255,6 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
     setPacientes([])
     setAgendamentos([])
     setProntuarios({})
-    setAbertoId(null)
     setAgendamentosDeId(null)
     setPessoaCompleta(null)
   }
@@ -604,11 +578,10 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                   {historico.map((ag, idx) => {
-                    const prontuario = prontuarios[ag.id]
-                    const cor        = STATUS_COLOR[ag.status] ?? '#888780'
-                    const aberto     = abertoId === ag.id
-                    const resumo     = prontuario?.diagnostico || prontuario?.queixas
-                    const ultimo     = idx === historico.length - 1
+                    const cor         = STATUS_COLOR[ag.status] ?? '#888780'
+                    const ultimo      = idx === historico.length - 1
+                    const valorPago   = formatarValor(ag.total_recebimento)
+                    const temPagamento = ag.status === 'ATENDIDO' && (ag.forma_pagamento || valorPago)
 
                     return (
                       <div key={ag.id} style={{ display: 'flex', gap: 10 }}>
@@ -623,15 +596,10 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
 
                         <div style={{ flex: 1, paddingBottom: 10, minWidth: 0 }}>
                           <div style={{ border: '1px solid var(--borda-media)', borderRadius: 6, overflow: 'hidden', backgroundColor: 'var(--bg-card)' }}>
-                            <button
-                              type="button"
-                              onClick={() => setAbertoId(aberto ? null : ag.id)}
-                              style={{
-                                display: 'flex', alignItems: 'center', gap: 10, width: '100%',
-                                padding: '8px 10px', background: 'none', border: 'none',
-                                cursor: prontuario ? 'pointer' : 'default', textAlign: 'left',
-                              }}
-                            >
+                            <div style={{
+                              display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+                              padding: '8px 10px',
+                            }}>
                               <div style={{ minWidth: 66 }}>
                                 <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--texto-principal)' }}>
                                   {format(parseISO(ag.data_hora_inicio), 'dd/MM/yyyy')}
@@ -650,47 +618,26 @@ export default function FichaPacienteModal({ open, onClose, onAbrirAgendamento, 
                                     </span>
                                   )}
                                 </div>
-                                {!aberto && (
-                                  <div style={{
-                                    fontSize: 11, color: 'var(--texto-terciario)', marginTop: 1,
-                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                    fontStyle: resumo ? 'normal' : 'italic',
-                                  }}>
-                                    {resumo ?? (ag.status === 'ATENDIDO' ? 'Prontuário não preenchido' : STATUS_LABEL[ag.status])}
-                                  </div>
-                                )}
+                                <div style={{
+                                  display: 'flex', alignItems: 'center', gap: 4, marginTop: 2,
+                                  fontSize: 11, color: 'var(--texto-terciario)',
+                                  fontStyle: temPagamento ? 'normal' : 'italic',
+                                }}>
+                                  {temPagamento ? (
+                                    <>
+                                      <Wallet size={11} style={{ flexShrink: 0 }} />
+                                      {[ag.forma_pagamento, valorPago].filter(Boolean).join(' · ')}
+                                    </>
+                                  ) : (
+                                    ag.status === 'ATENDIDO' ? 'Pagamento não registrado' : STATUS_LABEL[ag.status]
+                                  )}
+                                </div>
                               </div>
 
                               <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10, color: cor, backgroundColor: `${cor}1E`, flexShrink: 0 }}>
                                 {STATUS_LABEL[ag.status] ?? ag.status}
                               </span>
-
-                              {prontuario && (
-                                aberto ? <ChevronUp size={14} style={{ color: 'var(--texto-terciario)', flexShrink: 0 }} />
-                                       : <ChevronDown size={14} style={{ color: 'var(--texto-terciario)', flexShrink: 0 }} />
-                              )}
-                            </button>
-
-                            {aberto && prontuario && (
-                              <div style={{ borderTop: '1px solid var(--borda-suave)', padding: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                <Campo icone={Stethoscope}   label="Queixas"                valor={prontuario.queixas} />
-                                <Campo icone={FileText}      label="HDA"                     valor={prontuario.hda} />
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                                  <Campo icone={Users}       label="Antecedentes Familiares" valor={prontuario.antecedentes_familiares} />
-                                  <Campo icone={AlertTriangle} label="Alergias"              valor={prontuario.alergias} />
-                                </div>
-                                <Campo icone={ClipboardList} label="Exame Físico"            valor={prontuario.exame_fisico} />
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
-                                  <Campo icone={Scale}       label="Peso"                    valor={prontuario.peso != null ? `${prontuario.peso} kg` : null} />
-                                  <Campo icone={Activity}    label="IMC"                     valor={prontuario.imc != null ? String(prontuario.imc) : null} />
-                                  <Campo icone={HeartPulse}  label="Pressão"                 valor={prontuario.pressao} />
-                                </div>
-                                <Campo icone={FlaskConical}  label="Exames"                  valor={prontuario.exames} />
-                                <Campo icone={FileText}      label="Diagnóstico"             valor={prontuario.diagnostico} destaque />
-                                <Campo icone={Pill}          label="Medicação"               valor={prontuario.medicacao} />
-                                <Campo icone={ListChecks}    label="Outras Condutas"         valor={prontuario.outras_condutas} />
-                              </div>
-                            )}
+                            </div>
                           </div>
                         </div>
                       </div>
