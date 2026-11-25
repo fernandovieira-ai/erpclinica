@@ -986,7 +986,9 @@ export default function AgendamentoModal({ open, onClose, onSaved, agendamento, 
             <CheckCircle2 size={16} style={{ color: 'var(--cor-sucesso, #16A34A)', flexShrink: 0, marginTop: 1 }} />
             <div style={{ fontSize: 12, color: '#166534', lineHeight: 1.4 }}>
               <strong>Pagamento já realizado</strong>
-              {agendamento?.total_recebimento ? ` — ${fmtValor(Number(agendamento.total_recebimento))}` : ''}.
+              {agendamento?.total_recebimento
+                ? ` — ${agendamento.forma_pagamento ? `${agendamento.forma_pagamento} · ` : ''}${fmtValor(Number(agendamento.total_recebimento))}`
+                : ''}.
               {' '}Para alterar este agendamento, estorne o pagamento primeiro.
             </div>
           </div>
