@@ -1603,17 +1603,23 @@ export default function AgendamentoPage() {
                       : undefined
                     }
                   >
-                    {ags.map(ag => {
+                    {ags.map((ag, agIdx) => {
                       const dur         = durMinutes(ag)
                       const statusColor = STATUS_COLOR[ag.status] ?? '#378ADD'
-                      const height      = Math.max((dur / 30) * SLOT_H - 2, SLOT_H - 2)
+                      // Mais de 1 agendamento no mesmo dia+horário (ex.: HOLTER e MAPA marcados
+                      // juntos): empilha um embaixo do outro (altura dividida pela quantidade),
+                      // em vez de só 1 ocupando o slot inteiro e os outros ficando por baixo
+                      // escondidos/sobrepostos.
+                      const fatia  = SLOT_H / ags.length
+                      const height = ags.length > 1 ? Math.max(fatia - 2, 16) : Math.max((dur / 30) * SLOT_H - 2, SLOT_H - 2)
+                      const top    = ags.length > 1 ? 2 + agIdx * fatia : 2
                       return (
                         <div
                           key={ag.id}
                           onClick={e => abrirEditar(ag, e)}
                           title={criadorTooltip(ag)}
                           style={{
-                            position: 'absolute', left: 2, right: 2, top: 2,
+                            position: 'absolute', left: 2, right: 2, top,
                             height, zIndex: 2,
                             background: statusColor + '20',
                             borderLeft: ag.eh_encaixe ? '3px dashed #F59E0B' : `3px solid ${statusColor}`,
@@ -1626,7 +1632,7 @@ export default function AgendamentoPage() {
                           <div style={{ fontSize: 11, fontWeight: 600, color: statusColor, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {ag.paciente_nome}
                           </div>
-                          {dur >= 30 && (
+                          {dur >= 30 && ags.length === 1 && (
                             <div style={{ fontSize: 10, color: 'var(--texto-terciario)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                               {ag.tipo_descricao ?? STATUS_LABEL[ag.status]}
                             </div>
